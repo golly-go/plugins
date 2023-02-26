@@ -3,7 +3,7 @@ module github.com/golly-go/plugins/kafka
 go 1.19
 
 require (
-	github.com/golly-go/golly v0.4.0
+	github.com/golly-go/golly v0.4.1-0.20230226194911-3e21ed3793bf
 	github.com/segmentio/kafka-go v0.4.39
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/viper v1.15.0

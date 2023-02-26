@@ -106,6 +106,8 @@ github.com/golly-go/golly v0.3.1-0.20230226193719-d97275810f4c h1:73pt5V8a1sc+t5
 github.com/golly-go/golly v0.3.1-0.20230226193719-d97275810f4c/go.mod h1:+6Tz2zMvRvYrHq7BvFWBs0x9MPJfwCU6qI3XxaPBNyg=
 github.com/golly-go/golly v0.4.0 h1:yPdo6u2tgNMzw5VW8Rde4auVKuT4Pvg933Hr00AQ9wc=
 github.com/golly-go/golly v0.4.0/go.mod h1:+6Tz2zMvRvYrHq7BvFWBs0x9MPJfwCU6qI3XxaPBNyg=
+github.com/golly-go/golly v0.4.1-0.20230226194911-3e21ed3793bf h1:fXv8es5N+7VrgOzn4irMY275hTBdd8H5b4Ke6hpBDMA=
+github.com/golly-go/golly v0.4.1-0.20230226194911-3e21ed3793bf/go.mod h1:4XJFT1DrM9M36RNXD1RDIEdC4NS1+PhX1N+zEJh+LbA=
 github.com/golly-go/plugins/orm v0.0.0-20230226194559-d838cab04356 h1:MjkfndGL/HD60C8F5Ax13cuqGp6fSgMpenrgfYDpG2Q=
 github.com/golly-go/plugins/orm v0.0.0-20230226194559-d838cab04356/go.mod h1:3Mcl7q12IO3VUBW4FWYTC1LiDKnocCQjgn7ZXjH6bmk=
 github.com/google/btree v0.0.0-20180813153112-4030bb1f1f0c/go.mod h1:lNA+9X1NB3Zf8V7Ke586lFgjr2dZNuvo3lPJSGZ5JPQ=
@@ -261,6 +263,7 @@ github.com/rs/zerolog v1.15.0/go.mod h1:xYTKnLHcpfU2225ny5qZjxnj9NvkumZYjJHlAThC
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/satori/go.uuid v1.2.0/go.mod h1:dA0hQrYB0VpLJoorglMZABFdXlWrHn1NEOzdhQKdks0=
 github.com/shopspring/decimal v0.0.0-20180709203117-cd690d0c9e24/go.mod h1:M+9NzErvs504Cn4c5DxATwIqPbtswREoFCre64PpcG4=
+github.com/shopspring/decimal v1.2.0 h1:abSATXmQEYyShuxI4/vyW3tV1MrKAJzCZ/0zLUXYbsQ=
 github.com/shopspring/decimal v1.2.0/go.mod h1:DKyhrW/HYNuLGql+MJL6WCR6knT2jwCFRcu2hWCYk4o=
 github.com/shopspring/decimal v1.3.1 h1:2Usl1nmF/WZucqkFZhnfFYxxxu8LG21F6nPQBE5gKV8=
 github.com/sirupsen/logrus v1.4.1/go.mod h1:ni0Sbl8bgC9z8RoU9G6nDWqqs/fq4eDPysMBDgk/93Q=
