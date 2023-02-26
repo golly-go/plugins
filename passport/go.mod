@@ -1,4 +1,4 @@
-module github.com/plugins/passport
+module github.com/go-golly/plugins/passport
 
 go 1.19
 
