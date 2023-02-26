@@ -5,7 +5,7 @@ import (
 
 	"github.com/golly-go/golly"
 	"github.com/golly-go/golly/errors"
-	"github.com/golly-go/golly/plugins/orm"
+	"github.com/golly-go/plugins/orm"
 	"github.com/graphql-go/graphql"
 )
 

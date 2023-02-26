@@ -2,7 +2,7 @@ package migrate
 
 import (
 	"github.com/golly-go/golly"
-	orm "github.com/golly-go/golly/plugins/orm"
+	orm "github.com/golly-go/plugins/orm"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"gorm.io/gorm"
