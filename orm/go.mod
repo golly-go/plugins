@@ -1,11 +1,10 @@
-module github.com/golly-plugins/orm
+module github.com/golly-go/plugins/orm
 
 go 1.19
 
 require (
 	github.com/google/uuid v1.3.0
 	github.com/sirupsen/logrus v1.9.0
-	github.com/slimloans/golly v0.2.0
 	github.com/spf13/cobra v1.6.1
 	github.com/spf13/viper v1.15.0
 	gorm.io/driver/postgres v1.4.8
@@ -15,6 +14,7 @@ require (
 
 require (
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
+	github.com/golly-go/golly v0.3.1-0.20230226193719-d97275810f4c // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

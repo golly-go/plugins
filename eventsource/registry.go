@@ -3,7 +3,7 @@ package eventsource
 import (
 	"reflect"
 
-	"github.com/slimloans/golly/utils"
+	"github.com/golly-go/golly/utils"
 )
 
 var (

@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/golly-go/golly"
+	"github.com/golly-go/golly/utils"
 	"github.com/sirupsen/logrus"
-	"github.com/slimloans/golly"
-	"github.com/slimloans/golly/utils"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )

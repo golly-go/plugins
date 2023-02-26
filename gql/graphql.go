@@ -3,10 +3,10 @@ package gql
 import (
 	"sync"
 
+	"github.com/golly-go/golly"
+	"github.com/golly-go/golly/errors"
+	"github.com/golly-go/golly/plugins/orm"
 	"github.com/graphql-go/graphql"
-	"github.com/slimloans/golly"
-	"github.com/slimloans/golly/errors"
-	"github.com/slimloans/golly/plugins/orm"
 )
 
 type gqlHandler struct {

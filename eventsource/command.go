@@ -1,8 +1,8 @@
 package eventsource
 
 import (
-	"github.com/slimloans/golly"
-	"github.com/slimloans/golly/errors"
+	"github.com/golly-go/golly"
+	"github.com/golly-go/golly/errors"
 )
 
 type Command interface {

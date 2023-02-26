@@ -3,7 +3,7 @@ package eventsource
 import (
 	"net/http"
 
-	"github.com/slimloans/golly/errors"
+	"github.com/golly-go/golly/errors"
 )
 
 var (

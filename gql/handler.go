@@ -1,9 +1,9 @@
 package gql
 
 import (
+	"github.com/golly-go/golly"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
-	"github.com/slimloans/golly"
 )
 
 // This plugins provides golly wrappers to allow easy to use GQL integration

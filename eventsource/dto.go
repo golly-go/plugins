@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/slimloans/golly/errors"
+	"github.com/golly-go/golly/errors"
 )
 
 type AggregateReference struct {

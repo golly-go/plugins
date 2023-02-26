@@ -1,11 +1,10 @@
-module github.com/golly-plugins/passport
+module github.com/plugins/passport
 
 go 1.19
 
 require (
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/google/uuid v1.3.0
-	github.com/slimloans/golly v0.2.0
 )
 
 require (

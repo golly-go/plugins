@@ -1,11 +1,11 @@
-module github.com/slimloans/golly-plugins/kafka
+module github.com/golly-go/plugins/kafka
 
 go 1.19
 
 require (
+	github.com/golly-go/golly v0.4.0
 	github.com/segmentio/kafka-go v0.4.39
 	github.com/sirupsen/logrus v1.9.0
-	github.com/slimloans/golly v0.0.0-20220724225702-682a75f707e0
 	github.com/spf13/viper v1.15.0
 )
 

@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/slimloans/golly"
+	"github.com/golly-go/golly"
 )
 
 type WorkerFunc func(golly.Context, interface{}) error

@@ -7,9 +7,9 @@ import (
 	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
+	"github.com/golly-go/golly"
+	"github.com/golly-go/golly/errors"
 	"github.com/google/uuid"
-	"github.com/slimloans/golly"
-	"github.com/slimloans/golly/errors"
 )
 
 var (

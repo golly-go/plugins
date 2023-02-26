@@ -1,10 +1,9 @@
-module github.com/golly-plugins/redis
+module github.com/plugins/redis
 
 go 1.19
 
 require (
 	github.com/go-redis/redis/v8 v8.11.5
-	github.com/slimloans/golly v0.2.0
 )
 
 require (

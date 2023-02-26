@@ -1,6 +1,6 @@
 package eventsource
 
-import "github.com/slimloans/golly"
+import "github.com/golly-go/golly"
 
 type TestCommandEmpty struct {
 	Test bool `json:"test"`

@@ -3,7 +3,7 @@ package orm
 import (
 	"fmt"
 
-	"github.com/slimloans/golly/env"
+	"github.com/golly-go/golly/env"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )

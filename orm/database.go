@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/slimloans/golly"
-	"github.com/slimloans/golly/errors"
+	"github.com/golly-go/golly"
+	"github.com/golly-go/golly/errors"
 	"github.com/spf13/viper"
 	"gorm.io/gorm"
 )

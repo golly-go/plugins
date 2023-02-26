@@ -1,8 +1,8 @@
 package migrate
 
 import (
-	"github.com/slimloans/golly"
-	orm "github.com/slimloans/golly/plugins/orm"
+	"github.com/golly-go/golly"
+	orm "github.com/golly-go/golly/plugins/orm"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"gorm.io/gorm"

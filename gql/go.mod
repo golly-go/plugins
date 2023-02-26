@@ -1,14 +1,12 @@
-module github.com/golly-plugins/gql
+module github.com/golly-go/plugins/gql
 
 go 1.19
 
-require (
-	github.com/graphql-go/graphql v0.8.0
-	github.com/slimloans/golly v0.2.0
-)
+require github.com/graphql-go/graphql v0.8.0
 
 require (
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
+	github.com/golly-go/golly v0.3.1-0.20230226193719-d97275810f4c // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

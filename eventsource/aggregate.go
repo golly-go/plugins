@@ -1,7 +1,7 @@
 package eventsource
 
 import (
-	"github.com/slimloans/golly"
+	"github.com/golly-go/golly"
 )
 
 type Aggregate interface {

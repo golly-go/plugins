@@ -6,10 +6,10 @@ import (
 	"errors"
 	"time"
 
+	"github.com/golly-go/golly"
 	"github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/protocol"
 	"github.com/sirupsen/logrus"
-	"github.com/slimloans/golly"
 )
 
 var (

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/golly-go/golly"
+	"github.com/golly-go/golly/utils"
 	"github.com/segmentio/kafka-go"
-	"github.com/slimloans/golly"
-	"github.com/slimloans/golly/utils"
 )
 
 type ConsumerConfig struct {

@@ -1,10 +1,10 @@
-module github.com/slimloans/golly-plugins/eventsource
+module github.com/golly-go/plugins/eventsource
 
 go 1.19
 
 require (
 	github.com/google/uuid v1.3.0
-	github.com/slimloans/golly v0.0.0-20220403202907-c7bba7e08601
+	github.com/golly-go/golly v0.0.0-20220403202907-c7bba7e08601
 	github.com/stretchr/testify v1.7.0
 )
 

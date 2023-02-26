@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	redis "github.com/go-redis/redis/v8"
-	"github.com/slimloans/golly"
-	"github.com/slimloans/golly/errors"
+	"github.com/golly-go/golly"
+	"github.com/golly-go/golly/errors"
 )
 
 var (

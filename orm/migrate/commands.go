@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/slimloans/golly/errors"
+	"github.com/golly-go/golly/errors"
 	"github.com/spf13/viper"
 	"gorm.io/gorm"
 )

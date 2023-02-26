@@ -3,9 +3,9 @@ package eventsource
 import (
 	"time"
 
+	"github.com/golly-go/golly"
+	"github.com/golly-go/golly/utils"
 	"github.com/google/uuid"
-	"github.com/slimloans/golly"
-	"github.com/slimloans/golly/utils"
 )
 
 var (

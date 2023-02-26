@@ -5,7 +5,7 @@ import (
 	"reflect"
 
 	jwt "github.com/dgrijalva/jwt-go"
-	"github.com/slimloans/golly"
+	"github.com/golly-go/golly"
 )
 
 func JWTMiddleware(passportObject Identity) func(next golly.HandlerFunc) golly.HandlerFunc {

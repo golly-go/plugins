@@ -1,7 +1,7 @@
 package kafka
 
 import (
-	"github.com/slimloans/golly"
+	"github.com/golly-go/golly"
 	"github.com/spf13/viper"
 )
 
