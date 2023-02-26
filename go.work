@@ -2,3 +2,7 @@ go 1.19
 
 use ./kafka
 use ./eventsource
+use ./orm
+use ./redis
+use ./passport
+use ./gql
