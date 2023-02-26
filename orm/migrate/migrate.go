@@ -1,7 +1,10 @@
 package migrate
 
 import (
+	"fmt"
+
 	"github.com/golly-go/golly"
+	"github.com/golly-go/golly/errors"
 	orm "github.com/golly-go/plugins/orm"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -49,7 +52,13 @@ var Commands = []*cobra.Command{
 }
 
 func boot(args []string, fn func(*viper.Viper, *gorm.DB, []string) error) {
-	err := golly.Boot(func(a golly.Application) error { return fn(a.Config, orm.Connection(), args) })
+	err := golly.Boot(func(a golly.Application) error {
+		if orm.Connection() == nil {
+			return errors.WrapFatal(fmt.Errorf("orm: no connection established, did you add the initializers?"))
+		}
+		return fn(a.Config, orm.Connection(), args)
+	})
+
 	if err != nil {
 		panic(err)
 	}
