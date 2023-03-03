@@ -31,6 +31,13 @@ type Message struct {
 	Headers []protocol.Header
 }
 
+func (m Message) Bytes() []byte {
+	if b, ok := m.Data.([]byte); ok {
+		return b
+	}
+	return []byte{}
+}
+
 func Publish(topic, id string, data interface{}) {
 	publisher.write <- Message{Topic: topic, Key: id, Data: data}
 }

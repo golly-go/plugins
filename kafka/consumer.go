@@ -24,7 +24,7 @@ type ConsumerConfig struct {
 }
 
 type Consumer interface {
-	Topic() string
+	Topics() []string
 	Handler(golly.Context, Message) error
 	Config(golly.Context) ConsumerConfig
 
@@ -62,23 +62,26 @@ func (cb *ConsumerBase) Wait(ctx golly.Context) {
 
 func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 	cb.running = true
+	name := utils.GetTypeWithPackage(consumer)
 	config := consumer.Config(ctx)
 
-	cb.wp = NewPool(utils.GetTypeWithPackage(consumer), config.MinPool, config.MaxPool, config.JobsBuffer, wrap(consumer.Handler))
+	ctx.Logger().Debugf("consumer %s config %#v", name, consumer.Config(ctx))
+
+	cb.wp = NewPool(name, config.MinPool, config.MaxPool, config.JobsBuffer, wrap(consumer.Handler))
+
+	go cb.wp.Spawn(ctx)
 
 	reader := kafka.NewReader(kafka.ReaderConfig{
-		Topic:     consumer.Topic(),
-		Brokers:   config.Brokers,
-		Partition: config.Partition,
-		MinBytes:  config.MinRead,
-		MaxBytes:  config.MaxRead,
-		MaxWait:   50 * time.Millisecond,
-		GroupID:   config.GroupID,
+		GroupTopics: consumer.Topics(),
+		Brokers:     config.Brokers,
+		Partition:   config.Partition,
+		MinBytes:    config.MinRead,
+		MaxBytes:    config.MaxRead,
+		MaxWait:     10 * time.Millisecond,
+		GroupID:     config.GroupID,
 	})
 
 	goCtx := ctx.Context()
-
-	ctx.Logger().Infof("starting consumer %s (Topic: %s)", utils.GetTypeWithPackage(consumer), consumer.Topic())
 
 	for cb.running {
 		m, err := reader.FetchMessage(goCtx)
@@ -96,7 +99,7 @@ func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 			Headers: m.Headers,
 		}
 
-		if err := reader.CommitMessages(goCtx); err != nil {
+		if err := reader.CommitMessages(goCtx, m); err != nil {
 			ctx.Logger().Errorf("error when commiting messages: %v", err)
 			break
 		}
@@ -109,14 +112,15 @@ func (cb *ConsumerBase) Config(ctx golly.Context) ConsumerConfig {
 
 	return ConsumerConfig{
 		// Pool Config
-		MinPool:    config.GetInt("kafka.consumer.workers.max"),
+		MinPool:    config.GetInt("kafka.consumer.workers.min"),
 		MaxPool:    config.GetInt("kafka.consumer.workers.max"),
-		JobsBuffer: config.GetInt("kafka.consumers.workers.buffer"),
+		JobsBuffer: config.GetInt("kafka.consumer.workers.buffer"),
+
 		// Kafka Config
 		Brokers:   config.GetStringSlice("kafka.consumer.brokers"),
-		Partition: config.GetInt("kafka.consumer.partion"),
-		MinRead:   config.GetInt("kafka.consumer.bytes.min"), // 10e3, // 10KB
-		MaxRead:   config.GetInt("kafka.consumer.bytes.max"), // 10e6, // 10MB
+		Partition: config.GetInt("kafka.consumer.partition"),
+		MinRead:   10e3, // 10e3, // 10KB
+		MaxRead:   10e6, // 10MB
 
 		GroupID: config.GetString("kafka.consumer.group_id"),
 	}
