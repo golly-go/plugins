@@ -7,8 +7,19 @@ import (
 )
 
 var (
-	registry = map[reflect.Type]RegistryItem{}
+	registry RegistryT = RegistryT{}
 )
+
+type RegistryT map[reflect.Type]RegistryItem
+
+func (rt RegistryT) FindDefinition(aggregateType string) *RegistryItem {
+	for _, ro := range rt {
+		if ro.Aggregate.Type() == aggregateType {
+			return &ro
+		}
+	}
+	return nil
+}
 
 type RegistryOptions struct {
 	Aggregate Aggregate
@@ -54,6 +65,13 @@ func DefineAggregate(opts RegistryOptions) {
 		Name:            utils.GetTypeWithPackage(opts.Aggregate),
 		RegistryOptions: opts,
 	}
+}
+
+func Aggregates() (ret []Aggregate) {
+	for _, ri := range registry {
+		ret = append(ret, ri.Aggregate)
+	}
+	return
 }
 
 //  Register(RegistryOptions{

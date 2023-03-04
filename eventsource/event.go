@@ -1,9 +1,13 @@
 package eventsource
 
 import (
+	"encoding/json"
+	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/golly-go/golly"
+	"github.com/golly-go/golly/errors"
 	"github.com/golly-go/golly/utils"
 	"github.com/google/uuid"
 )
@@ -76,4 +80,39 @@ func NewEvent(evtData interface{}) Event {
 		Data:      evtData,
 		CreatedAt: time.Now(),
 	}
+}
+
+// Decode return a deserialized event, ready to user
+func UnmarshalEvent(data []byte) (*Event, error) {
+	event := Event{}
+
+	if err := json.Unmarshal(data, &event); err != nil {
+		return nil, errors.WrapUnprocessable(err)
+	}
+
+	definition := registry.FindDefinition(event.AggregateType)
+
+	if definition == nil {
+		return nil, errors.WrapNotFound(fmt.Errorf("aggregate not found"))
+	}
+
+	var evt interface{}
+	for _, e := range definition.Events {
+		if event.Event == utils.GetTypeWithPackage(e) {
+			evt = e
+			break
+		}
+	}
+
+	dataValue := reflect.New(reflect.TypeOf(evt))
+	marshal := dataValue.Elem().Addr()
+	b, _ := json.Marshal(event.Data)
+
+	if err := json.Unmarshal(b, marshal.Interface()); err != nil {
+		return nil, errors.WrapGeneric(fmt.Errorf("error when decoding %s %#v", event.Event, err))
+	}
+
+	event.Data = marshal
+
+	return &event, nil
 }

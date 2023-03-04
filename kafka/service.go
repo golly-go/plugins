@@ -28,7 +28,7 @@ func (cs *ConsumerService) Quit() {
 }
 
 func (cs *ConsumerService) Initialize(app golly.Application) error {
-	initConsumerDefaultConfig(app.Config)
+	InitConsumerDefaultConfig(app.Config)
 	return nil
 }
 
@@ -63,7 +63,7 @@ func ConsumerPreBoot() error {
 	return nil
 }
 
-func initConsumerDefaultConfig(config *viper.Viper) {
+func InitConsumerDefaultConfig(config *viper.Viper) {
 	config.SetDefault("kafka.consumer", map[string]interface{}{
 		"workers": map[string]interface{}{
 			"min": 1,
