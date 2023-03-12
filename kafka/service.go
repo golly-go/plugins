@@ -9,6 +9,8 @@ import (
 var consumers []Consumer
 
 type ConsumerService struct {
+	golly.ServiceBase
+
 	running bool
 	quit    chan struct{}
 }

@@ -23,16 +23,31 @@ func (rt RegistryT) FindDefinition(aggregateType string) *RegistryItem {
 }
 
 type RegistryOptions struct {
+	// Aggregate definition
 	Aggregate Aggregate
 
+	// Command regsitry is used for the DTO interface only
+	// if you do not want a command to be dynamically invokable, leave
+	// it off this definition
 	Commands []Command
-	Events   []interface{}
-	Topics   []string
+	// Events defines all potential events in the system, this is used for backwards mapping
+	// in the event of playback or any remarshling of events
+	Events []interface{}
+
+	// What topics/channels are you publishing events too on this aggregate
+	Topics []string
 }
 
 func (ro RegistryOptions) FindCommand(name string) Command {
 	for _, cmd := range ro.Commands {
-		if utils.GetTypeWithPackage(cmd) == name {
+		cName := utils.GetTypeWithPackage(cmd)
+		cNameShort := utils.GetType(cmd)
+
+		if strings.EqualFold(cNameShort, name) {
+			return cmd
+		}
+
+		if strings.EqualFold(cName, name) {
 			return cmd
 		}
 	}
@@ -40,16 +55,23 @@ func (ro RegistryOptions) FindCommand(name string) Command {
 }
 
 type RegistryItem struct {
-	Name string
+	Name      string
+	ShortName string
 
 	RegistryOptions
 }
 
 func FindRegistryByAggregateName(name string) *RegistryItem {
 	for _, reg := range registry {
+
+		if strings.EqualFold(reg.ShortName, name) {
+			return &reg
+		}
+
 		if strings.EqualFold(reg.Name, name) {
 			return &reg
 		}
+
 	}
 	return nil
 }
@@ -64,6 +86,7 @@ func FindRegistryItem(ag Aggregate) *RegistryItem {
 func DefineAggregate(opts RegistryOptions) {
 	registry[reflect.TypeOf(opts.Aggregate)] = RegistryItem{
 		Name:            utils.GetTypeWithPackage(opts.Aggregate),
+		ShortName:       utils.GetType(opts.Aggregate),
 		RegistryOptions: opts,
 	}
 }
