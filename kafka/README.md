@@ -1,22 +1,29 @@
-# Kafka Golly Plugin/Service
 
-WIP
+# Kafka
 
 ## Consumers
 
 ### Config
+
+
 Default Configuration:
 
 ```
 	config.SetDefault("kafka.consumer", map[string]interface{}{
-		"bytes": map[string]int{
-			"min": 10e3,
-			"max": 10e6,
+		"workers": map[string]interface{}{
+			"min": 1,
+			"max": 25,
+			// "buffer": 2_500,
+			"buffer": 50,
 		},
-		"group_id":  "1",
+		"bytes": map[string]int{
+			"min": 10_000, // 10e3,
+			"max": 10_000_000,
+		},
 		"partition": 0,
 		"wait":      "50ms",
 		"brokers":   []string{"localhost:9092"},
+		"group_id":  "default-group",
 	})
 ```
 
