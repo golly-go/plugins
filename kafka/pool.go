@@ -55,6 +55,12 @@ func NewWorker(id string, logger *logrus.Entry) *Worker {
 func (w *Worker) Run(ctx golly.Context, jobs chan interface{}, handler WorkerFunc) {
 	w.logger.Infof("starting worker process")
 
+	defer func() {
+		if r := recover(); r != nil {
+			ctx.Logger().Errorln("recovered from panic:", r)
+		}
+	}()
+
 	var running = true
 	for running {
 		select {

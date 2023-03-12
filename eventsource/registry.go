@@ -2,6 +2,7 @@ package eventsource
 
 import (
 	"reflect"
+	"strings"
 
 	"github.com/golly-go/golly/utils"
 )
@@ -46,7 +47,7 @@ type RegistryItem struct {
 
 func FindRegistryByAggregateName(name string) *RegistryItem {
 	for _, reg := range registry {
-		if reg.Name == name {
+		if strings.EqualFold(reg.Name, name) {
 			return &reg
 		}
 	}

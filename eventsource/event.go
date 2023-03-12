@@ -96,15 +96,15 @@ func UnmarshalEvent(data []byte) (*Event, error) {
 		return nil, errors.WrapNotFound(fmt.Errorf("aggregate not found"))
 	}
 
-	var evt interface{}
+	var evt reflect.Type
 	for _, e := range definition.Events {
 		if event.Event == utils.GetTypeWithPackage(e) {
-			evt = e
+			evt = reflect.TypeOf(e)
 			break
 		}
 	}
 
-	dataValue := reflect.New(reflect.TypeOf(evt))
+	dataValue := reflect.New(evt)
 	marshal := dataValue.Elem().Addr()
 	b, _ := json.Marshal(event.Data)
 
@@ -112,7 +112,7 @@ func UnmarshalEvent(data []byte) (*Event, error) {
 		return nil, errors.WrapGeneric(fmt.Errorf("error when decoding %s %#v", event.Event, err))
 	}
 
-	event.Data = marshal
+	event.Data = marshal.Elem().Interface()
 
 	return &event, nil
 }
