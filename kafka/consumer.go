@@ -6,6 +6,7 @@ import (
 
 	"github.com/golly-go/golly"
 	"github.com/golly-go/golly/utils"
+	"github.com/golly-go/plugins/workers"
 	"github.com/segmentio/kafka-go"
 )
 
@@ -36,10 +37,10 @@ type Consumer interface {
 type ConsumerBase struct {
 	running bool
 
-	wp *WorkerPool
+	wp *workers.WorkerPool
 }
 
-func wrap(h func(golly.Context, Message) error) WorkerFunc {
+func wrap(h func(golly.Context, Message) error) workers.WorkerFunc {
 	return func(ctx golly.Context, data interface{}) error {
 		if m, ok := data.(Message); ok {
 			return h(ctx, m)
@@ -67,7 +68,7 @@ func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 
 	ctx.Logger().Debugf("consumer %s config %#v", name, consumer.Config(ctx))
 
-	cb.wp = NewPool(name, config.MinPool, config.MaxPool, config.JobsBuffer, wrap(consumer.Handler))
+	cb.wp = workers.NewPool(name, config.MinPool, config.MaxPool, config.JobsBuffer, wrap(consumer.Handler))
 
 	go cb.wp.Spawn(ctx)
 

@@ -6,3 +6,4 @@ use ./orm
 use ./redis
 use ./passport
 use ./gql
+use ./workers
