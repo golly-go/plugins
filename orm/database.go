@@ -67,8 +67,8 @@ func Connection() *gorm.DB {
 // Not sure i want to go back to having a global database
 // but for now lets do this
 func DB(c golly.Context) *gorm.DB {
-	if db, found := c.Get(contextKey); found {
-		return db.(*gorm.DB)
+	if db := GetDBFromContext(c); db != nil {
+		return db
 	}
 	return Connection()
 }
@@ -91,8 +91,15 @@ func middleware(next golly.HandlerFunc) golly.HandlerFunc {
 	}
 }
 
-func SetDBOnContext(c golly.Context, db *gorm.DB) {
-	c.Set(contextKey, db.Session(&gorm.Session{NewDB: true}))
+func SetDBOnContext(c golly.Context, db *gorm.DB) golly.Context {
+	return c.Set(contextKey, db.Session(&gorm.Session{NewDB: true}))
+}
+
+func GetDBFromContext(c golly.Context) *gorm.DB {
+	if db, ok := c.Get(contextKey); ok {
+		return db.(*gorm.DB)
+	}
+	return nil
 }
 
 func CreateTestContext(c golly.Context, modelsToMigration ...interface{}) golly.Context {

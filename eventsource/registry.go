@@ -72,6 +72,10 @@ func FindRegistryByAggregateName(name string) *RegistryItem {
 			return &reg
 		}
 
+		if strings.EqualFold(reg.RegistryOptions.Aggregate.Type(), name) {
+			return &reg
+		}
+
 	}
 	return nil
 }

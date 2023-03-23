@@ -44,13 +44,13 @@ func (m1 Metadata) Merge(m2 Metadata) {
 
 type Event struct {
 	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"event_at"`
+	CreatedAt time.Time `json:"eventAt"`
 
 	Event   string `json:"event"`
 	Version uint   `json:"version"`
 
-	AggregateID   string `json:"arggregate_id"`
-	AggregateType string `json:"aggregate_type"`
+	AggregateID   string `json:"aggregateID"`
+	AggregateType string `json:"aggregateType"`
 
 	Data     interface{} `json:"data" gorm:"-"`
 	Metadata Metadata    `json:"metadata" gorm:"-"`

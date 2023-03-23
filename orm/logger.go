@@ -4,14 +4,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golly-go/golly"
-	"github.com/golly-go/golly/utils"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
+
+var gollySourceDir string
+
+func init() {
+	_, file, _, _ := runtime.Caller(0)
+
+	gollySourceDir = regexp.MustCompile(`utils.source\.go`).ReplaceAllString(file, "")
+}
 
 type Logger struct {
 	logger *logrus.Entry
@@ -24,7 +35,7 @@ func newLogger(driver string) *Logger {
 }
 
 func (l Logger) WithSourceFields() *logrus.Entry {
-	return l.logger.WithField("caller", utils.FileWithLineNum())
+	return l.logger.WithField("caller", FileWithLineNum())
 }
 
 // LogMode log mode
@@ -71,4 +82,24 @@ func (l Logger) Trace(ctx context.Context, begin time.Time, fc func() (string, i
 	default:
 		logger.Debug(sql)
 	}
+}
+
+// FileWithLineNum return the file name and line number of the current file
+func FileWithLineNum() string {
+	// the second caller usually from gorm internal, so set i start from 2
+	for i := 2; i < 15; i++ {
+		_, file, line, ok := runtime.Caller(i)
+
+		if ok {
+			notLibrary :=
+				!strings.Contains(file, "golly-go") &&
+					!strings.Contains(file, "gorm") &&
+					!strings.HasSuffix(file, "_test.go")
+
+			if notLibrary {
+				return file + ":" + strconv.FormatInt(int64(line), 10)
+			}
+		}
+	}
+	return ""
 }

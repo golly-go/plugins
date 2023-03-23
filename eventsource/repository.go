@@ -2,12 +2,14 @@ package eventsource
 
 import (
 	"github.com/golly-go/golly"
+	"gorm.io/gorm"
 )
 
 // Repository is a very light wrapper around a datastore
 // not all incomposing but read models should be implemented outside of this
 type Repository interface {
 	Load(ctx golly.Context, object interface{}) error
+	LoadScope(db *gorm.DB, object interface{}) error
 	Save(ctx golly.Context, object interface{}) error
 
 	Transaction(func(Repository) error) error
