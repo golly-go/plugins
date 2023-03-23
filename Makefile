@@ -4,4 +4,4 @@ deps:
 	@for f in $(DIRS); do pushd $$f && go get -u ./... && popd; done;
 
 update-golly:
-	@for f in $(DIRS); do pushd $$f && GOPROXY=direct go get -u github.com/golly-go/golly && popd; done;
+	@for f in $(DIRS); do pushd $$f && GOPROXY=direct go get -v -u github.com/golly-go/golly && popd; done;
