@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"time"
@@ -9,7 +10,9 @@ import (
 	"github.com/golly-go/golly"
 	"github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/protocol"
+	"github.com/segmentio/kafka-go/sasl/plain"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 var (
@@ -71,6 +74,7 @@ func (k KafkaPublisher) Publisher() {
 				continue
 			}
 
+			time.Sleep(time.Millisecond * 500)
 			k.logger.Errorf("unable to write kafka message: %v (retries %d)", err, retries)
 		}
 	}
@@ -82,15 +86,36 @@ func NewPublisher(app golly.Application) *KafkaPublisher {
 	var l = golly.NewLogger()
 	l.Logger.SetLevel(logrus.WarnLevel)
 
+	var transport *kafka.Transport
+
+	user, password := usernameAndPassword(app.Config)
+
+	if user != "" {
+		transport = &kafka.Transport{
+			DialTimeout: 20 * time.Second,
+			TLS:         &tls.Config{MinVersion: tls.VersionTLS12},
+			SASL: plain.Mechanism{
+				Username: user,
+				Password: password,
+			},
+		}
+	}
+
+	addr := app.Config.GetStringSlice("kafka.address")
+	if len(addr) < 1 {
+		addr = app.Config.GetStringSlice("kafka.consumer.brokers")
+	}
+
 	k := &KafkaPublisher{
 		ctx:    app.GoContext(),
 		write:  make(chan Message, 100),
 		logger: l,
 		w: &kafka.Writer{
-			Addr:                   kafka.TCP(app.Config.GetString("KAFKA_ADDRESS")),
-			Balancer:               &kafka.LeastBytes{},
+			Addr:                   kafka.TCP(addr...),
+			Balancer:               &kafka.CRC32Balancer{},
 			Logger:                 l,
 			AllowAutoTopicCreation: true,
+			Transport:              transport,
 		},
 	}
 
@@ -108,4 +133,18 @@ func InitializerPublisher(app golly.Application) error {
 	go publisher.Publisher()
 
 	return nil
+}
+
+func usernameAndPassword(config *viper.Viper) (string, string) {
+	user := config.GetString("kafka.consumer.username")
+	if user == "" {
+		user = config.GetString("kafka.username")
+	}
+
+	password := config.GetString("kafka.consumer.password")
+	if password == "" {
+		password = config.GetString("kafka.password")
+	}
+
+	return user, password
 }

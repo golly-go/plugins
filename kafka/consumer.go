@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"crypto/tls"
 	"fmt"
 	"time"
 
@@ -8,6 +9,8 @@ import (
 	"github.com/golly-go/golly/utils"
 	"github.com/golly-go/plugins/workers"
 	"github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go/sasl/plain"
+	"github.com/sirupsen/logrus"
 )
 
 type ConsumerConfig struct {
@@ -22,6 +25,9 @@ type ConsumerConfig struct {
 	MaxRead int
 
 	GroupID string
+
+	Username string
+	Password string
 }
 
 type Consumer interface {
@@ -61,6 +67,14 @@ func (cb *ConsumerBase) Wait(ctx golly.Context) {
 	ctx.Logger().Debugf("consumer %s stopped", cb.wp.Name)
 }
 
+type logger struct {
+	l *logrus.Entry
+}
+
+func (l logger) Printf(format string, args ...interface{}) {
+	l.l.Errorf(format, args...)
+}
+
 func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 	cb.running = true
 	name := utils.GetTypeWithPackage(consumer)
@@ -72,17 +86,33 @@ func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 
 	go cb.wp.Spawn(ctx)
 
+	var dialer *kafka.Dialer = &kafka.Dialer{
+		Timeout:   10 * time.Second,
+		DualStack: true,
+	}
+
+	if config.Username != "" {
+		dialer.TLS = &tls.Config{MinVersion: tls.VersionTLS12}
+		dialer.SASLMechanism = plain.Mechanism{
+			Username: config.Username,
+			Password: config.Password,
+		}
+	}
+
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		GroupTopics: consumer.Topics(),
 		Brokers:     config.Brokers,
 		Partition:   config.Partition,
 		MinBytes:    config.MinRead,
 		MaxBytes:    config.MaxRead,
-		MaxWait:     10 * time.Millisecond,
+		MaxWait:     50 * time.Millisecond,
 		GroupID:     config.GroupID,
+		Dialer:      dialer,
+		ErrorLogger: logger{ctx.Logger()},
 	})
 
 	goCtx := ctx.Context()
+	defer reader.Close()
 
 	for cb.running {
 		m, err := reader.FetchMessage(goCtx)
@@ -105,22 +135,35 @@ func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 			break
 		}
 	}
+
 }
 
 // Sensible defaults
 func (cb *ConsumerBase) Config(ctx golly.Context) ConsumerConfig {
 	config := ctx.Config()
 
+	user := config.GetString("kafka.consumer.username")
+	if user == "" {
+		user = config.GetString("kafka.username")
+	}
+
+	password := config.GetString("kafka.consumer.password")
+	if password == "" {
+		password = config.GetString("kafka.password")
+	}
+
 	return ConsumerConfig{
 		// Pool Config
 		MinPool:    config.GetInt("kafka.consumer.workers.min"),
 		MaxPool:    config.GetInt("kafka.consumer.workers.max"),
 		JobsBuffer: config.GetInt("kafka.consumer.workers.buffer"),
+		Username:   user,
+		Password:   password,
 
 		// Kafka Config
 		Brokers:   config.GetStringSlice("kafka.consumer.brokers"),
 		Partition: config.GetInt("kafka.consumer.partition"),
-		MinRead:   10e3, // 10e3, // 10KB
+		MinRead:   10e2, // 10e3, // 1KB
 		MaxRead:   10e6, // 10MB
 
 		GroupID: config.GetString("kafka.consumer.group_id"),
