@@ -10,7 +10,7 @@ require (
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
-	github.com/golly-go/golly v0.4.1-0.20230312214105-11f2f6c96b4c // indirect
+	github.com/golly-go/golly v0.4.1-0.20230325070539-e34853311bc1 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect

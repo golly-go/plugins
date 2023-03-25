@@ -112,6 +112,8 @@ github.com/golly-go/golly v0.4.1-0.20230312212600-571a4a134ef8 h1:du5n0e6MW4auPR
 github.com/golly-go/golly v0.4.1-0.20230312212600-571a4a134ef8/go.mod h1:TVoR2MhIrmSTa+QUsBfNO/pWRjp58pMxSHX0WOYtNnw=
 github.com/golly-go/golly v0.4.1-0.20230312214105-11f2f6c96b4c h1:qQ7ZdZh/E10i+bDDij1qeTw2PS9T1UifhnFcVsiV9Ag=
 github.com/golly-go/golly v0.4.1-0.20230312214105-11f2f6c96b4c/go.mod h1:TVoR2MhIrmSTa+QUsBfNO/pWRjp58pMxSHX0WOYtNnw=
+github.com/golly-go/golly v0.4.1-0.20230325070539-e34853311bc1 h1:0uyGalhN0h34qo03049HbaAPnU1q8lBNEXS030rDeqQ=
+github.com/golly-go/golly v0.4.1-0.20230325070539-e34853311bc1/go.mod h1:TVoR2MhIrmSTa+QUsBfNO/pWRjp58pMxSHX0WOYtNnw=
 github.com/golly-go/plugins/orm v0.0.0-20230226194559-d838cab04356 h1:MjkfndGL/HD60C8F5Ax13cuqGp6fSgMpenrgfYDpG2Q=
 github.com/golly-go/plugins/orm v0.0.0-20230226194559-d838cab04356/go.mod h1:3Mcl7q12IO3VUBW4FWYTC1LiDKnocCQjgn7ZXjH6bmk=
 github.com/google/btree v0.0.0-20180813153112-4030bb1f1f0c/go.mod h1:lNA+9X1NB3Zf8V7Ke586lFgjr2dZNuvo3lPJSGZ5JPQ=

@@ -3,14 +3,14 @@ module github.com/golly-go/plugins/orm
 go 1.19
 
 require (
-	github.com/golly-go/golly v0.4.1-0.20230312214105-11f2f6c96b4c
+	github.com/golly-go/golly v0.4.1-0.20230325070539-e34853311bc1
 	github.com/google/uuid v1.3.0
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/cobra v1.6.1
 	github.com/spf13/viper v1.15.0
 	gorm.io/driver/postgres v1.5.0
 	gorm.io/driver/sqlite v1.4.4
-	gorm.io/gorm v1.24.7-0.20230306060331-85eaf9eeda11
+	gorm.io/gorm v1.24.7-0.20230324020705-b444011d094d
 )
 
 require (

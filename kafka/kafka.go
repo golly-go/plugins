@@ -75,6 +75,7 @@ func (k KafkaPublisher) Publisher() {
 			}
 
 			time.Sleep(time.Millisecond * 500)
+
 			k.logger.Errorf("unable to write kafka message: %v (retries %d)", err, retries)
 		}
 	}
