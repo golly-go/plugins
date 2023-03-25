@@ -75,7 +75,6 @@ func (k KafkaPublisher) Publisher() {
 			}
 
 			time.Sleep(time.Millisecond * 500)
-
 			k.logger.Errorf("unable to write kafka message: %v (retries %d)", err, retries)
 		}
 	}
@@ -85,7 +84,11 @@ func (k KafkaPublisher) close() { close(k.write) }
 
 func NewPublisher(app golly.Application) *KafkaPublisher {
 	var l = golly.NewLogger()
-	l.Logger.SetLevel(logrus.WarnLevel)
+	if level := golly.LogLevel(); level == logrus.InfoLevel {
+		l.Logger.SetLevel(logrus.WarnLevel)
+	}
+
+	l = l.WithField("source", "publisher")
 
 	var transport *kafka.Transport
 
@@ -117,7 +120,7 @@ func NewPublisher(app golly.Application) *KafkaPublisher {
 			Logger:                 l,
 			AllowAutoTopicCreation: true,
 			Transport:              transport,
-			ErrorLogger:            l.Logger,
+			ErrorLogger:            logger{l},
 		},
 	}
 
@@ -133,7 +136,6 @@ func InitializerPublisher(app golly.Application) error {
 	})
 
 	go publisher.Publisher()
-
 	return nil
 }
 
