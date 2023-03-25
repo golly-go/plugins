@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
-	github.com/golly-go/golly v0.4.1-0.20230325070539-e34853311bc1
+	github.com/golly-go/golly v0.4.1-0.20230325185904-08f3831f6728
 	github.com/google/uuid v1.3.0
 )
 

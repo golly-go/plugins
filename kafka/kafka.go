@@ -117,6 +117,7 @@ func NewPublisher(app golly.Application) *KafkaPublisher {
 			Logger:                 l,
 			AllowAutoTopicCreation: true,
 			Transport:              transport,
+			ErrorLogger:            l.Logger,
 		},
 	}
 
@@ -146,6 +147,5 @@ func usernameAndPassword(config *viper.Viper) (string, string) {
 	if password == "" {
 		password = config.GetString("kafka.password")
 	}
-
 	return user, password
 }
