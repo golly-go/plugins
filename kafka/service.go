@@ -3,7 +3,6 @@ package kafka
 import (
 	"github.com/golly-go/golly"
 	"github.com/golly-go/golly/utils"
-	"github.com/spf13/viper"
 )
 
 var consumers []Consumer
@@ -30,7 +29,7 @@ func (cs *ConsumerService) Quit() {
 }
 
 func (cs *ConsumerService) Initialize(app golly.Application) error {
-	InitConsumerDefaultConfig(app.Config)
+	InitDefaultConfig(app.Config)
 	return nil
 }
 
@@ -63,25 +62,6 @@ func (cs *ConsumerService) Run(ctx golly.Context) error {
 func ConsumerPreBoot() error {
 	golly.RegisterServices(NewConsumerService())
 	return nil
-}
-
-func InitConsumerDefaultConfig(config *viper.Viper) {
-	config.SetDefault("kafka.consumer", map[string]interface{}{
-		"workers": map[string]interface{}{
-			"min": 1,
-			"max": 25,
-			// "buffer": 2_500,
-			"buffer": 50,
-		},
-		"bytes": map[string]int{
-			"min": 10_000, // 10e3,
-			"max": 10_000_000,
-		},
-		"partition": 0,
-		"wait":      "50ms",
-		"brokers":   []string{"localhost:9092"},
-		"group_id":  "default-group",
-	})
 }
 
 // DefineConsumers - defines the consumers in the system,

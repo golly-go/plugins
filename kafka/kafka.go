@@ -1,17 +1,11 @@
 package kafka
 
 import (
-	"context"
-	"crypto/tls"
-	"encoding/json"
-	"errors"
 	"time"
 
 	"github.com/golly-go/golly"
-	"github.com/segmentio/kafka-go"
-	"github.com/segmentio/kafka-go/protocol"
-	"github.com/segmentio/kafka-go/sasl/plain"
 	"github.com/sirupsen/logrus"
+
 	"github.com/spf13/viper"
 )
 
@@ -19,127 +13,84 @@ var (
 	publisher *KafkaPublisher
 )
 
-type KafkaPublisher struct {
-	ctx    context.Context
-	w      *kafka.Writer
-	write  chan Message
-	logger *logrus.Entry
+type Timeout struct {
+	Connection time.Duration
 }
 
-type Message struct {
-	Topic   string
-	Key     string
-	Data    interface{}
-	Time    time.Time
-	Headers []protocol.Header
+type Config struct {
+	MinPool    int
+	MaxPool    int
+	JobsBuffer int
+
+	Brokers []string
+
+	Partition int
+
+	MinRead int
+	MaxRead int
+
+	GroupID string
+
+	Username string
+	Password string
+
+	Version string
+
+	BalanceStrategy string
+
+	SASLAlgorythm string
+
+	Retries int
+
+	Timeouts Timeout
 }
 
-func (m Message) Bytes() []byte {
-	if b, ok := m.Data.([]byte); ok {
-		return b
-	}
-	return []byte{}
+type errorLogger struct {
+	l *logrus.Entry
 }
 
-func Publish(topic, id string, data interface{}) {
-	publisher.write <- Message{Topic: topic, Key: id, Data: data}
+func (l errorLogger) Printf(format string, args ...interface{}) {
+	l.l.Errorf(format, args...)
 }
 
-func Publisher() *KafkaPublisher { return publisher }
-
-func (k KafkaPublisher) Publisher() {
-	k.logger.Debug("starting publisher thread")
-
-	for message := range k.write {
-		k.logger.Debugf("[Message]: %#v", message)
-
-		b, _ := json.Marshal(message.Data)
-		key := []byte(message.Key)
-
-		for retries := 0; retries < 3; retries++ {
-
-			err := k.w.WriteMessages(k.ctx, kafka.Message{
-				Topic: message.Topic,
-				Key:   key,
-				Value: b,
-			})
-
-			if err == nil {
-				k.logger.Debugf("published message to %s (%s)", message.Topic, key)
-				break
-			}
-
-			if errors.Is(err, kafka.LeaderNotAvailable) || errors.Is(err, context.DeadlineExceeded) {
-				time.Sleep(time.Millisecond * 100)
-				continue
-			}
-
-			time.Sleep(time.Millisecond * 500)
-			k.logger.Errorf("unable to write kafka message: %v (retries %d)", err, retries)
-		}
-	}
-}
-
-func (k KafkaPublisher) close() { close(k.write) }
-
-func NewPublisher(app golly.Application) *KafkaPublisher {
-	var l = golly.NewLogger()
-	if level := golly.LogLevel(); level == logrus.InfoLevel {
-		l.Logger.SetLevel(logrus.WarnLevel)
-	}
-
-	l = l.WithField("source", "publisher")
-
-	var transport *kafka.Transport
-
-	user, password := usernameAndPassword(app.Config)
-
-	if user != "" {
-		transport = &kafka.Transport{
-			DialTimeout: 20 * time.Second,
-			TLS:         &tls.Config{MinVersion: tls.VersionTLS12},
-			SASL: plain.Mechanism{
-				Username: user,
-				Password: password,
-			},
-		}
-	}
-
-	addr := app.Config.GetStringSlice("kafka.address")
-	if len(addr) < 1 {
-		addr = app.Config.GetStringSlice("kafka.consumer.brokers")
-	}
-
-	k := &KafkaPublisher{
-		ctx:    app.GoContext(),
-		write:  make(chan Message, 100),
-		logger: l,
-		w: &kafka.Writer{
-			Addr:                   kafka.TCP(addr...),
-			Balancer:               &kafka.CRC32Balancer{},
-			Logger:                 l,
-			AllowAutoTopicCreation: true,
-			Transport:              transport,
-			ErrorLogger:            logger{l},
+func InitDefaultConfig(config *viper.Viper) {
+	config.SetDefault("kafka", map[string]interface{}{
+		"username": "",
+		"password": "",
+		"brokers":  []string{"localhost:9092"},
+		"retries":  1,
+		"timeouts": map[string]interface{}{
+			"connection": 10,
 		},
+		"consumer": map[string]interface{}{
+			"workers": map[string]interface{}{
+				"min":    1,
+				"max":    25,
+				"buffer": 50,
+			},
+			"bytes": map[string]int{
+				"min": 10_000, // 10e3,
+				"max": 10_000_000,
+			},
+			"partition":        0,
+			"wait":             "50ms",
+			"group_id":         "default-group",
+			"balance_strategy": "",
+		}})
+}
+
+func NewConfig(config *viper.Viper) Config {
+
+	brokers := config.GetStringSlice("kafka.address")
+
+	if len(brokers) < 1 {
+		brokers = config.GetStringSlice("kafka.consumer.brokers")
 	}
 
-	return k
-}
+	if len(brokers) < 1 {
+		brokers = config.GetStringSlice("kafka.brokers")
+	}
 
-func InitializerPublisher(app golly.Application) error {
-	publisher = NewPublisher(app)
-
-	golly.Events().Add(golly.EventAppShutdown, func(golly.Context, golly.Event) error {
-		publisher.close()
-		return nil
-	})
-
-	go publisher.Publisher()
-	return nil
-}
-
-func usernameAndPassword(config *viper.Viper) (string, string) {
 	user := config.GetString("kafka.consumer.username")
 	if user == "" {
 		user = config.GetString("kafka.username")
@@ -149,5 +100,42 @@ func usernameAndPassword(config *viper.Viper) (string, string) {
 	if password == "" {
 		password = config.GetString("kafka.password")
 	}
-	return user, password
+
+	c := Config{
+		// Pool Config
+		MinPool:    config.GetInt("kafka.consumer.workers.min"),
+		MaxPool:    config.GetInt("kafka.consumer.workers.max"),
+		JobsBuffer: config.GetInt("kafka.consumer.workers.buffer"),
+		Retries:    config.GetInt("kafka.retries"),
+		Username:   user,
+		Password:   password,
+
+		// Kafka Config
+		Brokers:   brokers,
+		Partition: config.GetInt("kafka.consumer.partition"),
+		MinRead:   10e2, // 10e3, // 1KB
+		MaxRead:   10e6, // 10MB
+
+		GroupID: config.GetString("kafka.consumer.group_id"),
+
+		Version: config.GetString("kafka.version"),
+
+		Timeouts: Timeout{
+			Connection: time.Duration(config.GetInt("kafka.timeouts.connection")) * time.Second,
+		},
+
+		BalanceStrategy: config.GetString("kafka.consumer.balance_strategy"),
+	}
+
+	return c
+}
+
+func newKafkaLogger(baseLogger *logrus.Entry, source string) *logrus.Entry {
+	l := golly.NewLogger().WithFields(baseLogger.Data)
+
+	if level := golly.LogLevel(); level == logrus.InfoLevel {
+		l.Logger.SetLevel(logrus.WarnLevel)
+	}
+
+	return l.WithField("source", source)
 }
