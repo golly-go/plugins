@@ -52,14 +52,6 @@ func (k *KafkaPublisher) release(writer *kafka.Writer) {
 	k.lock.Lock()
 	defer k.lock.Unlock()
 
-	// If released producer is erroneous close it and don't return it to the producer pool.
-
-	// if producer.TxnStatus()&sarama.ProducerTxnFlagInError != 0 {
-	// 	// Try to close it
-	// 	_ = producer.Close()
-	// 	return
-	// }
-
 	k.writers = append(k.writers, writer)
 }
 

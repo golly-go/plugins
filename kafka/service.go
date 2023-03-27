@@ -35,13 +35,18 @@ func (cs *ConsumerService) Initialize(app golly.Application) error {
 
 func (cs *ConsumerService) Run(ctx golly.Context) error {
 	for _, consumer := range consumers {
-		ctx.Logger().Infof("Starting consumer: %s [%s]", utils.GetTypeWithPackage(consumer), consumer.Topics())
+		go func(ctx golly.Context, consumer Consumer) {
+			ctx.Logger().Infof("Starting consumer: %s [%s]", utils.GetTypeWithPackage(consumer), consumer.Topics())
 
-		go consumer.Run(ctx, consumer)
+			consumer.Init(ctx, consumer)
+			consumer.Run(ctx, consumer)
+		}(ctx, consumer)
 	}
 
 	ctx.Logger().Debugf("started consumers - waiting for quit")
+
 	<-cs.quit
+
 	cs.running = false
 
 	ctx.Logger().Debugf("stopping consumers")

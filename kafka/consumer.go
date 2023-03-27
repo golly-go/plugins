@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/golly-go/golly"
-	"github.com/golly-go/golly/utils"
 	"github.com/golly-go/plugins/workers"
 	"github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/sasl/plain"
@@ -16,20 +15,31 @@ import (
 )
 
 type Consumer interface {
+	Name() string
+
 	Topics() []string
+
 	Handler(golly.Context, Message) error
 	Config(golly.Context) Config
+	Init(golly.Context, Consumer) error
 
 	Run(golly.Context, Consumer)
 	Stop(golly.Context)
 	Wait(golly.Context)
+
 	Logger() *logrus.Entry
 	SetLogger(logger *logrus.Entry)
+
+	Reader(golly.Context, Consumer) *kafka.Reader
+
+	Running() bool
+
+	Pool() workers.Pool
 }
 
 type ConsumerBase struct {
 	running bool
-	wp      *workers.WorkerPool
+	wp      workers.Pool
 	logger  *logrus.Entry
 
 	done chan struct{}
@@ -37,29 +47,41 @@ type ConsumerBase struct {
 
 func (cb *ConsumerBase) SetLogger(logger *logrus.Entry) { cb.logger = logger }
 func (cb *ConsumerBase) Logger() *logrus.Entry          { return cb.logger }
+func (cb *ConsumerBase) Running() bool                  { return cb.running }
+func (cb *ConsumerBase) Pool() workers.Pool             { return cb.wp }
 
 // Sensible defaults
 func (cb *ConsumerBase) Config(ctx golly.Context) Config { return NewConfig(ctx.Config()) }
 
-func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
+func (cb *ConsumerBase) Init(ctx golly.Context, consumer Consumer) error {
+	name := consumer.Name()
 	cb.running = true
-	name := utils.GetTypeWithPackage(consumer)
+
 	config := consumer.Config(ctx)
 
-	cb.wp = workers.NewPool(name, config.MinPool, config.MaxPool, config.JobsBuffer, wrap(consumer.Handler))
-
-	logger := newKafkaLogger(ctx.Logger(), "consumers").
-		WithField("name", cb.wp.Name)
+	logger := newKafkaLogger(ctx.Logger(), "consumers").WithField("name", name)
 
 	consumer.SetLogger(logger)
 
-	logger.Debugf("consumer %s topics: %#v", name, consumer.Topics())
+	cb.wp = workers.NewGernicPool(consumer.Name(),
+		int32(config.MinPool),
+		int32(config.MaxPool),
+		wrap(consumer.Handler),
+	)
+
+	return nil
+}
+
+func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
+	logger := consumer.Logger()
+
+	logger.Debugf("consumer %s topics: %#v", consumer.Name(), consumer.Topics())
 
 	cb.done = make(chan struct{})
 
 	go cb.wp.Spawn(ctx)
 
-	reader := newReader(ctx, consumer)
+	reader := consumer.Reader(ctx, consumer)
 
 	reattempts := 0
 
@@ -94,21 +116,21 @@ func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 
 		reattempts = 0
 
-		cb.wp.C <- Message{
+		consumer.Pool().EnQueueAsync(ctx, Message{
 			Topic:   m.Topic,
 			Data:    m.Value,
 			Key:     string(m.Key),
 			Time:    m.Time,
 			Headers: m.Headers,
-		}
-
+		})
 	}
 
+	cb.running = false
 	reader.Close()
 	close(cb.done)
 }
 
-func newReader(ctx golly.Context, consumer Consumer) *kafka.Reader {
+func (cb *ConsumerBase) Reader(ctx golly.Context, consumer Consumer) *kafka.Reader {
 	config := consumer.Config(ctx)
 
 	var dialer *kafka.Dialer = &kafka.Dialer{
@@ -136,14 +158,14 @@ func newReader(ctx golly.Context, consumer Consumer) *kafka.Reader {
 			GroupID:        config.GroupID,
 			Dialer:         dialer,
 			GroupBalancers: []kafka.GroupBalancer{kafka.RoundRobinGroupBalancer{}},
-			// ErrorLogger:    errorLogger{consumer.Logger()},
+			ErrorLogger:    errorLogger{consumer.Logger()},
 		},
 	)
 }
 
 func (cb *ConsumerBase) Stop(ctx golly.Context) {
 	defer func(t time.Time) {
-		cb.logger.Infof("stopped %s consumer in %#v\n", cb.wp.Name, time.Since(t).String())
+		cb.logger.Infof("stopped %s consumer in %#v\n", cb.wp.Name(), time.Since(t).String())
 	}(time.Now())
 
 	cb.running = false
@@ -154,7 +176,7 @@ func (cb *ConsumerBase) Stop(ctx golly.Context) {
 
 func (cb *ConsumerBase) Wait(ctx golly.Context) {
 	cb.wp.Wait()
-	ctx.Logger().Debugf("consumer %s stopped", cb.wp.Name)
+	ctx.Logger().Debugf("consumer %s stopped", cb.wp.Name())
 }
 
 func wrap(h func(golly.Context, Message) error) workers.WorkerFunc {

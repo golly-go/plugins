@@ -10,172 +10,182 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type Pool interface {
+	Name() string
+	Run(golly.Context)
+	Stop()
+	Wait()
+	Spawn(golly.Context) Worker
+	Handler() WorkerFunc
+
+	NewWorker(golly.Context, string) Worker
+
+	EnQueue(golly.Context, interface{}) error
+	EnQueueAsync(golly.Context, interface{})
+}
+
 type WorkerFunc func(golly.Context, interface{}) error
 
-type WorkerPool struct {
-	Name string
-	C    chan interface{}
-	quit chan struct{}
+type GenericPool struct{ PoolBase }
 
-	running bool
+type PoolBase struct {
+	ctx golly.Context
+
+	workers []Worker
+	lock    sync.RWMutex
 
 	handler WorkerFunc
 
+	name    string
+	quit    chan struct{}
+	running bool
+
 	wg sync.WaitGroup
 
-	minW   int
-	maxW   int
-	buffer int
+	minW int32
+	maxW int32
 
 	logger *logrus.Entry
 
-	workercnt atomic.Int32
+	activeWorkers atomic.Int32
 }
 
-type Worker struct {
-	id        string
-	quit      chan struct{}
-	startedAt time.Time
-	lastJobAt time.Time
-	logger    *logrus.Entry
+func (pb *PoolBase) NewWorker(ctx golly.Context, id string) Worker {
+	cnt := pb.activeWorkers.Add(1)
+
+	return NewGenericWorker(fmt.Sprintf("%s-%06d", pb.name, cnt), pb.logger, &pb.wg)
 }
 
-func NewWorker(id string, logger *logrus.Entry) *Worker {
-	return &Worker{
-		id:        id,
-		quit:      make(chan struct{}),
-		startedAt: time.Now(),
-		logger: logger.WithFields(logrus.Fields{
-			"worker.id":    id,
-			"worker.start": time.Now(),
-		}),
+func (pb *PoolBase) Name() string        { return pb.name }
+func (pb *PoolBase) Handler() WorkerFunc { return pb.handler }
+
+// TODO Figure out how to better handle this wait in the checkin/checkout system
+func (pb *PoolBase) Wait() { pb.wg.Wait() }
+
+func (pb *PoolBase) Spawn(ctx golly.Context) Worker { w, _ := pb.Checkout(); return w }
+func (pb *PoolBase) EnQueue(ctx golly.Context, job interface{}) error {
+	worker, err := pb.Checkout()
+	if err != nil {
+		return err
 	}
+	defer pb.Checkin(worker)
+
+	worker.Perform(ctx, job, pb.handler)
+	return nil
 }
 
-func (w *Worker) Run(ctx golly.Context, jobs chan interface{}, handler WorkerFunc) {
-	w.logger.Infof("starting worker process")
-
-	defer func() {
-		if r := recover(); r != nil {
-			ctx.Logger().Errorln("recovered from panic:", r)
+func (pb *PoolBase) EnQueueAsync(ctx golly.Context, job interface{}) {
+	go func(ctx golly.Context, pb *PoolBase) {
+		if err := pb.EnQueue(ctx, job); err != nil {
+			pb.logger.Errorf("unable to perform job %#v\n", err)
 		}
-	}()
+	}(ctx, pb)
+}
 
-	var running = true
-	for running {
-		select {
-		case <-w.quit:
-			running = false
-		case data := <-jobs:
-			handler(ctx, data)
-			w.lastJobAt = time.Now()
+func (pb *PoolBase) Checkout() (Worker, error) {
+	if !pb.running {
+		return nil, fmt.Errorf("terminating")
+	}
+
+	for len(pb.workers) == 0 {
+		start := time.Now()
+
+		for pb.activeWorkers.Load()+1 > pb.maxW {
+			if time.Since(start) > 10*time.Second {
+				return nil, fmt.Errorf("wait time exeeded")
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+
+		if worker := pb.NewWorker(pb.ctx, "worker"); worker != nil {
+			return worker, nil
 		}
 	}
 
-	elapsed := time.Since(w.startedAt)
+	pb.lock.Lock()
+	defer pb.lock.Unlock()
 
-	w.
-		logger.
-		WithField("worker.duration", elapsed.Nanoseconds()).
-		Infof("stopping worker process (%s)", elapsed.String())
+	index := len(pb.workers) - 1
+	worker := pb.workers[index]
 
+	pb.workers = pb.workers[:index]
+
+	return worker, nil
 }
 
-func (w *Worker) Stop() {
-	close(w.quit)
+func (pb *PoolBase) Checkin(worker Worker) {
+	pb.lock.Lock()
+	defer pb.lock.Unlock()
+
+	pb.workers = append(pb.workers, worker)
 }
 
-func (w *Worker) IsIdle() bool {
-	return time.Since(w.lastJobAt) > 30*time.Second
+func (pb *PoolBase) Stop() {
+	close(pb.quit)
 }
 
-func NewPool(name string, min, max, buffer int, handler WorkerFunc) *WorkerPool {
-	return &WorkerPool{
-		Name:    name,
-		minW:    min,
-		maxW:    max,
-		buffer:  buffer,
-		handler: handler,
-		quit:    make(chan struct{}),
-		C:       make(chan interface{}, buffer),
+func (pb *PoolBase) reap() (reaped int32) {
+	active := int32(pb.activeWorkers.Load())
+
+	if active > pb.minW {
+		for pos, worker := range pb.workers {
+			if worker.IsIdle() {
+				reaped++
+
+				worker.Stop()
+
+				pb.workers = append(pb.workers[:pos], pb.workers[pos+1:]...)
+			}
+
+			if active-reaped <= pb.minW {
+				pb.activeWorkers.Add(-reaped)
+				break
+			}
+
+		}
 	}
+	return
 }
 
-func (wp *WorkerPool) Wait() {
-	wp.wg.Wait()
-}
+func (pb *PoolBase) Run(ctx golly.Context) {
+	pb.running = true
 
-func (wp *WorkerPool) Stop() {
-	close(wp.quit)
-}
-
-func (wp *WorkerPool) SpawnWorker(ctx golly.Context) *Worker {
-	cnt := wp.workercnt.Add(1)
-
-	worker := NewWorker(fmt.Sprintf("%s-%06d", wp.Name, cnt), ctx.Logger())
-
-	go worker.Run(ctx, wp.C, wp.handler)
-
-	return worker
-}
-
-func (wp *WorkerPool) Spawn(ctx golly.Context) {
-	wp.running = true
-	workers := []*Worker{}
-
-	wp.logger = ctx.Logger().WithFields(logrus.Fields{
-		"spawner": wp.Name,
+	pb.logger = ctx.Logger().WithFields(logrus.Fields{
+		"spawner": pb.Name,
 	})
 
 	stop := time.NewTicker(500 * time.Millisecond)
-	start := time.NewTicker(1 * time.Second)
-
 	defer stop.Stop()
-	defer start.Stop()
 
-	for i := 0; i < wp.minW; i++ {
-		workers = append(workers, wp.SpawnWorker(ctx))
-	}
-
-	wp.logger.Infof("starting spawner %s", wp.Name)
-	defer func() {
-		wp.logger.Infof("ending spawner %s", wp.Name)
-	}()
-
-	for wp.running {
+	for pb.running {
 		select {
-		case <-wp.quit:
-			wp.logger.Debug("stopping quit channel")
-			wp.running = false
+		case <-pb.quit:
+			pb.logger.Debug("stopping quit channel")
+			pb.running = false
 		case <-ctx.Context().Done():
-			wp.logger.Debug("stopping context done")
+			pb.logger.Debug("stopping context done")
+			pb.running = false
 
-			wp.running = false
-
-		case <-start.C:
-			l := len(workers)
-
-			if len(wp.C) >= (cap(wp.C)/wp.maxW)*l {
-				if l < wp.maxW {
-					workers = append(workers, wp.SpawnWorker(ctx))
-				}
-			}
 		case <-stop.C:
-			l := len(workers)
-
-			if len(wp.C) < (cap(wp.C)/wp.maxW)*l {
-				if l > wp.minW {
-					if workers[l-1].IsIdle() {
-						workers[l-1].Stop()
-						workers = workers[:l-1]
-					}
-				}
-
-			}
+			reaped := pb.reap()
+			pb.logger.Debugf("%s: repead %d workers", pb.name, reaped)
 		}
 	}
 
-	for i := len(workers) - 1; i >= 0; i-- {
-		workers[i].Stop()
+	pb.maxW = 0
+	pb.reap()
+}
+
+func NewGernicPool(name string, min, max int32, handler WorkerFunc) Pool {
+	return &GenericPool{
+		PoolBase: PoolBase{
+			name:    name,
+			minW:    min,
+			maxW:    max,
+			handler: handler,
+			quit:    make(chan struct{}),
+		},
 	}
 }
+
+var _ Pool = &PoolBase{}
