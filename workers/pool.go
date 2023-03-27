@@ -55,13 +55,17 @@ func (pb *PoolBase) NewWorker(ctx golly.Context, id string) Worker {
 	return NewGenericWorker(WorkerConfig{
 		ID:         fmt.Sprintf("%s-%06d", pb.name, cnt),
 		Logger:     pb.logger,
-		OnJobStart: func(w Worker, j Job) error { pb.wg.Add(1); return nil },
-		OnJobEnd:   func(w Worker, j Job) error { pb.wg.Done(); pb.Checkin(w); return nil },
+		OnJobStart: func(w Worker, j Job) error { pb.addJob(); return nil },
+		OnJobEnd:   func(w Worker, j Job) error { pb.delJob(); pb.Checkin(w); return nil },
 	})
 }
 
 func (pb *PoolBase) Name() string        { return pb.name }
 func (pb *PoolBase) Handler() WorkerFunc { return pb.handler }
+
+// For now
+func (pb *PoolBase) addJob() { pb.wg.Add(1); pb.logger.Debugf("adding job to %s", pb.name) }
+func (pb *PoolBase) delJob() { pb.wg.Done(); pb.logger.Debugf("deleting job from %s", pb.name) }
 
 // TODO Figure out how to better handle this wait in the checkin/checkout system
 func (pb *PoolBase) Wait() { pb.wg.Wait() }
@@ -140,6 +144,11 @@ func (pb *PoolBase) reap() (reaped int32) {
 
 		}
 	}
+
+	if reaped > 0 {
+		pb.logger.Debugf("%s: repead %d workers", pb.name, reaped)
+	}
+
 	return
 }
 
@@ -163,17 +172,20 @@ func (pb *PoolBase) Run(ctx golly.Context) {
 			pb.running = false
 
 		case <-heartbeat.C:
-			if reaped := pb.reap(); reaped > 0 {
-				pb.logger.Debugf("%s: repead %d workers", pb.name, reaped)
-			}
+			pb.reap()
 		}
 	}
 
+	pb.logger.Debug("waiting for worker completion to shutdown")
+
 	pb.wg.Wait()
+
+	pb.logger.Debugf("repeating jobs for shutdown (active jobs: %d)", pb.activeWorkers.Load())
 
 	pb.maxW = 0
 	pb.reap()
 
+	pb.logger.Debug("terminated")
 }
 
 func NewGenericPool(name string, min, max int32, handler WorkerFunc) Pool {

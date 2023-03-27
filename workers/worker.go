@@ -110,7 +110,6 @@ func (w *GenericWorker) Run() {
 			select {
 			case <-w.quit:
 				w.running = false
-				break
 			case j := <-w.c:
 				if err := w.handle(j); err != nil {
 					w.logger.Errorf("unable to process job: %s", err.Error())

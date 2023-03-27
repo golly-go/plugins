@@ -145,16 +145,18 @@ func (cb *ConsumerBase) Reader(ctx golly.Context, consumer Consumer) *kafka.Read
 
 	return kafka.NewReader(
 		kafka.ReaderConfig{
-			GroupTopics:    consumer.Topics(),
-			Brokers:        config.Brokers,
-			Partition:      config.Partition,
-			MinBytes:       config.MinRead,
-			MaxBytes:       config.MaxRead,
-			MaxWait:        5 * time.Second,
-			GroupID:        config.GroupID,
-			Dialer:         dialer,
-			GroupBalancers: []kafka.GroupBalancer{kafka.RoundRobinGroupBalancer{}},
-			ErrorLogger:    errorLogger{ctx.Logger()},
+			GroupTopics:           consumer.Topics(),
+			Brokers:               config.Brokers,
+			Partition:             config.Partition,
+			MinBytes:              config.MinRead,
+			MaxBytes:              config.MaxRead,
+			MaxWait:               5 * time.Second,
+			GroupID:               config.GroupID,
+			Dialer:                dialer,
+			WatchPartitionChanges: true,
+			ReadBackoffMin:        500 * time.Millisecond,
+			GroupBalancers:        []kafka.GroupBalancer{kafka.RoundRobinGroupBalancer{}},
+			ErrorLogger:           errorLogger{ctx.Logger()},
 		},
 	)
 }
