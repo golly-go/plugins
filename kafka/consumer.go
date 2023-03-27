@@ -63,7 +63,7 @@ func (cb *ConsumerBase) Init(ctx golly.Context, consumer Consumer) error {
 
 	consumer.SetLogger(logger)
 
-	cb.wp = workers.NewGernicPool(consumer.Name(),
+	cb.wp = workers.NewGenericPool(consumer.Name(),
 		int32(config.MinPool),
 		int32(config.MaxPool),
 		wrap(consumer.Handler),
@@ -116,7 +116,7 @@ func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 
 		reattempts = 0
 
-		consumer.Pool().EnQueueAsync(ctx, Message{
+		consumer.Pool().EnQueue(ctx, Message{
 			Topic:   m.Topic,
 			Data:    m.Value,
 			Key:     string(m.Key),

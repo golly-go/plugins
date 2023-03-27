@@ -21,7 +21,6 @@ type Pool interface {
 	NewWorker(golly.Context, string) Worker
 
 	EnQueue(golly.Context, interface{}) error
-	EnQueueAsync(golly.Context, interface{})
 }
 
 type WorkerFunc func(golly.Context, interface{}) error
@@ -53,7 +52,12 @@ type PoolBase struct {
 func (pb *PoolBase) NewWorker(ctx golly.Context, id string) Worker {
 	cnt := pb.activeWorkers.Add(1)
 
-	return NewGenericWorker(fmt.Sprintf("%s-%06d", pb.name, cnt), pb.logger, &pb.wg)
+	return NewGenericWorker(WorkerConfig{
+		ID:         fmt.Sprintf("%s-%06d", pb.name, cnt),
+		Logger:     pb.logger,
+		OnJobStart: func(w Worker, j Job) error { pb.wg.Add(1); return nil },
+		OnJobEnd:   func(w Worker, j Job) error { pb.wg.Done(); pb.Checkin(w); return nil },
+	})
 }
 
 func (pb *PoolBase) Name() string        { return pb.name }
@@ -63,23 +67,15 @@ func (pb *PoolBase) Handler() WorkerFunc { return pb.handler }
 func (pb *PoolBase) Wait() { pb.wg.Wait() }
 
 func (pb *PoolBase) Spawn(ctx golly.Context) Worker { w, _ := pb.Checkout(); return w }
+
 func (pb *PoolBase) EnQueue(ctx golly.Context, job interface{}) error {
 	worker, err := pb.Checkout()
 	if err != nil {
 		return err
 	}
-	defer pb.Checkin(worker)
 
-	worker.Perform(ctx, job, pb.handler)
+	worker.Perform(Job{ctx, job, pb.handler})
 	return nil
-}
-
-func (pb *PoolBase) EnQueueAsync(ctx golly.Context, job interface{}) {
-	go func(ctx golly.Context, pb *PoolBase) {
-		if err := pb.EnQueue(ctx, job); err != nil {
-			pb.logger.Errorf("unable to perform job %#v\n", err)
-		}
-	}(ctx, pb)
 }
 
 func (pb *PoolBase) Checkout() (Worker, error) {
@@ -176,7 +172,7 @@ func (pb *PoolBase) Run(ctx golly.Context) {
 	pb.reap()
 }
 
-func NewGernicPool(name string, min, max int32, handler WorkerFunc) Pool {
+func NewGenericPool(name string, min, max int32, handler WorkerFunc) Pool {
 	return &GenericPool{
 		PoolBase: PoolBase{
 			name:    name,
