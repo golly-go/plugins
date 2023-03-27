@@ -54,14 +54,13 @@ func (cb *ConsumerBase) Pool() workers.Pool             { return cb.wp }
 func (cb *ConsumerBase) Config(ctx golly.Context) Config { return NewConfig(ctx.Config()) }
 
 func (cb *ConsumerBase) Init(ctx golly.Context, consumer Consumer) error {
-	name := consumer.Name()
+	return nil
+}
+
+func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 	cb.running = true
 
 	config := consumer.Config(ctx)
-
-	logger := newKafkaLogger(ctx.Logger(), "consumers").WithField("name", name)
-
-	consumer.SetLogger(logger)
 
 	cb.wp = workers.NewGenericPool(consumer.Name(),
 		int32(config.MinPool),
@@ -69,17 +68,14 @@ func (cb *ConsumerBase) Init(ctx golly.Context, consumer Consumer) error {
 		wrap(consumer.Handler),
 	)
 
-	return nil
-}
-
-func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
-	logger := consumer.Logger()
+	logger := newKafkaLogger(ctx.Logger(), "consumers").WithField("name", consumer.Name())
+	consumer.SetLogger(logger)
 
 	logger.Debugf("consumer %s topics: %#v", consumer.Name(), consumer.Topics())
 
 	cb.done = make(chan struct{})
 
-	go cb.wp.Spawn(ctx)
+	go cb.wp.Run(ctx)
 
 	reader := consumer.Reader(ctx, consumer)
 
@@ -158,7 +154,7 @@ func (cb *ConsumerBase) Reader(ctx golly.Context, consumer Consumer) *kafka.Read
 			GroupID:        config.GroupID,
 			Dialer:         dialer,
 			GroupBalancers: []kafka.GroupBalancer{kafka.RoundRobinGroupBalancer{}},
-			ErrorLogger:    errorLogger{consumer.Logger()},
+			ErrorLogger:    errorLogger{ctx.Logger()},
 		},
 	)
 }

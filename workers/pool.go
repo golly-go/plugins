@@ -150,8 +150,8 @@ func (pb *PoolBase) Run(ctx golly.Context) {
 		"spawner": pb.Name,
 	})
 
-	stop := time.NewTicker(500 * time.Millisecond)
-	defer stop.Stop()
+	heartbeat := time.NewTicker(500 * time.Millisecond)
+	defer heartbeat.Stop()
 
 	for pb.running {
 		select {
@@ -162,14 +162,18 @@ func (pb *PoolBase) Run(ctx golly.Context) {
 			pb.logger.Debug("stopping context done")
 			pb.running = false
 
-		case <-stop.C:
-			reaped := pb.reap()
-			pb.logger.Debugf("%s: repead %d workers", pb.name, reaped)
+		case <-heartbeat.C:
+			if reaped := pb.reap(); reaped > 0 {
+				pb.logger.Debugf("%s: repead %d workers", pb.name, reaped)
+			}
 		}
 	}
 
+	pb.wg.Wait()
+
 	pb.maxW = 0
 	pb.reap()
+
 }
 
 func NewGenericPool(name string, min, max int32, handler WorkerFunc) Pool {

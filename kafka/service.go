@@ -40,6 +40,7 @@ func (cs *ConsumerService) Run(ctx golly.Context) error {
 
 			consumer.Init(ctx, consumer)
 			consumer.Run(ctx, consumer)
+
 		}(ctx, consumer)
 	}
 
