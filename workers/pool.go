@@ -53,8 +53,10 @@ func (pb *PoolBase) NewWorker(ctx golly.Context, id string) Worker {
 	cnt := pb.activeWorkers.Add(1)
 
 	return NewGenericWorker(WorkerConfig{
-		ID:         fmt.Sprintf("%s-%06d", pb.name, cnt),
-		Logger:     pb.logger,
+		ID: fmt.Sprintf("%s-%06d", pb.name, cnt),
+		Logger: pb.logger.WithFields(logrus.Fields{
+			"spawner": pb.name,
+		}),
 		OnJobStart: func(w Worker, j Job) error { pb.addJob(); return nil },
 		OnJobEnd:   func(w Worker, j Job) error { pb.delJob(); pb.Checkin(w); return nil },
 	})
@@ -155,9 +157,11 @@ func (pb *PoolBase) reap() (reaped int32) {
 func (pb *PoolBase) Run(ctx golly.Context) {
 	pb.running = true
 
-	pb.logger = ctx.Logger().WithFields(logrus.Fields{
-		"spawner": pb.Name,
+	logger := ctx.Logger().WithFields(logrus.Fields{
+		"spawner": pb.name,
 	})
+
+	pb.logger = logger
 
 	heartbeat := time.NewTicker(500 * time.Millisecond)
 	defer heartbeat.Stop()
@@ -176,16 +180,16 @@ func (pb *PoolBase) Run(ctx golly.Context) {
 		}
 	}
 
-	pb.logger.Debug("waiting for worker completion to shutdown")
+	logger.Debug("waiting for worker completion to shutdown")
 
 	pb.wg.Wait()
 
-	pb.logger.Debugf("repeating jobs for shutdown (active jobs: %d)", pb.activeWorkers.Load())
+	logger.Debugf("repead jobs for shutdown (active jobs: %d)", pb.activeWorkers.Load())
 
 	pb.maxW = 0
 	pb.reap()
 
-	pb.logger.Debug("terminated")
+	logger.Debug("terminated")
 }
 
 func NewGenericPool(name string, min, max int32, handler WorkerFunc) Pool {

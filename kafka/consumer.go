@@ -78,6 +78,7 @@ func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 	go cb.wp.Run(ctx)
 
 	reader := consumer.Reader(ctx, consumer)
+	defer reader.Close()
 
 	reattempts := 0
 
@@ -106,7 +107,6 @@ func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 			}
 
 			logger.Errorf("error when when fetching messages: %v", err.Error())
-
 			break
 		}
 
@@ -122,8 +122,9 @@ func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 	}
 
 	cb.running = false
-	reader.Close()
+
 	close(cb.done)
+
 }
 
 func (cb *ConsumerBase) Reader(ctx golly.Context, consumer Consumer) *kafka.Reader {
@@ -154,9 +155,12 @@ func (cb *ConsumerBase) Reader(ctx golly.Context, consumer Consumer) *kafka.Read
 			GroupID:               config.GroupID,
 			Dialer:                dialer,
 			WatchPartitionChanges: true,
+			JoinGroupBackoff:      10 * time.Second,
 			ReadBackoffMin:        500 * time.Millisecond,
-			GroupBalancers:        []kafka.GroupBalancer{kafka.RoundRobinGroupBalancer{}},
-			ErrorLogger:           errorLogger{ctx.Logger()},
+			ReadBackoffMax:        30 * time.Second,
+
+			GroupBalancers: []kafka.GroupBalancer{kafka.RoundRobinGroupBalancer{}},
+			ErrorLogger:    errorLogger{ctx.Logger()},
 		},
 	)
 }
@@ -174,7 +178,7 @@ func (cb *ConsumerBase) Stop(ctx golly.Context) {
 
 func (cb *ConsumerBase) Wait(ctx golly.Context) {
 	cb.wp.Wait()
-	ctx.Logger().Debugf("consumer %s stopped", cb.wp.Name())
+	cb.logger.Debugf("consumer %s stopped", cb.wp.Name())
 }
 
 func wrap(h func(golly.Context, Message) error) workers.WorkerFunc {
