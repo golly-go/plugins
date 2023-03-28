@@ -31,7 +31,8 @@ type PoolBase struct {
 	ctx golly.Context
 
 	workers []Worker
-	lock    sync.RWMutex
+
+	lock sync.RWMutex
 
 	handler WorkerFunc
 
@@ -47,16 +48,18 @@ type PoolBase struct {
 	logger *logrus.Entry
 
 	activeWorkers atomic.Int32
+
+	spawnedCnt atomic.Int32
 }
 
 func (pb *PoolBase) NewWorker(ctx golly.Context, id string) Worker {
-	cnt := pb.activeWorkers.Add(1)
+	pb.activeWorkers.Add(1)
+
+	cnt := pb.spawnedCnt.Add(1)
 
 	return NewGenericWorker(WorkerConfig{
-		ID: fmt.Sprintf("%s-%06d", pb.name, cnt),
-		Logger: pb.logger.WithFields(logrus.Fields{
-			"spawner": pb.name,
-		}),
+		ID:         fmt.Sprintf("%s-%06d", pb.name, cnt),
+		Logger:     pb.logger,
 		OnJobStart: func(w Worker, j Job) error { pb.addJob(); return nil },
 		OnJobEnd:   func(w Worker, j Job) error { pb.delJob(); pb.Checkin(w); return nil },
 	})
@@ -90,13 +93,26 @@ func (pb *PoolBase) Checkout() (Worker, error) {
 	}
 
 	for len(pb.workers) == 0 {
-		start := time.Now()
+		fmt.Printf("%d == %d\n", pb.activeWorkers.Load()+1, pb.maxW)
 
-		for pb.activeWorkers.Load()+1 > pb.maxW {
-			if time.Since(start) > 10*time.Second {
-				return nil, fmt.Errorf("wait time exeeded")
+		if pb.activeWorkers.Load()+1 > pb.maxW {
+			ticker := time.NewTicker(5 * time.Millisecond)
+			timer := time.NewTimer(11 * time.Second)
+
+			defer ticker.Stop()
+			defer timer.Stop()
+
+			waiting := true
+			for waiting {
+				select {
+				case <-ticker.C:
+					if pb.activeWorkers.Load()+1 <= pb.maxW {
+						waiting = false
+					}
+				case <-timer.C:
+					return nil, fmt.Errorf("wait time exeeded")
+				}
 			}
-			time.Sleep(5 * time.Millisecond)
 		}
 
 		if worker := pb.NewWorker(pb.ctx, "worker"); worker != nil {
@@ -157,11 +173,9 @@ func (pb *PoolBase) reap() (reaped int32) {
 func (pb *PoolBase) Run(ctx golly.Context) {
 	pb.running = true
 
-	logger := ctx.Logger().WithFields(logrus.Fields{
+	pb.logger = ctx.Logger().WithFields(logrus.Fields{
 		"spawner": pb.name,
 	})
-
-	pb.logger = logger
 
 	heartbeat := time.NewTicker(500 * time.Millisecond)
 	defer heartbeat.Stop()
@@ -174,22 +188,21 @@ func (pb *PoolBase) Run(ctx golly.Context) {
 		case <-ctx.Context().Done():
 			pb.logger.Debug("stopping context done")
 			pb.running = false
-
 		case <-heartbeat.C:
 			pb.reap()
 		}
 	}
 
-	logger.Debug("waiting for worker completion to shutdown")
+	pb.logger.Debug("waiting for worker completion to shutdown")
 
 	pb.wg.Wait()
 
-	logger.Debugf("repead jobs for shutdown (active jobs: %d)", pb.activeWorkers.Load())
+	pb.logger.Debugf("repead jobs for shutdown (active jobs: %d)", pb.activeWorkers.Load())
 
 	pb.maxW = 0
 	pb.reap()
 
-	logger.Debug("terminated")
+	pb.logger.Debug("terminated")
 }
 
 func NewGenericPool(name string, min, max int32, handler WorkerFunc) Pool {

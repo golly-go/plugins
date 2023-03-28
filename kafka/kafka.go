@@ -133,9 +133,11 @@ func NewConfig(config *viper.Viper) Config {
 func newKafkaLogger(baseLogger *logrus.Entry, source string) *logrus.Entry {
 	l := golly.NewLogger().WithFields(baseLogger.Data)
 
-	if level := golly.LogLevel(); level == logrus.InfoLevel {
-		l.Logger.SetLevel(logrus.WarnLevel)
-	}
+	// if !env.IsDevelopment() {
+	// 	if level := golly.LogLevel(); level == logrus.InfoLevel {
+	// 		l.Logger.SetLevel(logrus.WarnLevel)
+	// 	}
+	// }
 
 	return l.WithField("source", source)
 }

@@ -43,6 +43,8 @@ type ConsumerBase struct {
 	logger  *logrus.Entry
 
 	done chan struct{}
+
+	cancel context.CancelFunc
 }
 
 func (cb *ConsumerBase) SetLogger(logger *logrus.Entry) { cb.logger = logger }
@@ -58,6 +60,12 @@ func (cb *ConsumerBase) Init(ctx golly.Context, consumer Consumer) error {
 }
 
 func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
+	defer func() {
+		if r := recover(); r != nil {
+			ctx.Logger().Errorln("panic in consumer run receive: ", r)
+		}
+	}()
+
 	cb.running = true
 
 	config := consumer.Config(ctx)
@@ -68,10 +76,16 @@ func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 		wrap(consumer.Handler),
 	)
 
-	logger := newKafkaLogger(ctx.Logger(), "consumers").WithField("name", consumer.Name())
-	consumer.SetLogger(logger)
+	logger := newKafkaLogger(ctx.Logger(), "consumers").
+		WithFields(logrus.Fields{
+			"spawner":        cb.wp.Name(),
+			"consumer.name":  consumer.Name(),
+			"consumer.hosts": config.Brokers[0],
+		})
 
-	logger.Debugf("consumer %s topics: %#v", consumer.Name(), consumer.Topics())
+	logger.Debugf("starting consumer %s topics: %#v", consumer.Name(), consumer.Topics())
+
+	consumer.SetLogger(logger)
 
 	cb.done = make(chan struct{})
 
@@ -83,7 +97,8 @@ func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 	reattempts := 0
 
 	for cb.running && reattempts <= 3 {
-		goCtx, _ := context.WithCancel(ctx.Context())
+		goCtx, cancel := context.WithCancel(ctx.Context())
+		cb.cancel = cancel
 
 		logger.Debug("Fetching kafka messages")
 
@@ -112,6 +127,8 @@ func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 
 		reattempts = 0
 
+		consumer.Logger().Debugf("received message: %s (%s)", m.Topic, string(m.Value))
+
 		consumer.Pool().EnQueue(ctx, Message{
 			Topic:   m.Topic,
 			Data:    m.Value,
@@ -119,6 +136,9 @@ func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 			Time:    m.Time,
 			Headers: m.Headers,
 		})
+
+		consumer.Logger().Debugf("loop %s (%s)", m.Topic, string(m.Value))
+
 	}
 
 	cb.running = false
@@ -151,13 +171,13 @@ func (cb *ConsumerBase) Reader(ctx golly.Context, consumer Consumer) *kafka.Read
 			Partition:             config.Partition,
 			MinBytes:              config.MinRead,
 			MaxBytes:              config.MaxRead,
-			MaxWait:               5 * time.Second,
+			MaxWait:               1 * time.Second,
 			GroupID:               config.GroupID,
 			Dialer:                dialer,
 			WatchPartitionChanges: true,
 			JoinGroupBackoff:      10 * time.Second,
-			ReadBackoffMin:        500 * time.Millisecond,
-			ReadBackoffMax:        30 * time.Second,
+			ReadBackoffMin:        250 * time.Millisecond,
+			ReadBackoffMax:        10 * time.Second,
 
 			GroupBalancers: []kafka.GroupBalancer{kafka.RoundRobinGroupBalancer{}},
 			ErrorLogger:    errorLogger{ctx.Logger()},
@@ -167,11 +187,21 @@ func (cb *ConsumerBase) Reader(ctx golly.Context, consumer Consumer) *kafka.Read
 
 func (cb *ConsumerBase) Stop(ctx golly.Context) {
 	defer func(t time.Time) {
-		cb.logger.Infof("stopped %s consumer in %#v\n", cb.wp.Name(), time.Since(t).String())
+		cb.logger.Infof("stopped %s consumer in %#v", cb.wp.Name(), time.Since(t).String())
+		if r := recover(); r != nil {
+			cb.logger.Errorln("panic in stop receive: ", r)
+		}
 	}(time.Now())
 
 	cb.running = false
+
+	cb.logger.Debugln("stopping workerpool")
+
 	cb.wp.Stop()
+
+	cb.logger.Debugln("waiting for done signal")
+
+	cb.cancel()
 
 	<-cb.done
 }

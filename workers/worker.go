@@ -14,10 +14,39 @@ type Job struct {
 }
 
 type Worker interface {
+	ID() string
 	Perform(j Job)
 	Stop()
 	Run()
 	IsIdle() bool
+}
+
+type Workers map[Worker]bool
+
+func (wks Workers) Find(finder func(Worker) bool) Worker {
+	for worker := range wks {
+		if finder(worker) {
+			return worker
+		}
+	}
+	return nil
+}
+
+func (wks Workers) Each(fnc func(Worker)) {
+	for worker := range wks {
+		fnc(worker)
+	}
+}
+
+func (wks Workers) Parition(finder func(Worker) bool) (match []Worker, nmatch []Worker) {
+	for worker := range wks {
+		if finder(worker) {
+			match = append(match, worker)
+		} else {
+			nmatch = append(nmatch, worker)
+		}
+	}
+	return
 }
 
 type WorkerConfig struct {
@@ -38,32 +67,17 @@ type GenericWorker struct {
 	processing bool
 	running    bool
 
-	ID string
-
 	onJobStart func(Worker, Job) error
 	onJobEnd   func(Worker, Job) error
 	logger     *logrus.Entry
 }
 
-func NewGenericWorker(config WorkerConfig) *GenericWorker {
-
-	return &GenericWorker{
-		id: config.ID,
-		logger: config.Logger.WithFields(logrus.Fields{
-			"worker.id":    config.ID,
-			"worker.start": time.Now(),
-		}),
-
-		onJobStart: config.OnJobStart,
-		onJobEnd:   config.OnJobEnd,
-
-		quit:       make(chan struct{}),
-		processing: false,
-		running:    true,
-	}
-}
-
+func (w *GenericWorker) ID() string    { return w.id }
 func (w *GenericWorker) Perform(j Job) { w.c <- j }
+func (w *GenericWorker) Stop()         { w.running = false; close(w.quit) }
+func (w *GenericWorker) IsIdle() bool {
+	return !w.processing && time.Since(w.lastJobAt) > 30*time.Second
+}
 
 func (w *GenericWorker) handle(j Job) error {
 	defer func() {
@@ -119,11 +133,20 @@ func (w *GenericWorker) Run() {
 	}()
 }
 
-func (w *GenericWorker) Stop() {
-	w.running = false
-	close(w.quit)
-}
+func NewGenericWorker(config WorkerConfig) *GenericWorker {
+	return &GenericWorker{
+		id: config.ID,
+		logger: config.Logger.WithFields(logrus.Fields{
+			"worker.type":      "GenericWorker",
+			"worker.id":        config.ID,
+			"worker.startedAt": time.Now(),
+		}),
 
-func (w *GenericWorker) IsIdle() bool {
-	return !w.processing && time.Since(w.lastJobAt) > 30*time.Second
+		onJobStart: config.OnJobStart,
+		onJobEnd:   config.OnJobEnd,
+		c:          make(chan Job, 3),
+		quit:       make(chan struct{}),
+		running:    true,
+		processing: false,
+	}
 }
