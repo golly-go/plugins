@@ -6,47 +6,47 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-type TestDocument struct {
+type namingTestDocument struct {
 	Document
 }
 
-type TestDocumentWithName struct {
+type namingTestDocumentWithName struct {
 	Document
 }
 
-func (TestDocumentWithName) CollectionName() string { return "brah" }
+func (namingTestDocumentWithName) CollectionName() string { return "brah" }
 
 func BenchmarkCollectingNameing(b *testing.B) {
 	b.Run("collection#notnamer", func(b *testing.B) {
-		collectionName(&TestDocument{})
+		collectionName(&namingTestDocument{})
 	})
 
 	b.Run("collection#namer", func(b *testing.B) {
-		collectionName(&TestDocumentWithName{})
+		collectionName(&namingTestDocument{})
 	})
 }
 
 func TestCollectionNameing(t *testing.T) {
 	t.Run("it should name correct when collectionname func is not defined", func(t *testing.T) {
 		examples := []interface{}{
-			&TestDocument{},
-			TestDocument{},
-			[]TestDocument{},
+			&namingTestDocument{},
+			namingTestDocument{},
+			[]namingTestDocument{},
 		}
 
 		for _, example := range examples {
 			s, err := collectionName(example)
 			assert.NoError(t, err)
 
-			assert.Equal(t, "test_documents", s)
+			assert.Equal(t, "naming_test_documents", s)
 		}
 	})
 
 	t.Run("it should name correct when CollectionName func is defined", func(t *testing.T) {
 		examples := []interface{}{
-			&TestDocumentWithName{},
-			TestDocumentWithName{},
-			[]TestDocumentWithName{},
+			&namingTestDocumentWithName{},
+			namingTestDocumentWithName{},
+			[]namingTestDocumentWithName{},
 		}
 
 		for _, example := range examples {

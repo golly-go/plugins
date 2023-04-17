@@ -18,14 +18,32 @@ func setField(field reflect.Value, value interface{}) {
 			return
 		}
 
-		vp := reflect.New(v.Type())
-		vp.Elem().Set(v)
+		if v.Kind() == reflect.Ptr {
+			field.Set(v)
+			return
+		}
 
-		field.Set(vp)
+		field.Set(toPointer(v))
 		return
 	}
 
+	if v.Kind() == reflect.Ptr {
+		if v.CanAddr() {
+			field.Set(v.Addr().Elem())
+		}
+
+		field.Set(v.Elem())
+		return
+	}
+
+	fmt.Printf("%#v\n", v)
 	field.Set(v)
+}
+
+func toPointer(value reflect.Value) reflect.Value {
+	vp := reflect.New(value.Type())
+	vp.Elem().Set(value)
+	return vp
 }
 
 func setID(out interface{}, t time.Time) {
