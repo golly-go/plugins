@@ -43,6 +43,8 @@ type Config struct {
 	Retries int
 
 	Timeouts Timeout
+
+	UseErrorLogger bool
 }
 
 type errorLogger struct {
@@ -125,6 +127,7 @@ func NewConfig(config *viper.Viper) Config {
 		},
 
 		BalanceStrategy: config.GetString("kafka.consumer.balance_strategy"),
+		UseErrorLogger:  config.GetBool("kafka.consumer.error_logger"),
 	}
 
 	return c
@@ -132,12 +135,6 @@ func NewConfig(config *viper.Viper) Config {
 
 func newKafkaLogger(baseLogger *logrus.Entry, source string) *logrus.Entry {
 	l := golly.NewLogger().WithFields(baseLogger.Data)
-
-	// if !env.IsDevelopment() {
-	// 	if level := golly.LogLevel(); level == logrus.InfoLevel {
-	// 		l.Logger.SetLevel(logrus.WarnLevel)
-	// 	}
-	// }
 
 	return l.WithField("source", source)
 }

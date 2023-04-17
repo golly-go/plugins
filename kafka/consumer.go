@@ -164,6 +164,11 @@ func (cb *ConsumerBase) Reader(ctx golly.Context, consumer Consumer) *kafka.Read
 		}
 	}
 
+	var logger kafka.Logger
+	if config.UseErrorLogger {
+		logger = errorLogger{ctx.Logger()}
+	}
+
 	return kafka.NewReader(
 		kafka.ReaderConfig{
 			GroupTopics:           consumer.Topics(),
@@ -180,7 +185,7 @@ func (cb *ConsumerBase) Reader(ctx golly.Context, consumer Consumer) *kafka.Read
 			ReadBackoffMax:        10 * time.Second,
 
 			GroupBalancers: []kafka.GroupBalancer{kafka.RoundRobinGroupBalancer{}},
-			ErrorLogger:    errorLogger{ctx.Logger()},
+			ErrorLogger:    logger,
 		},
 	)
 }
