@@ -41,6 +41,16 @@ func (c Collection) FindOne(out interface{}, filter interface{}) error {
 	return nil
 }
 
+func (c Collection) UpdateOneDocument(out interface{}) error {
+	_, err := c.Col.UpdateByID(c.gctx.Context(), IDField(out), bson.M{"$set": out})
+	return err
+}
+
+func (c Collection) UpdateOne(out interface{}, updateDocument interface{}) error {
+	_, err := c.Col.UpdateByID(c.gctx.Context(), IDField(out), updateDocument)
+	return err
+}
+
 func (c Collection) FindByID(out interface{}, id interface{}) error {
 	filter := bson.M{"_id": id}
 

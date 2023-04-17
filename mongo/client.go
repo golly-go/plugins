@@ -1,7 +1,6 @@
 package mongo
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/golly-go/golly"
@@ -80,8 +79,6 @@ func (c Client) Collection(gctx golly.Context, obj interface{}) Collection {
 	if err != nil {
 		panic(err)
 	}
-
-	fmt.Printf("FINDINGING: %s\n", s)
 
 	collection := c.database.Collection(s)
 

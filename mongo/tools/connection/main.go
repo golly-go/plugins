@@ -9,7 +9,6 @@ import (
 	"github.com/golly-go/plugins/mongo"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -126,7 +125,8 @@ func createCommand(cmd *cobra.Command, args []string) {
 				t := time.Now()
 				test.DeletedAt = &t
 
-				_, err = collection.Col.UpdateOne(ctx.Context(), bson.M{"_id": test.ID}, bson.M{"$set": test})
+				err = collection.UpdateOneDocument(test)
+
 				fmt.Printf("%#v\n", err)
 
 			}
