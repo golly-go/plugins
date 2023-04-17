@@ -5,7 +5,10 @@ import (
 	"time"
 
 	"github.com/golly-go/golly"
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -21,6 +24,32 @@ func (c Collection) logger() *logrus.Entry {
 		"collection": c.Name,
 		"operation":  "insert",
 	})
+}
+
+func (c Collection) FindOne(out interface{}, filter interface{}) error {
+
+	res := c.Col.FindOne(c.gctx.Context(), filter)
+
+	if err := res.Err(); err != nil {
+		return err
+	}
+
+	if err := res.Decode(out); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c Collection) FindByID(out interface{}, id interface{}) error {
+	filter := bson.M{"_id": id}
+
+	switch idT := id.(type) {
+	case primitive.ObjectID, uuid.UUID:
+		filter = bson.M{"_id": idT}
+	}
+
+	return c.FindOne(out, filter)
 }
 
 func (c Collection) Insert(out interface{}) (err error) {

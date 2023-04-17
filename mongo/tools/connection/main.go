@@ -2,10 +2,15 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/golly-go/golly"
 	"github.com/golly-go/plugins/mongo"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 var (
@@ -17,6 +22,16 @@ var (
 		{
 			Use: "create-test",
 			Run: createCommand,
+		},
+		{
+			Use:  "find-uuid [database] [collection] [id]",
+			Args: cobra.MinimumNArgs(3),
+			Run:  createCommand,
+		},
+		{
+			Use:  "find-id [database] [collection] [id]",
+			Args: cobra.MinimumNArgs(3),
+			Run:  createCommand,
 		},
 	}
 )
@@ -39,7 +54,15 @@ func createCommand(cmd *cobra.Command, args []string) {
 
 		ctx := app.NewContext(context.Background())
 
+		// dbName := "testing"
+		// if len(args) > 0 {
+		// 	dbName = args[0]
+		// }
+
+		// fmt.Println(dbName)
+
 		client.Connect(ctx)
+		db := client.Database("testing")
 
 		if err := client.Ping(ctx); err != nil {
 			return err
@@ -49,25 +72,65 @@ func createCommand(cmd *cobra.Command, args []string) {
 		case "ping":
 			app.Logger.Info("connected")
 			return nil
+		case "find-uuid":
+			id, _ := uuid.Parse(args[2])
+
+			var result map[string]interface{}
+
+			fmt.Printf("%s %#v\n", args[1], id.String())
+
+			err := db.Collection(ctx, args[1]).FindByID(&result, id)
+
+			if err != nil {
+				app.Logger.Errorf("error when finding: %#v", err)
+				return err
+			}
+
+			app.Logger.Infof("Found record %#v", result)
+		case "find-id":
+			id, _ := primitive.ObjectIDFromHex(args[2])
+			var result map[string]interface{}
+
+			err := db.Collection(ctx, args[1]).FindByID(&result, id)
+
+			if err != nil {
+				app.Logger.Errorf("error when finding: %#v", err)
+				return err
+			}
+
+			app.Logger.Infof("Found record %#v", result)
 		case "create-test":
+
 			{
 				test := mongo.Document{}
 
-				err := client.Database("testing").Collection(ctx, test).Insert(&test)
+				err := db.Collection(ctx, test).Insert(&test)
 				if err != nil {
 					app.Logger.Errorf("error when inserting: %#v", err)
+					return err
 				}
+
 			}
 
 			{
 				test := mongo.DocumentUUID{}
 
-				err := client.Database("testing").Collection(ctx, test).Insert(&test)
+				collection := db.Collection(ctx, test)
+
+				err := collection.Insert(&test)
 				if err != nil {
 					app.Logger.Errorf("error when inserting: %#v", err)
+					return err
 				}
 
+				t := time.Now()
+				test.DeletedAt = &t
+
+				_, err = collection.Col.UpdateOne(ctx.Context(), bson.M{"_id": test.ID}, bson.M{"$set": test})
+				fmt.Printf("%#v\n", err)
+
 			}
+
 		}
 
 		return nil

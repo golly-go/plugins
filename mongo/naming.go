@@ -23,18 +23,24 @@ type CollectionNamer interface {
 }
 
 func collectionName(doc interface{}) (string, error) {
-	t, e := ResolveToType(doc)
 
-	if e == nil && !t.IsNil() {
-		if namer, ok := t.Interface().(CollectionNamer); ok {
-			return namer.CollectionName(), nil
+	switch d := doc.(type) {
+	case string:
+		return d, nil
+	default:
+		t, e := ResolveToType(doc)
+
+		if e == nil && !t.IsNil() {
+			if namer, ok := t.Interface().(CollectionNamer); ok {
+				return namer.CollectionName(), nil
+			}
+
+			s := snakeCase(utils.GetType(t.Interface()))
+
+			return pluralize.NewClient().Pluralize(s, 2, false), nil
 		}
-
-		s := snakeCase(utils.GetType(t.Interface()))
-
-		return pluralize.NewClient().Pluralize(s, 2, false), nil
+		return "", e
 	}
-	return "", e
 }
 
 func snakeCase(str string) string {

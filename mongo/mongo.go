@@ -10,6 +10,8 @@ import (
 
 var (
 	ErrorNotConnected = fmt.Errorf("client not connected")
+
+	client *Client
 )
 
 func defaultOptions(app golly.Application) {
@@ -18,10 +20,14 @@ func defaultOptions(app golly.Application) {
 	})
 }
 
+func Connection() *Client {
+	return client
+}
+
 func Initializer(app golly.Application) error {
 	defaultOptions(app)
 
-	client := &Client{}
+	client = &Client{}
 
 	if err := client.Connect(app.NewContext(app.GoContext())); err != nil {
 		return err
