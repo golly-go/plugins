@@ -1,6 +1,7 @@
 package mongo
 
 import (
+	"fmt"
 	"reflect"
 	"time"
 
@@ -42,12 +43,13 @@ func (c Collection) FindOne(out interface{}, filter interface{}) error {
 }
 
 func (c Collection) UpdateOneDocument(out interface{}) error {
-	_, err := c.Col.UpdateByID(c.gctx.Context(), IDField(out), bson.M{"$set": out})
-	return err
+	return c.UpdateOne(out, bson.M{"$set": out})
 }
 
 func (c Collection) UpdateOne(out interface{}, updateDocument interface{}) error {
 	_, err := c.Col.UpdateByID(c.gctx.Context(), IDField(out), updateDocument)
+	fmt.Printf("ERR: %#v\n", err)
+
 	return err
 }
 

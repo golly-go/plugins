@@ -85,6 +85,22 @@ func IDField(model interface{}) interface{} {
 	return ""
 }
 
+func CreatedAtField(model interface{}) time.Time {
+	value := valueOf(model)
+
+	if v := value.FieldByName("CreatedAt"); v.IsValid() {
+		switch cAt := v.Interface().(type) {
+		case time.Time:
+			return cAt
+		case map[string]interface{}:
+			if cAt, ok := cAt["created_at"].(time.Time); ok {
+				return cAt
+			}
+		}
+	}
+	return time.Time{}
+}
+
 func timestamps(out interface{}, t time.Time) {
 	value := valueOf(out)
 

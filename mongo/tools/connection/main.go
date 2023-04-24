@@ -53,13 +53,6 @@ func createCommand(cmd *cobra.Command, args []string) {
 
 		ctx := app.NewContext(context.Background())
 
-		// dbName := "testing"
-		// if len(args) > 0 {
-		// 	dbName = args[0]
-		// }
-
-		// fmt.Println(dbName)
-
 		client.Connect(ctx)
 		db := client.Database("testing")
 

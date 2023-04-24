@@ -37,7 +37,7 @@ func (c *Client) Disconnect(gctx golly.Context) error {
 func contextWithDeadline(gctx golly.Context, durs ...time.Duration) context.Context {
 	c := gctx.Context()
 
-	duration := 1 * time.Second
+	duration := 5 * time.Second
 	if len(durs) > 0 {
 		duration = durs[0]
 	}
@@ -51,8 +51,19 @@ func contextWithDeadline(gctx golly.Context, durs ...time.Duration) context.Cont
 }
 
 func makeMongoOptions(ctx golly.Context) *options.ClientOptions {
-	return options.Client().ApplyURI(ctx.Config().GetString("mongo.url")).
+
+	opts := options.Client().ApplyURI(ctx.Config().GetString("mongo.url")).
 		SetRegistry(createCustomRegistry().Build())
+
+	username := ctx.Config().GetString("mongo.user")
+	if username != "" {
+		opts.SetAuth(options.Credential{
+			Username: username,
+			Password: ctx.Config().GetString("mongo.pass"),
+		})
+	}
+
+	return opts
 }
 
 func (c Client) IsConnected(gctx golly.Context) bool {
@@ -80,11 +91,9 @@ func (c Client) Collection(gctx golly.Context, obj interface{}) Collection {
 		panic(err)
 	}
 
-	collection := c.database.Collection(s)
-
 	return Collection{
 		Name: s,
 		gctx: gctx,
-		Col:  collection,
+		Col:  c.database.Collection(s),
 	}
 }
