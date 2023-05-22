@@ -45,7 +45,7 @@ func Call(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error
 
 			change.Metadata.Merge(metadata)
 
-			if eventBackend != nil {
+			if eventBackend != nil && ag.Topic() != "" {
 				if ctx.Logger().Logger.IsLevelEnabled(logrus.DebugLevel) {
 					x, _ := json.Marshal(change)
 					ctx.Logger().Debugf("[publish: %s] %s", ag.Topic(), string(x))
