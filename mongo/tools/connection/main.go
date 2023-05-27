@@ -54,7 +54,7 @@ func createCommand(cmd *cobra.Command, args []string) {
 		ctx := app.NewContext(context.Background())
 
 		client.Connect(ctx)
-		db := client.Database("testing")
+		db := client.Database(ctx, "testing")
 
 		if err := client.Ping(ctx); err != nil {
 			return err
