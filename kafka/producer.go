@@ -111,9 +111,9 @@ func (k KafkaPublisher) Publish(messages ...Message) {
 
 func (k *KafkaPublisher) createProducer(ctx golly.Context) *kafka.Writer {
 	w := &kafka.Writer{
-		Addr:                   kafka.TCP(k.config.Brokers...),
-		Balancer:               &kafka.Murmur2Balancer{},
-		Logger:                 ctx.Logger(),
+		Addr:     kafka.TCP(k.config.Brokers...),
+		Balancer: &kafka.Murmur2Balancer{},
+		// Logger:                 newKafkaLogger(k.logger, "producer"),
 		AllowAutoTopicCreation: true,
 		ErrorLogger:            errorLogger{newKafkaLogger(k.logger, "producer")},
 	}
