@@ -16,7 +16,10 @@ type Client struct {
 	database *mongo.Database
 }
 
-type CustomNamer func(golly.Context) string
+type DatabaseOptions struct {
+	Name           string
+	NamingFunction func(golly.Context) string
+}
 
 func (c *Client) Connect(ctx golly.Context) error {
 	client, err := mongo.Connect(
@@ -81,11 +84,12 @@ func (c Client) Ping(gctx golly.Context, timeout ...time.Duration) error {
 	return nil
 }
 
-func (c Client) Database(gctx golly.Context, name string, customStrategies ...CustomNamer) Client {
+func (c Client) Database(gctx golly.Context, options DatabaseOptions) Client {
 	if c.database == nil {
-		dbName := name
-		if len(customStrategies) > 0 {
-			dbName = customStrategies[0](gctx)
+		dbName := options.Name
+
+		if options.NamingFunction != nil {
+			dbName = options.NamingFunction(gctx)
 		}
 
 		c.database = c.client.Database(dbName)
