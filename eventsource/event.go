@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/golly-go/golly"
@@ -55,7 +56,8 @@ type Event struct {
 	Data     interface{} `json:"data" gorm:"-"`
 	Metadata Metadata    `json:"metadata" gorm:"-"`
 
-	commit bool
+	commit  bool
+	publish bool
 }
 
 type Events []Event
@@ -67,6 +69,22 @@ func (evts Events) HasCommited() bool {
 		}
 	}
 	return false
+}
+
+func (evts Events) Find(finder func(e Event) bool) *Event {
+	for _, event := range evts {
+		if finder(event) {
+			return &event
+		}
+	}
+	return nil
+}
+
+func (evts Events) FindByName(name string) *Event {
+	return evts.Find(func(event Event) bool {
+		return strings.EqualFold(name, utils.GetType(event)) ||
+			strings.EqualFold(name, utils.GetTypeWithPackage(event))
+	})
 }
 
 func NewEvent(evtData interface{}) Event {
