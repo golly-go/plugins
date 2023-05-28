@@ -71,6 +71,17 @@ func (evts Events) HasCommited() bool {
 	return false
 }
 
+func (evts Events) Filter(filterFnc func(e Event) bool) Events {
+	ret := Events{}
+
+	for _, event := range evts {
+		if filterFnc(event) {
+			ret = append(ret, event)
+		}
+	}
+	return ret
+}
+
 func (evts Events) Find(finder func(e Event) bool) *Event {
 	for _, event := range evts {
 		if finder(event) {
