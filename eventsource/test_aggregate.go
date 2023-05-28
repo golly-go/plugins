@@ -16,6 +16,10 @@ func (*TestAggregate) GetID() string                      { return "" }
 func (*TestAggregate) SetID(id string)                    {}
 func (*TestAggregate) Apply(ctx golly.Context, evt Event) {}
 
+func (t *TestAggregate) Events() Events {
+	return t.changes
+}
+
 type TestRepostory struct{}
 
 func (TestRepostory) Load(golly.Context, interface{}) error {
