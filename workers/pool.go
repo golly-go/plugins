@@ -48,8 +48,7 @@ type PoolBase struct {
 	logger *logrus.Entry
 
 	activeWorkers atomic.Int32
-
-	spawnedCnt atomic.Int32
+	spawnedCnt    atomic.Int32
 }
 
 func (pb *PoolBase) NewWorker(ctx golly.Context, id string) Worker {
