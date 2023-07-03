@@ -34,3 +34,5 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gorm.io/gorm v1.25.1 // indirect
 )
+
+// replace github.com/golly-go/plugins/workers => ../workers

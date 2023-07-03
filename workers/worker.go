@@ -74,7 +74,12 @@ type GenericWorker struct {
 
 func (w *GenericWorker) ID() string    { return w.id }
 func (w *GenericWorker) Perform(j Job) { w.c <- j }
-func (w *GenericWorker) Stop()         { w.running = false; close(w.quit) }
+func (w *GenericWorker) Stop() {
+	if w.running {
+		w.running = false
+		close(w.quit)
+	}
+}
 func (w *GenericWorker) IsIdle() bool {
 	return !w.processing && time.Since(w.lastJobAt) > 30*time.Second
 }
@@ -83,14 +88,14 @@ func (w *GenericWorker) handle(j Job) error {
 	defer func() {
 		w.processing = false
 
+		if r := recover(); r != nil {
+			w.logger.Errorln("recovered from panic:", r)
+		}
+
 		if w.onJobEnd != nil {
 			if err := w.onJobEnd(w, j); err != nil {
 				w.logger.Errorln("error in job end callback", err)
 			}
-		}
-
-		if r := recover(); r != nil {
-			w.logger.Errorln("recovered from panic:", r)
 		}
 	}()
 

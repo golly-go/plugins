@@ -60,11 +60,13 @@ func (cb *ConsumerBase) Init(ctx golly.Context, consumer Consumer) error {
 }
 
 func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
-	defer func() {
+	defer func(t time.Time) {
 		if r := recover(); r != nil {
 			ctx.Logger().Errorln("panic in consumer run receive: ", r)
 		}
-	}()
+		ctx.Logger().Debugf("stoping consumer %s after %v", consumer.Name(), time.Since(t))
+
+	}(time.Now())
 
 	cb.running = true
 

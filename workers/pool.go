@@ -83,6 +83,7 @@ func (pb *PoolBase) EnQueue(ctx golly.Context, job interface{}) error {
 	}
 
 	worker.Perform(Job{ctx, job, pb.handler})
+
 	return nil
 }
 
@@ -115,6 +116,8 @@ func (pb *PoolBase) Checkout() (Worker, error) {
 		}
 
 		if worker := pb.NewWorker(pb.ctx, "worker"); worker != nil {
+			worker.Run()
+
 			return worker, nil
 		}
 	}
@@ -151,7 +154,11 @@ func (pb *PoolBase) reap() (reaped int32) {
 
 				worker.Stop()
 
-				pb.workers = append(pb.workers[:pos], pb.workers[pos+1:]...)
+				if pos+1 <= len(pb.workers) {
+					pb.workers = append(pb.workers[:pos], pb.workers[pos+1:]...)
+				} else {
+					pb.workers = pb.workers[:pos]
+				}
 			}
 
 			if active-reaped <= pb.minW {

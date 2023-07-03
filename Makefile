@@ -5,3 +5,6 @@ deps:
 
 update-golly:
 	@for f in $(DIRS); do pushd $$f && GOPROXY=direct go get -v -u github.com/golly-go/golly && popd; done;
+
+update-urls:
+	@for f in $(DIRS); do echo go get -u github.com/golly-go/plugins/$$f;  done;

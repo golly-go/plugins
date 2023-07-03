@@ -99,7 +99,7 @@ func (evts Events) FindByName(name string) *Event {
 }
 
 func NewEvent(evtData interface{}) Event {
-	id, _ := uuid.NewUUID()
+	id, _ := uuid.NewRandom()
 
 	return Event{
 		ID: id,
@@ -134,6 +134,8 @@ func UnmarshalEvent(data []byte) (*Event, error) {
 	}
 
 	dataValue := reflect.New(evt)
+	fmt.Printf("DDDD %#v\n\n", dataValue)
+
 	marshal := dataValue.Elem().Addr()
 	b, _ := json.Marshal(event.Data)
 
