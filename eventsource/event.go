@@ -56,8 +56,9 @@ type Event struct {
 	Data     interface{} `json:"data" gorm:"-"`
 	Metadata Metadata    `json:"metadata" gorm:"-"`
 
-	commit  bool
-	publish bool
+	commit   bool
+	commited bool
+	publish  bool
 }
 
 type Events []Event
@@ -69,6 +70,14 @@ func (evts Events) HasCommited() bool {
 		}
 	}
 	return false
+}
+
+func (event *Event) MarkCommited() {
+	event.commited = true
+}
+
+func (evts Events) Uncommited() Events {
+	return evts.Filter(func(e Event) bool { return !c.commited })
 }
 
 func (evts Events) Filter(filterFnc func(e Event) bool) Events {

@@ -31,7 +31,7 @@ func Call(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error
 			return errors.WrapUnprocessable(err)
 		}
 
-		changes := ag.Changes()
+		changes := ag.Changes().Uncommited()
 
 		if changes.HasCommited() {
 			if err := repo.Save(ctx, ag); err != nil {
@@ -42,6 +42,8 @@ func Call(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error
 		for _, change := range changes {
 			change.AggregateID = ag.GetID()
 			change.AggregateType = ag.Type()
+
+			change.MarkCommited()
 
 			change.Metadata.Merge(metadata)
 
