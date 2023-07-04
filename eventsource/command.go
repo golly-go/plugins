@@ -10,6 +10,9 @@ import (
 
 type Command interface {
 	Perform(golly.Context, Aggregate) error
+}
+
+type CommandValidator interface {
 	Validate(golly.Context, Aggregate) error
 }
 
@@ -22,8 +25,10 @@ func Call(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error
 		}
 	}
 
-	if err := cmd.Validate(ctx, ag); err != nil {
-		return errors.WrapUnprocessable(err)
+	if validator, ok := cmd.(CommandValidator); ok {
+		if err := validator.Validate(ctx, ag); err != nil {
+			return errors.WrapUnprocessable(err)
+		}
 	}
 
 	return repo.Transaction(func(repo Repository) error {
@@ -32,7 +37,6 @@ func Call(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error
 		}
 
 		changes := ag.Changes().Uncommited()
-
 		if changes.HasCommited() {
 			if err := repo.Save(ctx, ag); err != nil {
 				return errors.WrapUnprocessable(err)
