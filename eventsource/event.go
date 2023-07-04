@@ -77,7 +77,7 @@ func (event *Event) MarkCommited() {
 }
 
 func (evts Events) Uncommited() Events {
-	return evts.Filter(func(e Event) bool { return !c.commited })
+	return evts.Filter(func(e Event) bool { return !e.commited })
 }
 
 func (evts Events) Filter(filterFnc func(e Event) bool) Events {
