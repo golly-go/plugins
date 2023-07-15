@@ -26,7 +26,7 @@ func NewSQLiteConnection(app string, modelToMigrate ...interface{}) *gorm.DB {
 // NewInMemoryConnection creates a new database connection and migrates any passed in model
 func NewInMemoryConnection(modelToMigrate ...interface{}) *gorm.DB {
 	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
-		Logger: newLogger("in-memory"),
+		Logger: newLogger("in-memory", ""),
 	})
 
 	if len(modelToMigrate) > 0 {
