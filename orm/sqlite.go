@@ -13,7 +13,7 @@ import (
 func NewSQLiteConnection(app string, modelToMigrate ...interface{}) *gorm.DB {
 	dbName := fmt.Sprintf("db/%s.sqlite", env.CurrentENV())
 
-	db, _ := gorm.Open(sqlite.Open(dbName), &gorm.Config{Logger: newLogger(dbName)})
+	db, _ := gorm.Open(sqlite.Open(dbName), &gorm.Config{Logger: newLogger(dbName, "")})
 
 	if len(modelToMigrate) > 0 {
 		db.AutoMigrate(modelToMigrate...)

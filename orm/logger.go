@@ -21,16 +21,31 @@ var gollySourceDir string
 func init() {
 	_, file, _, _ := runtime.Caller(0)
 
-	gollySourceDir = regexp.MustCompile(`utils.source\.go`).ReplaceAllString(file, "")
+	gollySourceDir = regexp.MustCompile(`logger\.source\.go`).ReplaceAllString(file, "")
 }
 
 type Logger struct {
 	logger *logrus.Entry
 }
 
-func newLogger(driver string) *Logger {
+func newLogger(driver string, suggestedLevel string) *Logger {
+	level := golly.LogLevel()
+	switch suggestedLevel {
+	case "debug":
+		level = logrus.DebugLevel
+	case "info":
+		level = logrus.InfoLevel
+	case "warn":
+		level = logrus.WarnLevel
+	case "fatal":
+		level = logrus.FatalLevel
+	}
+
+	lg := golly.NewLogger()
+	lg.Level = level
+
 	return &Logger{
-		logger: golly.NewLogger().WithField("driver", driver),
+		logger: lg.WithField("driver", driver),
 	}
 }
 
