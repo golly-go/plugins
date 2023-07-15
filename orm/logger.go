@@ -32,9 +32,9 @@ func newLogger(driver string, disableLogger bool) *Logger {
 	lg := golly.NewLogger()
 
 	if !disableLogger {
-		log := lg.Logger
+		log := logrus.New()
 		log.SetLevel(logrus.WarnLevel)
-		lg = log.WithField("dblog", "disabled")
+		lg = log.WithFields(lg.Data)
 	}
 
 	return &Logger{
