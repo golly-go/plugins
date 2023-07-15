@@ -12,7 +12,7 @@ import (
 // NewDBConnection new db connection
 func NewPostgresConnection(v *viper.Viper, prefixKey string) (*gorm.DB, error) {
 	db, err := gorm.Open(postgres.Open(postgressConnectionString(v, prefixKey)), &gorm.Config{
-		Logger: newLogger("postgres", viper.GetString(prefixKey+".db.log_level")),
+		Logger: newLogger("postgres", viper.GetBool("DISABLE_DB_LOG")),
 	})
 	return db, err
 }

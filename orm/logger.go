@@ -28,21 +28,14 @@ type Logger struct {
 	logger *logrus.Entry
 }
 
-func newLogger(driver string, suggestedLevel string) *Logger {
+func newLogger(driver string, disableLogger bool) *Logger {
 	level := golly.LogLevel()
-	switch suggestedLevel {
-	case "debug":
-		level = logrus.DebugLevel
-	case "info":
-		level = logrus.InfoLevel
-	case "warn":
+	if !disableLogger {
 		level = logrus.WarnLevel
-	case "fatal":
-		level = logrus.FatalLevel
 	}
 
-	lg := golly.NewLogger()
-	lg.Level = level
+	lg := golly.NewLogger().Logger
+	lg.SetLevel(level)
 
 	return &Logger{
 		logger: lg.WithField("driver", driver),
