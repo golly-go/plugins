@@ -35,7 +35,7 @@ type PoolBase struct {
 	lock sync.RWMutex
 
 	handler WorkerFunc
-	jobs    []Job
+	jobs    chan Job
 
 	name    string
 	quit    chan struct{}
@@ -78,12 +78,8 @@ func (pb *PoolBase) Wait() { pb.wg.Wait() }
 func (pb *PoolBase) Spawn(ctx golly.Context) Worker { w, _ := pb.Checkout(); return w }
 
 func (pb *PoolBase) EnQueue(ctx golly.Context, job interface{}) error {
-	worker, err := pb.Checkout()
-	if err != nil {
-		return err
-	}
+	pb.jobs <- Job{ctx, job, pb.handler}
 
-	go worker.Perform(Job{ctx, job, pb.handler})
 	return nil
 }
 
@@ -114,6 +110,8 @@ func (pb *PoolBase) Checkout() (Worker, error) {
 		}
 
 		if worker := pb.NewWorker(pb.ctx, "worker"); worker != nil {
+			go worker.Run()
+
 			return worker, nil
 		}
 	}
@@ -185,9 +183,17 @@ func (pb *PoolBase) Run(ctx golly.Context) {
 		case <-pb.quit:
 			pb.logger.Debug("stopping quit channel")
 			pb.running = false
+
+			for _, w := range pb.workers {
+				w.Stop()
+			}
 		case <-ctx.Context().Done():
 			pb.logger.Debug("stopping context done")
 			pb.running = false
+		case j := <-pb.jobs:
+			if worker, err := pb.Checkout(); err == nil {
+				worker.Perform(Job{pb.ctx, j, pb.handler})
+			}
 		case <-heartbeat.C:
 			pb.reap()
 		}
@@ -213,6 +219,7 @@ func NewGenericPool(name string, min, max int32, handler WorkerFunc) Pool {
 			maxW:    max,
 			handler: handler,
 			quit:    make(chan struct{}),
+			jobs:    make(chan Job, max*3),
 		},
 	}
 }
