@@ -35,6 +35,7 @@ type PoolBase struct {
 	lock sync.RWMutex
 
 	handler WorkerFunc
+	jobs    []Job
 
 	name    string
 	quit    chan struct{}
@@ -82,8 +83,7 @@ func (pb *PoolBase) EnQueue(ctx golly.Context, job interface{}) error {
 		return err
 	}
 
-	worker.Perform(Job{ctx, job, pb.handler})
-
+	go worker.Perform(Job{ctx, job, pb.handler})
 	return nil
 }
 
@@ -93,8 +93,6 @@ func (pb *PoolBase) Checkout() (Worker, error) {
 	}
 
 	for len(pb.workers) == 0 {
-		fmt.Printf("%d == %d\n", pb.activeWorkers.Load()+1, pb.maxW)
-
 		if pb.activeWorkers.Load()+1 > pb.maxW {
 			ticker := time.NewTicker(5 * time.Millisecond)
 			timer := time.NewTimer(11 * time.Second)
@@ -116,8 +114,6 @@ func (pb *PoolBase) Checkout() (Worker, error) {
 		}
 
 		if worker := pb.NewWorker(pb.ctx, "worker"); worker != nil {
-			worker.Run()
-
 			return worker, nil
 		}
 	}
@@ -151,8 +147,6 @@ func (pb *PoolBase) reap() (reaped int32) {
 		for pos, worker := range pb.workers {
 			if worker.IsIdle() {
 				reaped++
-
-				worker.Stop()
 
 				if pos+1 <= len(pb.workers) {
 					pb.workers = append(pb.workers[:pos], pb.workers[pos+1:]...)

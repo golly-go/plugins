@@ -16,8 +16,6 @@ type Job struct {
 type Worker interface {
 	ID() string
 	Perform(j Job)
-	Stop()
-	Run()
 	IsIdle() bool
 }
 
@@ -74,12 +72,7 @@ type GenericWorker struct {
 
 func (w *GenericWorker) ID() string    { return w.id }
 func (w *GenericWorker) Perform(j Job) { w.c <- j }
-func (w *GenericWorker) Stop() {
-	if w.running {
-		w.running = false
-		close(w.quit)
-	}
-}
+func (w *GenericWorker) Stop()         { w.running = false }
 func (w *GenericWorker) IsIdle() bool {
 	return !w.processing && time.Since(w.lastJobAt) > 30*time.Second
 }
@@ -119,23 +112,6 @@ func (w *GenericWorker) handle(j Job) error {
 
 	return err
 
-}
-
-func (w *GenericWorker) Run() {
-	w.startedAt = time.Now()
-
-	go func() {
-		for w.running {
-			select {
-			case <-w.quit:
-				w.running = false
-			case j := <-w.c:
-				if err := w.handle(j); err != nil {
-					w.logger.Errorf("unable to process job: %s", err.Error())
-				}
-			}
-		}
-	}()
 }
 
 func NewGenericWorker(config WorkerConfig) *GenericWorker {
