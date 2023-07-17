@@ -192,7 +192,8 @@ func (pb *PoolBase) Run(ctx golly.Context) {
 			pb.running = false
 		case j := <-pb.jobs:
 			if worker, err := pb.Checkout(); err == nil {
-				worker.Perform(Job{pb.ctx, j, pb.handler})
+				worker.Perform(j)
+
 				pb.Checkin(worker)
 			}
 		case <-heartbeat.C:
