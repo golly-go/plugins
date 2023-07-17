@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/golly-go/golly v0.4.1-0.20230614060905-7307e3cc328f
-	github.com/golly-go/plugins/workers v0.0.0-20230717230409-6924dff992b5
+	github.com/golly-go/plugins/workers v0.0.0-20230717231457-c5e10bc07ae8
 	github.com/segmentio/kafka-go v0.4.42
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.16.0
