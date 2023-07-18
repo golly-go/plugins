@@ -58,6 +58,8 @@ func Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) er
 		}
 	}
 
+	cgs := []Event{}
+
 	for _, change := range changes {
 		change.AggregateID = ag.GetID()
 		change.AggregateType = ag.Type()
@@ -73,8 +75,12 @@ func Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) er
 				}
 			}
 		}
+		cgs = append(cgs, change)
 	}
-	eventBackend.PublishEvent(ctx, ag, changes...)
+
+	if len(cgs) > 0 {
+		eventBackend.PublishEvent(ctx, ag, cgs...)
+	}
 
 	return nil
 }
