@@ -73,8 +73,8 @@ func Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) er
 				}
 			}
 		}
-		eventBackend.PublishEvent(ctx, ag, changes...)
 	}
+	eventBackend.PublishEvent(ctx, ag, changes...)
 
 	return nil
 }
