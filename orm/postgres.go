@@ -11,9 +11,16 @@ import (
 
 // NewDBConnection new db connection
 func NewPostgresConnection(v *viper.Viper, prefixKey string) (*gorm.DB, error) {
+	disableLog := false
+
+	if str := viper.GetString("DISABLE_DB_LOG"); str != "" {
+		disableLog = true
+	}
+
 	db, err := gorm.Open(postgres.Open(postgressConnectionString(v, prefixKey)), &gorm.Config{
-		Logger: newLogger("postgres", viper.GetBool("DISABLE_DB_LOG")),
+		Logger: newLogger("postgres", disableLog),
 	})
+
 	return db, err
 }
 
