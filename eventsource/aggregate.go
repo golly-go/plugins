@@ -67,6 +67,8 @@ func ApplyExt(ctx golly.Context, aggregate Aggregate, edata interface{}, meta Me
 
 	event := NewEvent(edata)
 	event.commit = commit
+	event.commited = false
+
 	event.Metadata.Merge(meta)
 
 	aggregate.Apply(ctx, event)

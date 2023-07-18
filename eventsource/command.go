@@ -1,11 +1,8 @@
 package eventsource
 
 import (
-	"encoding/json"
-
 	"github.com/golly-go/golly"
 	"github.com/golly-go/golly/errors"
-	"github.com/sirupsen/logrus"
 )
 
 type Command interface {
@@ -75,14 +72,9 @@ func Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) er
 					return errors.WrapGeneric(err)
 				}
 			}
-
-			if ctx.Logger().Logger.IsLevelEnabled(logrus.DebugLevel) {
-				x, _ := json.Marshal(change)
-				ctx.Logger().Debugf("[publish: %s] %s", ag.Topic(), string(x))
-			}
-
-			eventBackend.PublishEvent(ctx, ag, change)
 		}
+		eventBackend.PublishEvent(ctx, ag, changes...)
 	}
+
 	return nil
 }

@@ -20,7 +20,7 @@ var (
 type EventBackend interface {
 	Repository
 
-	PublishEvent(golly.Context, Aggregate, Event)
+	PublishEvent(golly.Context, Aggregate, ...Event)
 }
 
 func SetEventRepository(backend EventBackend) {
@@ -111,8 +111,9 @@ func NewEvent(evtData interface{}) Event {
 	id, _ := uuid.NewRandom()
 
 	return Event{
-		ID: id,
-
+		ID:        id,
+		commit:    true,
+		commited:  false,
 		Event:     utils.GetTypeWithPackage(evtData),
 		Metadata:  Metadata{},
 		Data:      evtData,
@@ -143,7 +144,6 @@ func UnmarshalEvent(data []byte) (*Event, error) {
 	}
 
 	dataValue := reflect.New(evt)
-	fmt.Printf("DDDD %#v\n\n", dataValue)
 
 	marshal := dataValue.Elem().Addr()
 	b, _ := json.Marshal(event.Data)
