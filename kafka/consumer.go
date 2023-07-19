@@ -185,9 +185,9 @@ func (cb *ConsumerBase) Reader(ctx golly.Context, consumer Consumer) *kafka.Read
 			JoinGroupBackoff:      10 * time.Second,
 			ReadBackoffMin:        250 * time.Millisecond,
 			ReadBackoffMax:        10 * time.Second,
-
-			GroupBalancers: []kafka.GroupBalancer{kafka.RoundRobinGroupBalancer{}},
-			ErrorLogger:    logger,
+			StartOffset:           config.StartOffset,
+			GroupBalancers:        []kafka.GroupBalancer{kafka.RoundRobinGroupBalancer{}},
+			ErrorLogger:           logger,
 		},
 	)
 }

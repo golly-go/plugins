@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/golly-go/golly"
+	"github.com/segmentio/kafka-go"
 	"github.com/sirupsen/logrus"
 
 	"github.com/spf13/viper"
@@ -21,6 +22,8 @@ type Config struct {
 	MinPool    int
 	MaxPool    int
 	JobsBuffer int
+
+	StartOffset int64
 
 	Brokers []string
 
@@ -74,6 +77,7 @@ func InitDefaultConfig(config *viper.Viper) {
 				"min": 10_000, // 10e3,
 				"max": 10_000_000,
 			},
+			"start_offset":     kafka.FirstOffset,
 			"partition":        0,
 			"wait":             "50ms",
 			"group_id":         "default-group",
@@ -105,12 +109,13 @@ func NewConfig(config *viper.Viper) Config {
 
 	c := Config{
 		// Pool Config
-		MinPool:    config.GetInt("kafka.consumer.workers.min"),
-		MaxPool:    config.GetInt("kafka.consumer.workers.max"),
-		JobsBuffer: config.GetInt("kafka.consumer.workers.buffer"),
-		Retries:    config.GetInt("kafka.retries"),
-		Username:   user,
-		Password:   password,
+		MinPool:     config.GetInt("kafka.consumer.workers.min"),
+		MaxPool:     config.GetInt("kafka.consumer.workers.max"),
+		JobsBuffer:  config.GetInt("kafka.consumer.workers.buffer"),
+		Retries:     config.GetInt("kafka.retries"),
+		StartOffset: config.GetInt64("kafka.consumer.start_offset"),
+		Username:    user,
+		Password:    password,
 
 		// Kafka Config
 		Brokers:   brokers,
