@@ -2,6 +2,7 @@ package workers
 
 import (
 	"fmt"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -217,11 +218,11 @@ func NewGenericPool(name string, min, max int32, handler WorkerFunc) Pool {
 	return &GenericPool{
 		PoolBase: PoolBase{
 			name:    name,
-			minW:    min,
-			maxW:    max,
+			minW:    int32(math.Max(float64(min), 1)),
+			maxW:    int32(math.Max(float64(max), 25)),
 			handler: handler,
 			quit:    make(chan struct{}),
-			jobs:    make(chan Job, max*3),
+			jobs:    make(chan Job, int(math.Max(float64(max*3), 500))),
 		},
 	}
 }
