@@ -191,11 +191,8 @@ func (pb *PoolBase) Run(ctx golly.Context) {
 			pb.logger.Debug("stopping context done")
 			pb.running = false
 		case j := <-pb.jobs:
-			if worker, err := pb.Checkout(); err == nil {
-				defer pb.Checkin(worker)
+			pb.Perform(j)
 
-				worker.Perform(j)
-			}
 		case <-heartbeat.C:
 			pb.reap()
 		}
@@ -211,6 +208,16 @@ func (pb *PoolBase) Run(ctx golly.Context) {
 	pb.reap()
 
 	pb.logger.Debug("terminated")
+}
+
+func (pb *PoolBase) Perform(j Job) {
+	if worker, err := pb.Checkout(); err == nil {
+		defer pb.Checkin(worker)
+
+		worker.Perform(j)
+	} else {
+		pb.logger.Error("error checking out worker: %#v", err)
+	}
 }
 
 func NewGenericPool(name string, min, max int32, handler WorkerFunc) Pool {
