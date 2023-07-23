@@ -77,7 +77,7 @@ func ConsumerPreBoot() error {
 // we should not be calling this twice, but guard against it
 func RegisterConsumers(definitions ...Consumer) golly.GollyAppFunc {
 	return func(golly.Application) error {
-		consumers = definitions
+		consumers = append(consumers, definitions...)
 		return nil
 	}
 }
