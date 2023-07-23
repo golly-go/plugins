@@ -158,7 +158,6 @@ func (pb *PoolBase) reap() (reaped int32) {
 				pb.activeWorkers.Add(-reaped)
 				break
 			}
-
 		}
 	}
 
@@ -193,9 +192,9 @@ func (pb *PoolBase) Run(ctx golly.Context) {
 			pb.running = false
 		case j := <-pb.jobs:
 			if worker, err := pb.Checkout(); err == nil {
-				worker.Perform(j)
+				defer pb.Checkin(worker)
 
-				pb.Checkin(worker)
+				worker.Perform(j)
 			}
 		case <-heartbeat.C:
 			pb.reap()
