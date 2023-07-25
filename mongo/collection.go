@@ -1,7 +1,6 @@
 package mongo
 
 import (
-	"fmt"
 	"reflect"
 	"time"
 
@@ -27,6 +26,23 @@ func (c Collection) logger() *logrus.Entry {
 	})
 }
 
+func (c Collection) Find(out interface{}, filter interface{}) error {
+	res, err := c.Col.Find(c.gctx.Context(), filter)
+	if err != nil {
+		return err
+	}
+
+	if err := res.Err(); err != nil {
+		return err
+	}
+
+	if err := res.Decode(out); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (c Collection) FindOne(out interface{}, filter interface{}) error {
 
 	res := c.Col.FindOne(c.gctx.Context(), filter)
@@ -47,9 +63,9 @@ func (c Collection) UpdateOneDocument(out interface{}) error {
 }
 
 func (c Collection) UpdateOne(out interface{}, updateDocument interface{}) error {
-	_, err := c.Col.UpdateByID(c.gctx.Context(), IDField(out), updateDocument)
-	fmt.Printf("ERR: %#v\n", err)
+	timestamps(out, time.Now())
 
+	_, err := c.Col.UpdateByID(c.gctx.Context(), IDField(out), updateDocument)
 	return err
 }
 
