@@ -32,6 +32,10 @@ func (c Collection) Find(out interface{}, filter interface{}) error {
 		return err
 	}
 
+	if reflect.TypeOf(out).Kind() == reflect.Slice {
+		return res.All(c.gctx.Context(), out)
+	}
+
 	if err := res.Err(); err != nil {
 		return err
 	}
