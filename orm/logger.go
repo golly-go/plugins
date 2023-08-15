@@ -31,10 +31,8 @@ type Logger struct {
 func newLogger(driver string, disableLogger bool) *Logger {
 	lg := golly.NewLogger()
 
-	if !disableLogger {
-		log := logrus.New()
-		log.SetLevel(logrus.WarnLevel)
-		lg = log.WithFields(lg.Data)
+	if disableLogger {
+		lg.Logger.SetLevel(logrus.WarnLevel)
 	}
 
 	return &Logger{

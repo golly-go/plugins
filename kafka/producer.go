@@ -156,7 +156,7 @@ func NewPublisher(app golly.Application) *KafkaPublisher {
 		ctx:     golly.NewContext(app.GoContext()),
 		writers: []*kafka.Writer{},
 		running: true,
-		logger:  newKafkaLogger(app.Logger, "publisher"),
+		logger:  newKafkaLogger(golly.NewLogger(), "publisher"),
 		config:  NewConfig(app.Config),
 	}
 }

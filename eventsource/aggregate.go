@@ -22,13 +22,15 @@ type Aggregate interface {
 
 	GetID() string
 	SetID(string)
+
+	AppendAppliedEvent(...Event)
 }
 
 // AggregateBase holds the base aggregate for the db
 type AggregateBase struct {
 	Version uint `json:"version"`
 
-	changes Events
+	ChangeList Events `gorm:"-" bson:"events"`
 }
 
 func (ab *AggregateBase) IncrementVersion() {
@@ -41,15 +43,15 @@ func (ab *AggregateBase) GetVersion() uint {
 }
 
 func (ab *AggregateBase) Changes() Events {
-	return ab.changes
+	return ab.ChangeList
 }
 
 func (ab *AggregateBase) ClearChanges() {
-	ab.changes = []Event{}
+	ab.ChangeList = []Event{}
 }
 
 func (ab *AggregateBase) Append(events ...Event) {
-	ab.changes = append(ab.changes, events...)
+	ab.ChangeList = append(ab.ChangeList, events...)
 }
 
 func Apply(ctx golly.Context, aggregate Aggregate, edata interface{}) {

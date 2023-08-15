@@ -10,6 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type Collection struct {
@@ -26,13 +27,13 @@ func (c Collection) logger() *logrus.Entry {
 	})
 }
 
-func (c Collection) Find(out interface{}, filter interface{}) error {
-	res, err := c.Col.Find(c.gctx.Context(), filter)
+func (c Collection) Find(out interface{}, filter interface{}, options ...*options.FindOptions) error {
+	res, err := c.Col.Find(c.gctx.Context(), filter, options...)
 	if err != nil {
 		return err
 	}
 
-	if reflect.TypeOf(out).Kind() == reflect.Slice {
+	if reflect.ValueOf(out).Elem().Kind() == reflect.Slice {
 		return res.All(c.gctx.Context(), out)
 	}
 
