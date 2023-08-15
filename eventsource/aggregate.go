@@ -22,8 +22,6 @@ type Aggregate interface {
 
 	GetID() string
 	SetID(string)
-
-	AppendAppliedEvent(...Event)
 }
 
 // AggregateBase holds the base aggregate for the db
