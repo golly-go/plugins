@@ -22,8 +22,6 @@ func JWTMiddleware(passportObject Identity) func(next golly.HandlerFunc) golly.H
 
 			token := DecodeAuthorizationHeader(c.Request().Header.Get("Authorization"))
 
-			fmt.Printf("TOKEN: %s\n", token)
-
 			if token != "" {
 				ident, err := DecodeToken(token, passport.(Identity))
 				if err == nil {
