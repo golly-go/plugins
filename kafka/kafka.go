@@ -16,6 +16,7 @@ var (
 
 type Timeout struct {
 	Connection time.Duration
+	Idle       time.Duration
 }
 
 type Config struct {
@@ -66,6 +67,7 @@ func InitDefaultConfig(config *viper.Viper) {
 		"retries":  1,
 		"timeouts": map[string]interface{}{
 			"connection": 10,
+			"idle":       45,
 		},
 		"consumer": map[string]interface{}{
 			"workers": map[string]interface{}{
@@ -129,6 +131,7 @@ func NewConfig(config *viper.Viper) Config {
 
 		Timeouts: Timeout{
 			Connection: time.Duration(config.GetInt("kafka.timeouts.connection")) * time.Second,
+			Idle:       time.Duration(config.GetInt("kafka.timeouts.idle")) * time.Second,
 		},
 
 		BalanceStrategy: config.GetString("kafka.consumer.balance_strategy"),

@@ -111,9 +111,8 @@ func (k KafkaPublisher) Publish(messages ...Message) {
 
 func (k *KafkaPublisher) createProducer(ctx golly.Context) *kafka.Writer {
 	w := &kafka.Writer{
-		Addr:     kafka.TCP(k.config.Brokers...),
-		Balancer: &kafka.Murmur2Balancer{},
-		// Logger:                 newKafkaLogger(k.logger, "producer"),
+		Addr:                   kafka.TCP(k.config.Brokers...),
+		Balancer:               &kafka.Murmur2Balancer{},
 		AllowAutoTopicCreation: true,
 		ErrorLogger:            errorLogger{newKafkaLogger(k.logger, "producer")},
 	}
@@ -121,6 +120,7 @@ func (k *KafkaPublisher) createProducer(ctx golly.Context) *kafka.Writer {
 	if k.config.Username != "" && k.config.Password != "" {
 		w.Transport = &kafka.Transport{
 			DialTimeout: 20 * time.Second,
+			IdleTimeout: 45 * time.Second,
 			TLS:         &tls.Config{MinVersion: tls.VersionTLS12},
 			SASL: plain.Mechanism{
 				Username: k.config.Username,
