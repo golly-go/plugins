@@ -79,6 +79,8 @@ func Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) er
 	}
 
 	if len(cgs) > 0 {
+		FireSubscription(ctx, ag, cgs...)
+
 		eventBackend.PublishEvent(ctx, ag, cgs...)
 	}
 
