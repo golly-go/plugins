@@ -53,6 +53,10 @@ func Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) er
 	changes := ag.Changes().Uncommited()
 
 	if changes.HasCommited() {
+		if err := FireSubscription(ctx, ag, changes...); err != nil {
+			return errors.WrapGeneric(err)
+		}
+
 		if err := repo.Save(ctx, ag); err != nil {
 			return errors.WrapUnprocessable(err)
 		}
@@ -79,8 +83,6 @@ func Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) er
 	}
 
 	if len(cgs) > 0 {
-		FireSubscription(ctx, ag, cgs...)
-
 		eventBackend.PublishEvent(ctx, ag, cgs...)
 	}
 

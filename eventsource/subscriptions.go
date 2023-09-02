@@ -6,7 +6,7 @@ import (
 	"github.com/golly-go/golly"
 )
 
-type SubscriptionHandler func(golly.Context, Aggregate, Event)
+type SubscriptionHandler func(golly.Context, Aggregate, Event) error
 
 type Subscription struct {
 	All     bool
@@ -38,7 +38,7 @@ func SubscribeAll(ag Aggregate, handler SubscriptionHandler) {
 	Subscribe(ag, nil, handler)
 }
 
-func FireSubscription(ctx golly.Context, ag Aggregate, events ...Event) {
+func FireSubscription(ctx golly.Context, ag Aggregate, events ...Event) error {
 	if subs, ok := subscriptions[ag]; ok {
 		for _, event := range events {
 			for _, s := range subs {
@@ -46,8 +46,12 @@ func FireSubscription(ctx golly.Context, ag Aggregate, events ...Event) {
 					continue
 				}
 
-				s.Handler(ctx, ag, event)
+				// Any error here will hault the chain
+				if err := s.Handler(ctx, ag, event); err != nil {
+					return err
+				}
 			}
 		}
 	}
+	return nil
 }
