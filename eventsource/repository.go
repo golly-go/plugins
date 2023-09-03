@@ -10,6 +10,6 @@ type Repository interface {
 	Load(ctx golly.Context, object interface{}) error
 	Save(ctx golly.Context, object interface{}) error
 
-	Transaction(func(golly.Context, Repository) error) error
+	Transaction(golly.Context, func(golly.Context, Repository) error) error
 	IsNewRecord(obj interface{}) bool
 }

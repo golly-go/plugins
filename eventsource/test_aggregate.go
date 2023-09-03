@@ -1,8 +1,6 @@
 package eventsource
 
 import (
-	"context"
-
 	"github.com/golly-go/golly"
 	"gorm.io/gorm"
 )
@@ -32,6 +30,6 @@ func (TestRepostory) Save(golly.Context, interface{}) error {
 }
 
 func (t TestRepostory) IsNewRecord(obj interface{}) bool { return true }
-func (t TestRepostory) Transaction(fn func(golly.Context, Repository) error) error {
-	return fn(golly.NewContext(context.Background()), t)
+func (t TestRepostory) Transaction(ctx golly.Context, fn func(golly.Context, Repository) error) error {
+	return fn(ctx, t)
 }

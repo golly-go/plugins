@@ -1,8 +1,6 @@
 package eventsource
 
 import (
-	"context"
-
 	"github.com/golly-go/golly"
 	"gorm.io/gorm"
 )
@@ -40,10 +38,10 @@ func (r *testRepostoryBase) Save(golly.Context, interface{}) error {
 	return nil
 }
 
-func (r *testRepostoryBase) Transaction(handler func(golly.Context, Repository) error) error {
+func (r *testRepostoryBase) Transaction(ctx golly.Context, handler func(golly.Context, Repository) error) error {
 	r.trasactionCalled++
 
-	return handler(golly.NewContext(context.Background()), r)
+	return handler(ctx, r)
 }
 
 func (r *testRepostoryBase) IsNewRecord(interface{}) bool {
