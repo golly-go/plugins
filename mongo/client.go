@@ -7,13 +7,19 @@ import (
 	"github.com/golly-go/golly/errors"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/mongo/readconcern"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
+	"go.mongodb.org/mongo-driver/mongo/writeconcern"
 	"golang.org/x/net/context"
 )
 
 type Client struct {
 	client   *mongo.Client
 	database *mongo.Database
+}
+
+func (c *Client) Client() *mongo.Client {
+	return c.client
 }
 
 type DatabaseOptions struct {
@@ -109,4 +115,41 @@ func (c Client) Collection(gctx golly.Context, obj interface{}) Collection {
 		gctx: gctx,
 		Col:  c.database.Collection(s),
 	}
+}
+
+func (c Client) Transaction(ctx golly.Context, fn func(ctx golly.Context) error) error {
+	// 1. Start a new session
+	session, err := c.client.StartSession()
+	if err != nil {
+		return err
+	}
+
+	defer session.EndSession(context.Background())
+
+	// 2. Define transaction options, if necessary (e.g. read and write concerns)
+
+	txnOptions := options.Transaction().
+		SetReadConcern(readconcern.Local()).
+		SetWriteConcern(writeconcern.New(writeconcern.WMajority()))
+
+	// Begin the transaction
+	err = session.StartTransaction(txnOptions)
+	if err != nil {
+		return err
+	}
+
+	// 3. Execute the provided function
+	err = fn(ctx)
+	if err != nil {
+		_ = session.AbortTransaction(context.Background()) // Abort transaction on error
+		return err
+	}
+
+	// 4. Commit the transaction
+	err = session.CommitTransaction(context.Background())
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
