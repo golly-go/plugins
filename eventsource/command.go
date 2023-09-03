@@ -26,7 +26,7 @@ func Call(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error
 		return err
 	}
 
-	return repo.Transaction(func(repo Repository) error {
+	return repo.Transaction(func(ctx golly.Context, repo Repository) error {
 		return Execute(ctx, ag, cmd, metadata)
 	})
 }
