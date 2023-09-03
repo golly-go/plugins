@@ -13,20 +13,3 @@ type Repository interface {
 	Transaction(func(Repository) error) error
 	IsNewRecord(obj interface{}) bool
 }
-
-// type RepositoryBase struct{}
-// func (RepositoryBase) IsNewRecord() bool {
-// 	return
-// }
-//
-// func (Repository) Load(ctx golly.Context, obj interface{}) error {
-// 	return orm.DB(ctx).
-// 		Model(obj).
-// 		Find(&member, "id = ?", member.ID).
-// 		Error
-// }
-//
-// func (member *Member) Create(db *gorm.DB) error { return db.Create(&member).Error }
-// func (member *Member) Save(db *gorm.DB, original interface{}) error {
-// 	return db.Save(&member).Error
-// }

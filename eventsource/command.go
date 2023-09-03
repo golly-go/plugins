@@ -42,49 +42,94 @@ func LoadIfNotNew(ctx golly.Context, ag Aggregate) error {
 	return nil
 }
 
-// Execute executs the command assuming all the aggregates are loaded
+// Execute executes the command, ensuring that events are saved to the backend before in-memory processing.
 func Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error {
 	repo := ag.Repo(ctx)
 
+	// Perform the given command on the aggregate
 	if err := cmd.Perform(ctx, ag); err != nil {
 		return errors.WrapUnprocessable(err)
 	}
 
 	changes := ag.Changes().Uncommited()
 
+	// If there are uncommitted changes, first save them to the backend
 	if changes.HasCommited() {
-		if err := FireSubscription(ctx, ag, changes...); err != nil {
-			return errors.WrapGeneric(err)
-		}
-
 		if err := repo.Save(ctx, ag); err != nil {
 			return errors.WrapUnprocessable(err)
 		}
-	}
 
-	cgs := []Event{}
+		for _, change := range changes {
+			change.AggregateID = ag.GetID()
+			change.AggregateType = ag.Type()
+			change.MarkCommited()
+			change.Metadata.Merge(metadata)
 
-	for _, change := range changes {
-		change.AggregateID = ag.GetID()
-		change.AggregateType = ag.Type()
-
-		change.MarkCommited()
-
-		change.Metadata.Merge(metadata)
-
-		if eventBackend != nil && ag.Topic() != "" {
-			if change.commit {
+			// Save event to the backend event store (assuming it's committed)
+			if eventBackend != nil && ag.Topic() != "" && change.commit {
 				if err := eventBackend.Save(ctx, &change); err != nil {
 					return errors.WrapGeneric(err)
 				}
 			}
 		}
-		cgs = append(cgs, change)
-	}
 
-	if len(cgs) > 0 {
-		eventBackend.PublishEvent(ctx, ag, cgs...)
+		// Only after confirming event persistence, invoke in-memory subscriptions
+		if err := FireSubscription(ctx, ag, changes...); err != nil {
+			return errors.WrapGeneric(err)
+		}
+
+		// Publish events to other subscribers
+		if len(changes) > 0 {
+			eventBackend.PublishEvent(ctx, ag, changes...)
+		}
 	}
 
 	return nil
 }
+
+// // Execute executs the command assuming all the aggregates are loaded
+// func Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error {
+// 	repo := ag.Repo(ctx)
+
+// 	if err := cmd.Perform(ctx, ag); err != nil {
+// 		return errors.WrapUnprocessable(err)
+// 	}
+
+// 	changes := ag.Changes().Uncommited()
+
+// 	if changes.HasCommited() {
+// 		if err := FireSubscription(ctx, ag, changes...); err != nil {
+// 			return errors.WrapGeneric(err)
+// 		}
+
+// 		if err := repo.Save(ctx, ag); err != nil {
+// 			return errors.WrapUnprocessable(err)
+// 		}
+// 	}
+
+// 	cgs := []Event{}
+
+// 	for _, change := range changes {
+// 		change.AggregateID = ag.GetID()
+// 		change.AggregateType = ag.Type()
+
+// 		change.MarkCommited()
+
+// 		change.Metadata.Merge(metadata)
+
+// 		if eventBackend != nil && ag.Topic() != "" {
+// 			if change.commit {
+// 				if err := eventBackend.Save(ctx, &change); err != nil {
+// 					return errors.WrapGeneric(err)
+// 				}
+// 			}
+// 		}
+// 		cgs = append(cgs, change)
+// 	}
+
+// 	if len(cgs) > 0 {
+// 		eventBackend.PublishEvent(ctx, ag, cgs...)
+// 	}
+
+// 	return nil
+// }
