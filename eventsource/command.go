@@ -53,36 +53,39 @@ func Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) er
 
 	changes := ag.Changes().Uncommited()
 
+	if len(changes) == 0 {
+		return nil
+	}
+
 	// If there are uncommitted changes, first save them to the backend
-	if changes.HasCommited() {
-		if err := repo.Save(ctx, ag); err != nil {
-			return errors.WrapUnprocessable(err)
-		}
+	if !changes.HasCommited() {
+		return nil
+	}
 
-		for _, change := range changes {
-			change.AggregateID = ag.GetID()
-			change.AggregateType = ag.Type()
-			change.MarkCommited()
-			change.Metadata.Merge(metadata)
+	if err := repo.Save(ctx, ag); err != nil {
+		return errors.WrapUnprocessable(err)
+	}
 
-			// Save event to the backend event store (assuming it's committed)
-			if eventBackend != nil && ag.Topic() != "" && change.commit {
-				if err := eventBackend.Save(ctx, &change); err != nil {
-					return errors.WrapGeneric(err)
-				}
+	for _, change := range changes {
+		change.AggregateID = ag.GetID()
+		change.AggregateType = ag.Type()
+		change.MarkCommited()
+		change.Metadata.Merge(metadata)
+
+		// Save event to the backend event store (assuming it's committed)
+		if eventBackend != nil && ag.Topic() != "" && change.commit {
+			if err := eventBackend.Save(ctx, &change); err != nil {
+				return errors.WrapGeneric(err)
 			}
 		}
-
-		// Only after confirming event persistence, invoke in-memory subscriptions
-		if err := FireSubscription(ctx, ag, changes...); err != nil {
-			return errors.WrapGeneric(err)
-		}
-
-		// Publish events to other subscribers
-		if len(changes) > 0 {
-			eventBackend.PublishEvent(ctx, ag, changes...)
-		}
 	}
+
+	// Only after confirming event persistence, invoke in-memory subscriptions
+	if err := FireSubscription(ctx, ag, changes...); err != nil {
+		return errors.WrapGeneric(err)
+	}
+
+	eventBackend.PublishEvent(ctx, ag, changes...)
 
 	return nil
 }

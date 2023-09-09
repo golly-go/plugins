@@ -14,12 +14,9 @@ import (
 )
 
 type Client struct {
-	client   *mongo.Client
-	database *mongo.Database
-}
+	*mongo.Client
 
-func (c *Client) Client() *mongo.Client {
-	return c.client
+	database *mongo.Database
 }
 
 type DatabaseOptions struct {
@@ -37,12 +34,12 @@ func (c *Client) Connect(ctx golly.Context) error {
 		return err
 	}
 
-	c.client = client
+	c.Client = client
 	return nil
 }
 
 func (c *Client) Disconnect(gctx golly.Context) error {
-	return c.client.Disconnect(contextWithDeadline(gctx))
+	return c.Client.Disconnect(contextWithDeadline(gctx))
 }
 
 func contextWithDeadline(gctx golly.Context, durs ...time.Duration) context.Context {
@@ -84,7 +81,7 @@ func (c Client) IsConnected(gctx golly.Context) bool {
 func (c Client) Ping(gctx golly.Context, timeout ...time.Duration) error {
 	ctx := contextWithDeadline(gctx, timeout...)
 
-	if err := c.client.Ping(ctx, readpref.Primary()); err != nil {
+	if err := c.Client.Ping(ctx, readpref.Primary()); err != nil {
 		return errors.WrapGeneric(err)
 	}
 	return nil
@@ -98,7 +95,7 @@ func (c Client) Database(gctx golly.Context, options DatabaseOptions) Client {
 			dbName = options.NamingFunction(gctx)
 		}
 
-		c.database = c.client.Database(dbName)
+		c.database = c.Client.Database(dbName)
 	}
 	return c
 }
@@ -111,15 +108,15 @@ func (c Client) Collection(gctx golly.Context, obj interface{}) Collection {
 	}
 
 	return Collection{
-		Name: s,
-		gctx: gctx,
-		Col:  c.database.Collection(s),
+		Name:       s,
+		gctx:       gctx,
+		Collection: c.database.Collection(s),
 	}
 }
 
 func (c Client) Transaction(ctx golly.Context, fn func(ctx golly.Context) error) error {
 	// 1. Start a new session
-	session, err := c.client.StartSession()
+	session, err := c.Client.StartSession()
 	if err != nil {
 		return err
 	}

@@ -28,7 +28,10 @@ type Aggregate interface {
 type AggregateBase struct {
 	Version uint `json:"version"`
 
-	ChangeList Events `gorm:"-" bson:"events"`
+	changes Events `gorm:"-" bson:"-"`
+
+	// TODO:
+	// Events Events `gorm:"-" bson:"events"`
 }
 
 func (ab *AggregateBase) IncrementVersion() {
@@ -41,15 +44,15 @@ func (ab *AggregateBase) GetVersion() uint {
 }
 
 func (ab *AggregateBase) Changes() Events {
-	return ab.ChangeList
+	return ab.changes
 }
 
 func (ab *AggregateBase) ClearChanges() {
-	ab.ChangeList = []Event{}
+	ab.changes = []Event{}
 }
 
 func (ab *AggregateBase) Append(events ...Event) {
-	ab.ChangeList = append(ab.ChangeList, events...)
+	ab.changes = append(ab.changes, events...)
 }
 
 func Apply(ctx golly.Context, aggregate Aggregate, edata interface{}) {

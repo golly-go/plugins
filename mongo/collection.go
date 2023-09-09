@@ -14,10 +14,11 @@ import (
 )
 
 type Collection struct {
+	*mongo.Collection
+
 	gctx golly.Context
 
 	Name string
-	Col  *mongo.Collection
 }
 
 func (c Collection) logger() *logrus.Entry {
@@ -28,7 +29,7 @@ func (c Collection) logger() *logrus.Entry {
 }
 
 func (c Collection) Find(out interface{}, filter interface{}, options ...*options.FindOptions) error {
-	res, err := c.Col.Find(c.gctx.Context(), filter, options...)
+	res, err := c.Collection.Find(c.gctx.Context(), filter, options...)
 	if err != nil {
 		return err
 	}
@@ -50,7 +51,7 @@ func (c Collection) Find(out interface{}, filter interface{}, options ...*option
 
 func (c Collection) FindOne(out interface{}, filter interface{}) error {
 
-	res := c.Col.FindOne(c.gctx.Context(), filter)
+	res := c.Collection.FindOne(c.gctx.Context(), filter)
 
 	if err := res.Err(); err != nil {
 		return err
@@ -70,13 +71,14 @@ func (c Collection) UpdateOneDocument(out interface{}) error {
 func (c Collection) UpdateOne(out interface{}, updateDocument interface{}) error {
 	timestamps(out, time.Now())
 
-	_, err := c.Col.UpdateByID(c.gctx.Context(), IDField(out), updateDocument)
+	_, err := c.Collection.UpdateByID(c.gctx.Context(), IDField(out), updateDocument)
 	return err
 }
 
 func (c Collection) FindByID(out interface{}, id interface{}) error {
 	filter := bson.M{"_id": id}
 
+	// It gets weird when there is an interface
 	switch idT := id.(type) {
 	case primitive.ObjectID, uuid.UUID:
 		filter = bson.M{"_id": idT}
@@ -126,7 +128,7 @@ func (c Collection) Insert(out interface{}) (err error) {
 			ret[i] = out
 		}
 
-		_, err = c.Col.InsertMany(c.gctx.Context(), ret)
+		_, err = c.Collection.InsertMany(c.gctx.Context(), ret)
 		return
 	default:
 		timestamps(out, t)
@@ -134,7 +136,7 @@ func (c Collection) Insert(out interface{}) (err error) {
 
 		recordCnt = 1
 
-		_, err = c.Col.InsertOne(c.gctx.Context(), out)
+		_, err = c.Collection.InsertOne(c.gctx.Context(), out)
 		return
 	}
 }

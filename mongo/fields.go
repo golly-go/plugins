@@ -1,7 +1,6 @@
 package mongo
 
 import (
-	"fmt"
 	"reflect"
 	"time"
 
@@ -36,7 +35,6 @@ func setField(field reflect.Value, value interface{}) {
 		return
 	}
 
-	fmt.Printf("%#v\n", v)
 	field.Set(v)
 }
 
@@ -63,8 +61,6 @@ func setID(out interface{}, t time.Time) {
 			if id.IsZero() {
 				setField(v, primitive.NewObjectID())
 			}
-		default:
-			fmt.Printf("%#v\n", id)
 		}
 	}
 }
