@@ -10,7 +10,6 @@ type TestAggregate struct {
 }
 
 func (*TestAggregate) Topic() string                      { return "test.aggregate" }
-func (*TestAggregate) Type() string                       { return "test_aggregates" }
 func (*TestAggregate) Repo(golly.Context) Repository      { return TestRepostory{} }
 func (*TestAggregate) GetID() string                      { return "" }
 func (*TestAggregate) SetID(id string)                    {}

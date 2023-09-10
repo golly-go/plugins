@@ -3,6 +3,7 @@ package eventsource
 import (
 	"github.com/golly-go/golly"
 	"github.com/golly-go/golly/errors"
+	"github.com/golly-go/golly/utils"
 )
 
 type Command interface {
@@ -68,7 +69,7 @@ func Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) er
 
 	for _, change := range changes {
 		change.AggregateID = ag.GetID()
-		change.AggregateType = ag.Type()
+		change.AggregateType = utils.GetTypeWithPackage(ag)
 		change.MarkCommited()
 		change.Metadata.Merge(metadata)
 
@@ -89,50 +90,3 @@ func Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) er
 
 	return nil
 }
-
-// // Execute executs the command assuming all the aggregates are loaded
-// func Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error {
-// 	repo := ag.Repo(ctx)
-
-// 	if err := cmd.Perform(ctx, ag); err != nil {
-// 		return errors.WrapUnprocessable(err)
-// 	}
-
-// 	changes := ag.Changes().Uncommited()
-
-// 	if changes.HasCommited() {
-// 		if err := FireSubscription(ctx, ag, changes...); err != nil {
-// 			return errors.WrapGeneric(err)
-// 		}
-
-// 		if err := repo.Save(ctx, ag); err != nil {
-// 			return errors.WrapUnprocessable(err)
-// 		}
-// 	}
-
-// 	cgs := []Event{}
-
-// 	for _, change := range changes {
-// 		change.AggregateID = ag.GetID()
-// 		change.AggregateType = ag.Type()
-
-// 		change.MarkCommited()
-
-// 		change.Metadata.Merge(metadata)
-
-// 		if eventBackend != nil && ag.Topic() != "" {
-// 			if change.commit {
-// 				if err := eventBackend.Save(ctx, &change); err != nil {
-// 					return errors.WrapGeneric(err)
-// 				}
-// 			}
-// 		}
-// 		cgs = append(cgs, change)
-// 	}
-
-// 	if len(cgs) > 0 {
-// 		eventBackend.PublishEvent(ctx, ag, cgs...)
-// 	}
-
-// 	return nil
-// }

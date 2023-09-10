@@ -9,7 +9,6 @@ type Aggregate interface {
 
 	Apply(golly.Context, Event)
 
-	Type() string
 	Topic() string
 
 	IncrementVersion()

@@ -15,7 +15,7 @@ type RegistryT map[reflect.Type]RegistryItem
 
 func (rt RegistryT) FindDefinition(aggregateType string) *RegistryItem {
 	for _, ro := range rt {
-		if ro.Aggregate.Type() == aggregateType {
+		if utils.GetTypeWithPackage(ro.Aggregate) == aggregateType {
 			return &ro
 		}
 	}
@@ -72,10 +72,17 @@ func FindRegistryByAggregateName(name string) *RegistryItem {
 			return &reg
 		}
 
-		if strings.EqualFold(reg.RegistryOptions.Aggregate.Type(), name) {
+		regType := utils.GetTypeWithPackage(reg.RegistryOptions.Aggregate)
+
+		if strings.EqualFold(regType, name) {
 			return &reg
 		}
 
+		if pieces := strings.Split(regType, "."); len(pieces) > 1 {
+			if strings.EqualFold(pieces[1], name) {
+				return &reg
+			}
+		}
 	}
 	return nil
 }
