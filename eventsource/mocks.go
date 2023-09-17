@@ -27,8 +27,7 @@ func (m *MockRepository) Save(ctx golly.Context, object interface{}) error {
 }
 
 func (m *MockRepository) Transaction(ctx golly.Context, fn func(golly.Context, Repository) error) error {
-	args := m.Called(ctx, fn)
-	return args.Error(0)
+	return fn(ctx, m)
 }
 
 func (m *MockRepository) IsNewRecord(obj interface{}) bool {
