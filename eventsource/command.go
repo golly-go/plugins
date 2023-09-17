@@ -45,7 +45,12 @@ func LoadIfNotNew(ctx golly.Context, ag Aggregate) error {
 
 // Execute executes the command, ensuring that events are saved to the backend before in-memory processing.
 func Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error {
-	repo := ag.Repo(ctx)
+	// Tired of not being able to stub this - so now we can (This still doesnt fully help if someone runs)
+	// something within their command that calls ag.Repo(ctx) - but it's a start
+	repo := repoFromContext(ctx)
+	if repo == nil {
+		repo = ag.Repo(ctx)
+	}
 
 	// Perform the given command on the aggregate
 	if err := cmd.Perform(ctx, ag); err != nil {
