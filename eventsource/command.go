@@ -97,7 +97,9 @@ func Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) er
 		return errors.WrapGeneric(err)
 	}
 
-	eventBackend.PublishEvent(ctx, ag, changes...)
+	if eventBackend != nil {
+		eventBackend.PublishEvent(ctx, ag, changes...)
+	}
 
 	return nil
 }
