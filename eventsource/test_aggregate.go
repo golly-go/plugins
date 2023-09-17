@@ -2,7 +2,6 @@ package eventsource
 
 import (
 	"github.com/golly-go/golly"
-	"gorm.io/gorm"
 )
 
 type TestAggregate struct {
@@ -10,25 +9,7 @@ type TestAggregate struct {
 }
 
 func (*TestAggregate) Topic() string                      { return "test.aggregate" }
-func (*TestAggregate) Repo(golly.Context) Repository      { return TestRepostory{} }
+func (*TestAggregate) Repo(golly.Context) Repository      { return &MockRepository{} }
 func (*TestAggregate) GetID() string                      { return "" }
 func (*TestAggregate) SetID(id string)                    {}
 func (*TestAggregate) Apply(ctx golly.Context, evt Event) {}
-
-type TestRepostory struct{}
-
-func (TestRepostory) Load(golly.Context, interface{}) error {
-	return nil
-}
-
-func (TestRepostory) LoadScope(*gorm.DB, interface{}) error {
-	return nil
-}
-func (TestRepostory) Save(golly.Context, interface{}) error {
-	return nil
-}
-
-func (t TestRepostory) IsNewRecord(obj interface{}) bool { return true }
-func (t TestRepostory) Transaction(ctx golly.Context, fn func(golly.Context, Repository) error) error {
-	return fn(ctx, t)
-}
