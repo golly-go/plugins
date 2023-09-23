@@ -1,19 +1,10 @@
-go 1.21
-
-toolchain go1.21.1
+go 1.19
 
 use ./kafka
-
 use ./eventsource
-
 use ./orm
-
 use ./redis
-
 use ./passport
-
 use ./gql
-
 use ./workers
-
 use ./mongo
