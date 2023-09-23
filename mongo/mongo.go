@@ -2,8 +2,10 @@ package mongo
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/golly-go/golly"
+	"github.com/golly-go/golly/env"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/bsoncodec"
 )
@@ -14,13 +16,31 @@ var (
 	client *Client = &Client{}
 )
 
+type MongoDB interface {
+	Collection(golly.Context, interface{}) Collection
+	Connect(ctx golly.Context) error
+	Disconnect(ctx golly.Context) error
+	IsConnected(ctx golly.Context) bool
+	Database(ctx golly.Context, options DatabaseOptions) Client
+	Transaction(ctx golly.Context, fn func(ctx golly.Context) error) error
+	Ping(ctx golly.Context, timeout ...time.Duration) error
+}
+
 func defaultOptions(app golly.Application) {
 	app.Config.SetDefault("mongo", map[string]interface{}{
 		"url": "mongodb://localhost:27017",
 	})
 }
 
-func Connection() *Client {
+func Connection(ctx golly.Context) MongoDB {
+	if db := connectionFromContext(ctx); db != nil {
+		return db
+	}
+
+	if env.IsTest() {
+		return &MockMongoDB{}
+	}
+
 	return client
 }
 
