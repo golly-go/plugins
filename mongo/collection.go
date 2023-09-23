@@ -13,6 +13,15 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+type CollectionT interface {
+	Find(out interface{}, filter interface{}, options ...*options.FindOptions) error
+	FindOne(out interface{}, filter interface{}) error
+	FindByID(out interface{}, id interface{}) error
+	UpdateOneDocument(out interface{}) error
+	UpdateOne(out interface{}, updateDocument interface{}) error
+	Insert(out interface{}) error
+}
+
 type Collection struct {
 	*mongo.Collection
 
