@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/golly-go/golly"
+	"github.com/golly-go/golly/env"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/bsoncodec"
 )
@@ -32,6 +33,14 @@ func defaultOptions(app golly.Application) {
 }
 
 func Connection(ctx golly.Context) MongoDB {
+	if db := connectionFromContext(ctx); db != nil {
+		return db
+	}
+
+	if env.IsTest() {
+		return &MockMongoDB{}
+	}
+
 	return client
 }
 
