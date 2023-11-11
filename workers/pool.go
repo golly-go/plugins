@@ -21,7 +21,7 @@ type WorkerFunc func(golly.Context, interface{}) error
 type Pool struct {
 	ctx golly.Context
 
-	workers []*Worker
+	workers Workers
 
 	lock sync.RWMutex
 
@@ -57,10 +57,9 @@ func (pb *Pool) NewWorker(ctx golly.Context, id string) *Worker {
 	})
 }
 
-func (pb *Pool) Name() string { return pb.name }
-
-// TODO Figure out how to better handle this wait in the checkin/checkout system
-func (pb *Pool) Wait() { pb.wg.Wait() }
+func (pb *Pool) Name() string     { return pb.name }
+func (pb *Pool) Workers() Workers { return pb.workers }
+func (pb *Pool) Wait()            { pb.wg.Wait() }
 
 func (pb *Pool) EnQueue(ctx golly.Context, job interface{}) error {
 	pb.jobs <- Job{ctx, job, pb.handler}

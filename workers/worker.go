@@ -13,10 +13,10 @@ type Job struct {
 	Handler WorkerFunc
 }
 
-type Workers map[*Worker]bool
+type Workers []*Worker
 
 func (wks Workers) Find(finder func(*Worker) bool) *Worker {
-	for worker := range wks {
+	for _, worker := range wks {
 		if finder(worker) {
 			return worker
 		}
@@ -25,13 +25,13 @@ func (wks Workers) Find(finder func(*Worker) bool) *Worker {
 }
 
 func (wks Workers) Each(fnc func(*Worker)) {
-	for worker := range wks {
+	for _, worker := range wks {
 		fnc(worker)
 	}
 }
 
 func (wks Workers) Parition(finder func(*Worker) bool) (match []*Worker, nmatch []*Worker) {
-	for worker := range wks {
+	for _, worker := range wks {
 		if finder(worker) {
 			match = append(match, worker)
 		} else {

@@ -8,4 +8,3 @@ use ./passport
 use ./gql
 use ./workers
 use ./mongo
-use ./ws

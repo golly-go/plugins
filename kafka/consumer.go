@@ -34,12 +34,12 @@ type Consumer interface {
 
 	Running() bool
 
-	Pool() workers.Pool
+	Pool() *workers.Pool
 }
 
 type ConsumerBase struct {
 	running bool
-	wp      workers.Pool
+	wp      *workers.Pool
 	logger  *logrus.Entry
 
 	done chan struct{}
@@ -50,7 +50,7 @@ type ConsumerBase struct {
 func (cb *ConsumerBase) SetLogger(logger *logrus.Entry) { cb.logger = logger }
 func (cb *ConsumerBase) Logger() *logrus.Entry          { return cb.logger }
 func (cb *ConsumerBase) Running() bool                  { return cb.running }
-func (cb *ConsumerBase) Pool() workers.Pool             { return cb.wp }
+func (cb *ConsumerBase) Pool() *workers.Pool            { return cb.wp }
 
 // Sensible defaults
 func (cb *ConsumerBase) Config(ctx golly.Context) Config { return NewConfig(ctx.Config()) }
@@ -72,7 +72,7 @@ func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 
 	config := consumer.Config(ctx)
 
-	cb.wp = workers.NewGenericPool(consumer.Name(),
+	cb.wp = workers.NewPool(consumer.Name(),
 		int32(config.MinPool),
 		int32(config.MaxPool),
 		wrap(consumer.Handler),
