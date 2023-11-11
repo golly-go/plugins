@@ -31,8 +31,6 @@ func (cs *ConsumerService) Quit() {
 func (cs *ConsumerService) Initialize(app golly.Application) error {
 	InitDefaultConfig(app.Config)
 
-	cs.RunSideCar(app, "status-endpoint-service")
-
 	return nil
 }
 
