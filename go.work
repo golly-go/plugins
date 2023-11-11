@@ -1,4 +1,4 @@
-go 1.19
+go 1.21
 
 use ./kafka
 use ./eventsource
@@ -8,3 +8,4 @@ use ./passport
 use ./gql
 use ./workers
 use ./mongo
+use ./ws

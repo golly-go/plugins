@@ -13,17 +13,9 @@ type Job struct {
 	Handler WorkerFunc
 }
 
-type Worker interface {
-	ID() string
-	Perform(j Job)
-	Stop()
-	Run()
-	IsIdle() bool
-}
+type Workers map[*Worker]bool
 
-type Workers map[Worker]bool
-
-func (wks Workers) Find(finder func(Worker) bool) Worker {
+func (wks Workers) Find(finder func(*Worker) bool) *Worker {
 	for worker := range wks {
 		if finder(worker) {
 			return worker
@@ -32,13 +24,13 @@ func (wks Workers) Find(finder func(Worker) bool) Worker {
 	return nil
 }
 
-func (wks Workers) Each(fnc func(Worker)) {
+func (wks Workers) Each(fnc func(*Worker)) {
 	for worker := range wks {
 		fnc(worker)
 	}
 }
 
-func (wks Workers) Parition(finder func(Worker) bool) (match []Worker, nmatch []Worker) {
+func (wks Workers) Parition(finder func(*Worker) bool) (match []*Worker, nmatch []*Worker) {
 	for worker := range wks {
 		if finder(worker) {
 			match = append(match, worker)
@@ -52,110 +44,69 @@ func (wks Workers) Parition(finder func(Worker) bool) (match []Worker, nmatch []
 type WorkerConfig struct {
 	ID string
 
-	OnJobStart func(Worker, Job) error
-	OnJobEnd   func(Worker, Job) error
-	Logger     *logrus.Entry
+	OnJobStart func(*Worker, Job) error
+	OnJobEnd   func(*Worker, Job) error
+
+	Logger *logrus.Entry
+
+	IdleTimeout time.Duration
+}
+type Worker struct {
+	id          string
+	startedAt   time.Time
+	lastJobAt   time.Time
+	processing  bool
+	logger      *logrus.Entry
+	onJobStart  func(*Worker, Job) error
+	onJobEnd    func(*Worker, Job) error
+	IdleTimeout time.Duration
 }
 
-type GenericWorker struct {
-	id        string
-	quit      chan struct{}
-	c         chan Job
-	startedAt time.Time
-	lastJobAt time.Time
-
-	processing bool
-	running    bool
-
-	onJobStart func(Worker, Job) error
-	onJobEnd   func(Worker, Job) error
-	logger     *logrus.Entry
-}
-
-func (w *GenericWorker) ID() string    { return w.id }
-func (w *GenericWorker) Perform(j Job) { w.c <- j }
-func (w *GenericWorker) Stop() {
-	if w.running {
-		w.running = false
-		close(w.quit)
+func NewWorker(config WorkerConfig) *Worker {
+	return &Worker{
+		id: config.ID,
+		logger: config.Logger.WithFields(logrus.Fields{
+			"worker.type": "Worker",
+			"worker.id":   config.ID,
+		}),
+		onJobStart:  config.OnJobStart,
+		onJobEnd:    config.OnJobEnd,
+		startedAt:   time.Now(),
+		processing:  false,
+		IdleTimeout: config.IdleTimeout,
 	}
 }
-func (w *GenericWorker) IsIdle() bool {
-	return !w.running || (!w.processing && time.Since(w.lastJobAt) > 30*time.Second)
+
+func (w *Worker) ID() string {
+	return w.id
 }
 
-func (w *GenericWorker) handle(j Job) error {
+func (w *Worker) IsIdle() bool {
+	return !w.processing && time.Since(w.lastJobAt) > w.IdleTimeout
+}
+
+func (w *Worker) Perform(j Job) {
+	w.processing = true
 	defer func() {
 		w.processing = false
-
-		if r := recover(); r != nil {
-			w.logger.Errorln("recovered from panic:", r)
-		}
-
-		if w.onJobEnd != nil {
-			if err := w.onJobEnd(w, j); err != nil {
-				w.logger.Errorln("error in job end callback", err)
-			}
-		}
+		w.lastJobAt = time.Now()
 	}()
-
-	w.processing = true
 
 	if w.onJobStart != nil {
 		if err := w.onJobStart(w, j); err != nil {
-			return err
+			w.logger.Errorln("Error in job start callback:", err)
+			return
 		}
 	}
 
-	w.lastJobAt = time.Now()
-	err := j.Handler(j.Ctx, j.Data)
+	// Perform the job
+	if err := j.Handler(j.Ctx, j.Data); err != nil {
+		w.logger.Errorln("Error performing job:", err)
+	}
 
-	elapsed := time.Since(w.startedAt)
-
-	w.
-		logger.
-		WithField("worker.duration", elapsed.Nanoseconds()).
-		Infof("finished perform (%s)", elapsed.String())
-
-	return err
-
-}
-
-func (w *GenericWorker) Run() {
-	go func() {
-		defer func() {
-			w.running = false
-		}()
-
-		for w.running {
-			select {
-			case <-w.quit:
-				w.running = false
-			case j := <-w.c:
-				w.startedAt = time.Now()
-
-				if err := w.handle(j); err != nil {
-					w.logger.Errorf("unable to process job: %s", err.Error())
-				}
-			}
+	if w.onJobEnd != nil {
+		if err := w.onJobEnd(w, j); err != nil {
+			w.logger.Errorln("Error in job end callback:", err)
 		}
-	}()
-}
-
-func NewGenericWorker(config WorkerConfig) *GenericWorker {
-	return &GenericWorker{
-		id: config.ID,
-		logger: config.Logger.WithFields(logrus.Fields{
-			"worker.type":      "GenericWorker",
-			"worker.id":        config.ID,
-			"worker.startedAt": time.Now(),
-		}),
-
-		onJobStart: config.OnJobStart,
-		onJobEnd:   config.OnJobEnd,
-		c:          make(chan Job, 3),
-		quit:       make(chan struct{}),
-		running:    true,
-		processing: false,
 	}
 }

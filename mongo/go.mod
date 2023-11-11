@@ -1,6 +1,6 @@
 module github.com/golly-go/plugins/mongo
 
-go 1.19
+go 1.21
 
 require (
 	github.com/gertd/go-pluralize v0.2.1

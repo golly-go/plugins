@@ -11,27 +11,17 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type Pool interface {
-	Name() string
-	Run(golly.Context)
-	Stop()
-	Wait()
-	Spawn(golly.Context) Worker
-	Handler() WorkerFunc
-
-	NewWorker(golly.Context, string) Worker
-
-	EnQueue(golly.Context, interface{}) error
-}
+var (
+	ErrorMaxWorker  = fmt.Errorf("max number of workers reached")
+	ErrorNotRunning = fmt.Errorf("pool is not running")
+)
 
 type WorkerFunc func(golly.Context, interface{}) error
 
-type GenericPool struct{ PoolBase }
-
-type PoolBase struct {
+type Pool struct {
 	ctx golly.Context
 
-	workers []Worker
+	workers []*Worker
 
 	lock sync.RWMutex
 
@@ -42,7 +32,8 @@ type PoolBase struct {
 	quit    chan struct{}
 	running bool
 
-	wg sync.WaitGroup
+	workerWG sync.WaitGroup
+	wg       sync.WaitGroup
 
 	minW int32
 	maxW int32
@@ -51,99 +42,81 @@ type PoolBase struct {
 
 	activeWorkers atomic.Int32
 	spawnedCnt    atomic.Int32
+
+	idleTimeout time.Duration
 }
 
-func (pb *PoolBase) NewWorker(ctx golly.Context, id string) Worker {
+func (pb *Pool) NewWorker(ctx golly.Context, id string) *Worker {
 	pb.activeWorkers.Add(1)
 
 	cnt := pb.spawnedCnt.Add(1)
 
-	return NewGenericWorker(WorkerConfig{
-		ID:         fmt.Sprintf("%s-%06d", pb.name, cnt),
-		Logger:     pb.logger,
-		OnJobStart: func(w Worker, j Job) error { pb.addJob(); return nil },
-		OnJobEnd:   func(w Worker, j Job) error { pb.delJob(); pb.Checkin(w); return nil },
+	return NewWorker(WorkerConfig{
+		ID:     fmt.Sprintf("%s-%06d", pb.name, cnt),
+		Logger: pb.logger,
 	})
 }
 
-func (pb *PoolBase) Name() string        { return pb.name }
-func (pb *PoolBase) Handler() WorkerFunc { return pb.handler }
-
-// For now
-func (pb *PoolBase) addJob() { pb.wg.Add(1); pb.logger.Debugf("adding job to %s", pb.name) }
-func (pb *PoolBase) delJob() { pb.wg.Done(); pb.logger.Debugf("deleting job from %s", pb.name) }
+func (pb *Pool) Name() string { return pb.name }
 
 // TODO Figure out how to better handle this wait in the checkin/checkout system
-func (pb *PoolBase) Wait() { pb.wg.Wait() }
+func (pb *Pool) Wait() { pb.wg.Wait() }
 
-func (pb *PoolBase) Spawn(ctx golly.Context) Worker { w, _ := pb.Checkout(); return w }
-
-func (pb *PoolBase) EnQueue(ctx golly.Context, job interface{}) error {
+func (pb *Pool) EnQueue(ctx golly.Context, job interface{}) error {
 	pb.jobs <- Job{ctx, job, pb.handler}
 
 	return nil
 }
 
-func (pb *PoolBase) Checkout() (Worker, error) {
-	if !pb.running {
-		return nil, fmt.Errorf("terminating")
-	}
-
-	for len(pb.workers) == 0 {
-		if pb.activeWorkers.Load()+1 > pb.maxW {
-			ticker := time.NewTicker(5 * time.Millisecond)
-			timer := time.NewTimer(11 * time.Second)
-
-			defer ticker.Stop()
-			defer timer.Stop()
-
-			waiting := true
-			for waiting {
-				select {
-				case <-ticker.C:
-					if pb.activeWorkers.Load()+1 <= pb.maxW {
-						waiting = false
-					}
-				case <-timer.C:
-					return nil, fmt.Errorf("wait time exeeded")
-				}
-			}
-		}
-
-		if worker := pb.NewWorker(pb.ctx, "worker"); worker != nil {
-			go worker.Run()
-
-			return worker, nil
-		}
-	}
-
+func (pb *Pool) Checkout() (*Worker, error) {
+	// Lock the worker pool to safely access the workers slice.
 	pb.lock.Lock()
 	defer pb.lock.Unlock()
 
-	index := len(pb.workers) - 1
-	worker := pb.workers[index]
+	// If there are available workers in the pool, use one of them.
+	if len(pb.workers) > 0 {
+		// Get the last worker in the slice.
+		worker := pb.workers[len(pb.workers)-1]
+		// Remove the worker from the slice.
+		pb.workers = pb.workers[:len(pb.workers)-1]
+		// Return the worker.
+		return worker, nil
+	}
 
-	pb.workers = pb.workers[:index]
+	// If there are no available workers but we have not reached maxW, create a new worker.
+	if pb.activeWorkers.Load() < pb.maxW {
+		worker := pb.NewWorker(pb.ctx, "worker")
+		return worker, nil
+	}
 
-	return worker, nil
+	// If we've reached the maximum number of workers, return an error.
+	return nil, ErrorMaxWorker
 }
 
-func (pb *PoolBase) Checkin(worker Worker) {
+func (pb *Pool) Checkin(worker *Worker) {
 	pb.lock.Lock()
 	defer pb.lock.Unlock()
 
 	pb.workers = append(pb.workers, worker)
 }
 
-func (pb *PoolBase) Stop() {
+func (pb *Pool) Stop() {
 	close(pb.quit)
 }
 
-func (pb *PoolBase) reap() (reaped int32) {
+func (pb *Pool) reap() (reaped int32) {
 	active := int32(pb.activeWorkers.Load())
 
 	if active > pb.minW {
+		fmt.Printf("reaped: %d, active: %d, minW: %d\n", reaped, active, pb.minW)
+
 		for pos, worker := range pb.workers {
+
+			if active-reaped <= pb.minW {
+				pb.activeWorkers.Add(-reaped)
+				break
+			}
+
 			if worker.IsIdle() {
 				reaped++
 
@@ -153,23 +126,21 @@ func (pb *PoolBase) reap() (reaped int32) {
 					pb.workers = pb.workers[:pos]
 				}
 			}
-
-			if active-reaped <= pb.minW {
-				pb.activeWorkers.Add(-reaped)
-				break
-			}
 		}
 	}
 
 	if reaped > 0 {
-		pb.logger.Debugf("%s: repead %d workers", pb.name, reaped)
+		pb.logger.Infof("%s: repead %d workers", pb.name, reaped)
 	}
 
 	return
 }
 
-func (pb *PoolBase) Run(ctx golly.Context) {
+func (pb *Pool) Run(ctx golly.Context) {
 	pb.running = true
+
+	pb.wg.Add(1)
+	defer pb.wg.Done()
 
 	pb.logger = ctx.Logger().WithFields(logrus.Fields{
 		"spawner": pb.name,
@@ -183,16 +154,11 @@ func (pb *PoolBase) Run(ctx golly.Context) {
 		case <-pb.quit:
 			pb.logger.Debug("stopping quit channel")
 			pb.running = false
-
-			for _, w := range pb.workers {
-				w.Stop()
-			}
 		case <-ctx.Context().Done():
 			pb.logger.Debug("stopping context done")
 			pb.running = false
 		case j := <-pb.jobs:
 			pb.Perform(j)
-
 		case <-heartbeat.C:
 			pb.reap()
 		}
@@ -200,7 +166,7 @@ func (pb *PoolBase) Run(ctx golly.Context) {
 
 	pb.logger.Debug("waiting for worker completion to shutdown")
 
-	pb.wg.Wait()
+	pb.workerWG.Wait()
 
 	pb.logger.Debugf("repead jobs for shutdown (active jobs: %d)", pb.activeWorkers.Load())
 
@@ -210,27 +176,43 @@ func (pb *PoolBase) Run(ctx golly.Context) {
 	pb.logger.Debug("terminated")
 }
 
-func (pb *PoolBase) Perform(j Job) {
-	if worker, err := pb.Checkout(); err == nil {
-		defer pb.Checkin(worker)
+func (pb *Pool) Perform(j Job) {
+	if !pb.running {
+		pb.logger.Errorf("Attempted to perform job while pool is not running")
+		return
+	}
 
+	worker, err := pb.Checkout()
+	if err != nil {
+		if err == ErrorMaxWorker {
+			// Optionally, implement a back-off strategy before re-enqueuing the job
+			pb.jobs <- j
+		} else {
+			pb.logger.Errorf("Error checking out worker: %#v", err)
+			// Consider handling the error differently if needed
+		}
+		return
+	}
+
+	pb.workerWG.Add(1)
+
+	go func() {
+		defer func() {
+			pb.workerWG.Done()
+			pb.Checkin(worker)
+		}()
 		worker.Perform(j)
-	} else {
-		pb.logger.Error("error checking out worker: %#v", err)
-	}
+	}()
 }
 
-func NewGenericPool(name string, min, max int32, handler WorkerFunc) Pool {
-	return &GenericPool{
-		PoolBase: PoolBase{
-			name:    name,
-			minW:    int32(math.Max(float64(min), 1)),
-			maxW:    int32(math.Max(float64(max), 25)),
-			handler: handler,
-			quit:    make(chan struct{}),
-			jobs:    make(chan Job, int(math.Max(float64(max*3), 500))),
-		},
+func NewPool(name string, min, max int32, handler WorkerFunc) *Pool {
+	return &Pool{
+		name:        name,
+		minW:        int32(math.Max(float64(min), 1)),
+		maxW:        int32(math.Max(float64(max), 25)),
+		handler:     handler,
+		quit:        make(chan struct{}),
+		jobs:        make(chan Job, int(math.Max(float64(max*3), 500))),
+		idleTimeout: 30 * time.Second,
 	}
 }
-
-var _ Pool = &PoolBase{}

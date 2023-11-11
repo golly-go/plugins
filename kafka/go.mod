@@ -1,6 +1,6 @@
 module github.com/golly-go/plugins/kafka
 
-go 1.19
+go 1.21
 
 require (
 	github.com/golly-go/golly v0.4.1-0.20230614060905-7307e3cc328f
