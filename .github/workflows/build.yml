@@ -32,7 +32,7 @@ jobs:
       - name: Dirs
         run: make dirs
 
-      - name: Dirs
+      - name: Dependencies
         run: make deps
 
       - name: Vet
