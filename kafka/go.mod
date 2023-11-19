@@ -3,8 +3,8 @@ module github.com/golly-go/plugins/kafka
 go 1.21
 
 require (
-	github.com/golly-go/golly v0.4.1-0.20231111203052-c256334df61f
-	github.com/golly-go/plugins/workers v0.0.0-20231111205645-47af4510bdd9
+	github.com/golly-go/golly v0.4.1-0.20231112165153-e0ef0caaf072
+	github.com/golly-go/plugins/workers v0.0.0-20231119205746-8cf27e7fb893
 	github.com/segmentio/kafka-go v0.4.45
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.17.0

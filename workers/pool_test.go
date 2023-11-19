@@ -64,21 +64,14 @@ func TestReapFunctionality(t *testing.T) {
 
 	pool.idleTimeout = 100 * time.Millisecond
 
-	fmt.Printf("HERE0\n")
-
 	// Enqueue a few jobs
 	jobTotal := 10
 	for i := 0; i < jobTotal; i++ {
 		pool.EnQueue(ctx, fmt.Sprintf("job-%d", i))
 	}
 
-	fmt.Printf("HERE1\n")
 	// Wait for all jobs to complete
 	time.Sleep(1 * time.Second)
-
-	fmt.Printf("HERE2\n")
-
-	fmt.Printf("HERE3\n")
 
 	// Verify that workers were reaped as expected
 	activeWorkers := pool.activeWorkers.Load()
