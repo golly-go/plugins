@@ -1,5 +1,9 @@
 DIRS = $(shell ls -d */)
 
+
+dirs:
+	@for f in $(DIRS); do echo $$f; done;
+
 deps:
 	@for f in $(DIRS); do pushd $$f && go get -v -t -d ./... && popd; done;
 
