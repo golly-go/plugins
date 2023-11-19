@@ -2,7 +2,6 @@ package kafka
 
 import (
 	"github.com/golly-go/golly"
-	"github.com/golly-go/golly/utils"
 )
 
 var consumers []Consumer
@@ -37,7 +36,6 @@ func (cs *ConsumerService) Initialize(app golly.Application) error {
 func (cs *ConsumerService) Run(ctx golly.Context) error {
 	for _, consumer := range consumers {
 		go func(ctx golly.Context, consumer Consumer) {
-			ctx.Logger().Infof("Starting consumer: %s [%s]", utils.GetTypeWithPackage(consumer), consumer.Topics())
 
 			consumer.Init(ctx, consumer)
 			consumer.Run(ctx, consumer)

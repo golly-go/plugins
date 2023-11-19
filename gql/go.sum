@@ -129,6 +129,8 @@ github.com/golly-go/plugins/orm v0.0.0-20230528235541-d037b4311f59 h1:ouk219A/f1
 github.com/golly-go/plugins/orm v0.0.0-20230528235541-d037b4311f59/go.mod h1:A0sfSAQuIqhxVTyK3lcdetUItztE9Jc0YI0sb5UWhh0=
 github.com/golly-go/plugins/orm v0.0.0-20231111204059-31dd20c7ef2f h1:fEvvXPzNhjKIQ0mxE3paYzD9HkEJyYFH4Zg+eCsMItM=
 github.com/golly-go/plugins/orm v0.0.0-20231111204059-31dd20c7ef2f/go.mod h1:QdstNqlsoc3wwcOMohLV08Uk/kgesSyLfDE2cu6vc90=
+github.com/golly-go/plugins/orm v0.0.0-20231111205645-47af4510bdd9 h1:6fRwED9EKkdCf/mXZFPTmrqlMZIwy0kYM9JUqb5FY/w=
+github.com/golly-go/plugins/orm v0.0.0-20231111205645-47af4510bdd9/go.mod h1:QdstNqlsoc3wwcOMohLV08Uk/kgesSyLfDE2cu6vc90=
 github.com/google/btree v0.0.0-20180813153112-4030bb1f1f0c/go.mod h1:lNA+9X1NB3Zf8V7Ke586lFgjr2dZNuvo3lPJSGZ5JPQ=
 github.com/google/btree v1.0.0/go.mod h1:lNA+9X1NB3Zf8V7Ke586lFgjr2dZNuvo3lPJSGZ5JPQ=
 github.com/google/go-cmp v0.2.0/go.mod h1:oXzfMopK8JAjlY9xF4vHSVASa0yLyX7SntLO5aqRK0M=

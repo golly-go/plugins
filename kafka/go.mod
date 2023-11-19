@@ -4,8 +4,8 @@ go 1.21
 
 require (
 	github.com/golly-go/golly v0.4.1-0.20231111203052-c256334df61f
-	github.com/golly-go/plugins/workers v0.0.0-20231111204059-31dd20c7ef2f
-	github.com/segmentio/kafka-go v0.4.44
+	github.com/golly-go/plugins/workers v0.0.0-20231111205645-47af4510bdd9
+	github.com/segmentio/kafka-go v0.4.45
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.17.0
 )
@@ -17,7 +17,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
-	github.com/klauspost/compress v1.17.2 // indirect
+	github.com/klauspost/compress v1.17.3 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.1.0 // indirect

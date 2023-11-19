@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	github.com/golly-go/golly v0.4.1-0.20231111203052-c256334df61f
-	github.com/golly-go/plugins/orm v0.0.0-20231111204059-31dd20c7ef2f
+	github.com/golly-go/plugins/orm v0.0.0-20231111205645-47af4510bdd9
 	github.com/graphql-go/graphql v0.8.1
 )
 
