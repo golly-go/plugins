@@ -55,7 +55,7 @@ func (k *KafkaPublisher) release(writer *kafka.Writer) {
 	k.writers = append(k.writers, writer)
 }
 
-func (k KafkaPublisher) close() {
+func (k *KafkaPublisher) close() {
 	k.lock.Lock()
 	defer k.lock.Unlock()
 
@@ -67,7 +67,7 @@ func (k KafkaPublisher) close() {
 	k.writers = k.writers[:0]
 }
 
-func (k KafkaPublisher) Publish(messages ...Message) {
+func (k *KafkaPublisher) Publish(messages ...Message) {
 	if !k.running {
 		return
 	}
