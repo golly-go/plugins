@@ -32,6 +32,9 @@ jobs:
       - name: Dirs
         run: make dirs
 
+      - name: Dirs
+        run: make deps
+
       - name: Vet
         run: make vet
 
