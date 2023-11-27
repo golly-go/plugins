@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/golly-go/golly"
-	"github.com/golly-go/golly/env"
 	"github.com/golly-go/plugins/functional"
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
@@ -57,7 +56,7 @@ func (p *Pinecone) Update(gctx golly.Context, update UpdateParams) ([]byte, erro
 		return []byte{}, err
 	}
 
-	if env.IsDevelopment() {
+	if gctx.Env().IsDevelopment() {
 		gctx.Logger().Debugf("Upserted: (%s)", strings.Join(functional.MapStrings[VectorRecord](update.Records, func(up VectorRecord) string {
 			return fmt.Sprintf("%s", up.ID.String())
 		}), ","))

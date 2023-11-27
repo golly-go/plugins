@@ -125,6 +125,8 @@ github.com/golly-go/golly v0.4.1-0.20231111203052-c256334df61f h1:ib9+cdNyPmts/2
 github.com/golly-go/golly v0.4.1-0.20231111203052-c256334df61f/go.mod h1:cyj1fTgZAvEbvJwsrGst79tbRKG5EXfZsrWuqZcs3Tg=
 github.com/golly-go/golly v0.4.1-0.20231112165153-e0ef0caaf072 h1:Mr+zgc2XsOQHa0qeKIrXELT6W7tXJU9a1cxkARjrOJ8=
 github.com/golly-go/golly v0.4.1-0.20231112165153-e0ef0caaf072/go.mod h1:cyj1fTgZAvEbvJwsrGst79tbRKG5EXfZsrWuqZcs3Tg=
+github.com/golly-go/golly v0.4.1-0.20231127002627-3b526f4c98ca h1:XIsF6E/pIzpLwqh/qUwB/GtppUqYzyAH3s16zRV+E2Q=
+github.com/golly-go/golly v0.4.1-0.20231127002627-3b526f4c98ca/go.mod h1:BM5E9ceDvyhkAoqBxQrF4xlah6O5ziD/PHd9WLTHaG8=
 github.com/golly-go/plugins/orm v0.0.0-20230226194559-d838cab04356 h1:MjkfndGL/HD60C8F5Ax13cuqGp6fSgMpenrgfYDpG2Q=
 github.com/golly-go/plugins/orm v0.0.0-20230226194559-d838cab04356/go.mod h1:3Mcl7q12IO3VUBW4FWYTC1LiDKnocCQjgn7ZXjH6bmk=
 github.com/golly-go/plugins/orm v0.0.0-20230528235541-d037b4311f59 h1:ouk219A/f1FQKttGtkYQBw+SLnZJssXI1HYM3ej9cRg=

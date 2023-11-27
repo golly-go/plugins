@@ -2,7 +2,6 @@ package vectordb
 
 import (
 	"github.com/golly-go/golly"
-	"github.com/golly-go/golly/env"
 	"github.com/golly-go/plugins/functional"
 	"github.com/google/uuid"
 )
@@ -146,7 +145,7 @@ func Connection(ctx golly.Context) VectorDatabase {
 	// Guard here to prevent to prevent this ever
 	// running env.IsTest() for now, we may want an integraiton layer
 	// but we should accurately set the ENV for it
-	if env.IsTest() {
+	if ctx.Env().IsTest() {
 		return NewMockVectorDatabase()
 	}
 

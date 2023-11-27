@@ -9,4 +9,3 @@ use ./gql
 use ./workers
 use ./mongo
 use ./vectordb
-use ./functional

@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	github.com/go-redis/redis/v8 v8.11.5
-	github.com/golly-go/golly v0.4.1-0.20231112165153-e0ef0caaf072
+	github.com/golly-go/golly v0.4.1-0.20231127002627-3b526f4c98ca
 )
 
 require (

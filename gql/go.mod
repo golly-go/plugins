@@ -3,7 +3,7 @@ module github.com/golly-go/plugins/gql
 go 1.21
 
 require (
-	github.com/golly-go/golly v0.4.1-0.20231112165153-e0ef0caaf072
+	github.com/golly-go/golly v0.4.1-0.20231127002627-3b526f4c98ca
 	github.com/golly-go/plugins/orm v0.0.0-20231119205746-8cf27e7fb893
 	github.com/graphql-go/graphql v0.8.1
 )

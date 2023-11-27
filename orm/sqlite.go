@@ -3,7 +3,7 @@ package orm
 import (
 	"fmt"
 
-	"github.com/golly-go/golly/env"
+	"github.com/golly-go/golly"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -11,7 +11,7 @@ import (
 // this is used for testing makes things easier.
 // NewInMemoryConnection creates a new database connection and migrates any passed in model
 func NewSQLiteConnection(app string, modelToMigrate ...interface{}) *gorm.DB {
-	dbName := fmt.Sprintf("db/%s.sqlite", env.CurrentENV())
+	dbName := fmt.Sprintf("db/%s.sqlite", golly.Env())
 
 	db, _ := gorm.Open(sqlite.Open(dbName), &gorm.Config{Logger: newLogger(dbName, false)})
 

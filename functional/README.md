@@ -1,2 +1,0 @@
-# Functional
-Some helpers that makes it so i dont have to keep rebuilding wheel. Perhaps this is better as part of golly core? Or perhaps people dont want to use this package, thats cool, thats why its a plugin
