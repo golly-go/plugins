@@ -9,6 +9,7 @@ var identCtxKey identCtx = "identity"
 type Identity interface {
 	Valid() error
 	IsLoggedIn() bool
+	UserID() string
 }
 
 // IdentityToContext set the identity in a context
