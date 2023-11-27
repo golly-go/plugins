@@ -10,7 +10,6 @@ type Identity interface {
 	Valid() error
 	IsLoggedIn() bool
 	UserID() string
-	JWT() JWT
 }
 
 // IdentityToContext set the identity in a context
