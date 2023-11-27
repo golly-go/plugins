@@ -5,7 +5,6 @@ import (
 
 	"github.com/golly-go/golly"
 	"github.com/golly-go/golly/errors"
-	"github.com/golly-go/plugins/orm"
 	"github.com/graphql-go/graphql"
 )
 
@@ -15,34 +14,47 @@ type gqlHandler struct {
 }
 
 var mutations = graphql.Fields{}
-var queries = graphql.Fields{}
+var queries = graphql.Fields{
+	"empty": &graphql.Field{
+		Name:        "empty",
+		Type:        graphql.String,
+		Description: "empty",
+		Resolve: NewHandler(Options{
+			Handler: func(ctx golly.WebContext, p Params) (interface{}, error) {
+				return "empty", nil
+			},
+		}),
+	},
+}
 
 var lock sync.RWMutex
 
-func RegisterQuery(fields graphql.Fields) {
+func RegisterQuery(inFields ...graphql.Fields) {
 	defer lock.Unlock()
 	lock.Lock()
 
-	for name, field := range fields {
-		queries[name] = field
+	for _, fields := range inFields {
+		for name, field := range fields {
+			queries[name] = field
+		}
 	}
 }
 
-func RegisterMutation(fields graphql.Fields) {
-	for name, field := range fields {
-		mutations[name] = field
+func RegisterMutation(inFields ...graphql.Fields) {
+	for _, fields := range inFields {
+		for name, field := range fields {
+			mutations[name] = field
+		}
 	}
 }
 
 func NewGraphQL() gqlHandler {
 	sc := graphql.SchemaConfig{}
 
-	if len(queries) > 0 {
-		sc.Query = graphql.NewObject(graphql.ObjectConfig{
-			Name:   "Query",
-			Fields: queries,
-		})
-	}
+	sc.Query = graphql.NewObject(graphql.ObjectConfig{
+		Name:   "Query",
+		Fields: queries,
+	})
 
 	if len(mutations) > 0 {
 		sc.Mutation = graphql.NewObject(graphql.ObjectConfig{
@@ -52,6 +64,7 @@ func NewGraphQL() gqlHandler {
 	}
 
 	schema, err := graphql.NewSchema(sc)
+
 	return gqlHandler{schema, errors.WrapGeneric(err)}
 }
 
@@ -66,6 +79,7 @@ type postData struct {
 }
 
 func (gql gqlHandler) Perform(wctx golly.WebContext) {
+
 	var p postData
 
 	if gql.err != nil {
@@ -78,14 +92,14 @@ func (gql gqlHandler) Perform(wctx golly.WebContext) {
 		return
 	}
 
+	ctx := golly.WebContextToGoContext(wctx.Request().Context(), wctx)
+
 	result := graphql.Do(graphql.Params{
 		Schema:         gql.schema,
 		RequestString:  p.Query,
 		VariableValues: p.Variables,
 		OperationName:  p.Operation,
-
-		// TODO Clean this up need a better way of passing golly.Context down
-		Context: orm.ToContext(wctx.Context.ToContext(), orm.DB(wctx.Context)),
+		Context:        ctx,
 	})
 
 	wctx.RenderJSON(result)
