@@ -2,7 +2,6 @@ package eventsource
 
 import (
 	"github.com/golly-go/golly"
-	"gorm.io/gorm"
 )
 
 type testAggregate struct {
@@ -25,10 +24,6 @@ type testRepostoryBase struct {
 
 func (r *testRepostoryBase) Load(golly.Context, interface{}) error {
 	r.loadCalled++
-	return nil
-}
-
-func (r *testRepostoryBase) LoadScope(*gorm.DB, interface{}) error {
 	return nil
 }
 

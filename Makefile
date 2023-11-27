@@ -18,3 +18,6 @@ vet:
 
 tests:
 	@for f in $(DIRS); do echo running on $$f && cd $$f && go test ./... -cover; cd ${STARTING}; done;
+
+tidy:
+	@for f in $(DIRS); do echo running on $$f && cd $$f && go mod tidy; cd ${STARTING}; done;
