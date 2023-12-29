@@ -1,6 +1,7 @@
 package mongo
 
 import (
+	"github.com/golly-go/golly"
 	"github.com/stretchr/testify/mock"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -12,11 +13,15 @@ type MockClient struct {
 	MockCollection *MockCollection
 }
 
-func NewMockClient() MockClient {
-	return MockClient{
+func NewMockClient(ctx golly.Context) (golly.Context, *MockClient) {
+	client := MockClient{
 		mock:           &mock.Mock{},
 		MockCollection: &MockCollection{},
 	}
+
+	ctx = ctx.Set(mongoClientKey, &client)
+
+	return ctx, &client
 }
 
 // Collection provides a mock function with given fields: obj
