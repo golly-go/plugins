@@ -8,11 +8,20 @@ import (
 
 type MockClient struct {
 	mock *mock.Mock
+
+	MockCollection *MockCollection
+}
+
+func NewMockClient() MockClient {
+	return MockClient{
+		mock:           &mock.Mock{},
+		MockCollection: &MockCollection{},
+	}
 }
 
 // Collection provides a mock function with given fields: obj
 func (_m *MockClient) Collection(obj interface{}) Collection {
-	return &MockCollection{}
+	return _m.MockCollection
 }
 
 type MockCollection struct {
