@@ -49,7 +49,7 @@ func main() {
 
 func createCommand(cmd *cobra.Command, args []string) {
 	golly.Run(func(app golly.Application) error {
-		client := &mongo.Client{}
+		client := &mongo.MongoClient{}
 
 		ctx := app.NewContext(context.Background())
 

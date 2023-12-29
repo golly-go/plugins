@@ -13,7 +13,17 @@ import (
 	"golang.org/x/net/context"
 )
 
-type Client struct {
+type Client interface {
+	Connect(ctx golly.Context) error
+	Disconnect(ctx golly.Context) error
+	IsConnected(ctx golly.Context) bool
+	Ping(ctx golly.Context, timeout ...time.Duration) error
+	Database(ctx golly.Context, options DatabaseOptions) Client
+	Collection(ctx golly.Context, obj interface{}) Collection
+	Transaction(ctx golly.Context, fn func(ctx golly.Context) error) error
+}
+
+type MongoClient struct {
 	*mongo.Client
 
 	database *mongo.Database
@@ -24,7 +34,7 @@ type DatabaseOptions struct {
 	NamingFunction func(golly.Context) string
 }
 
-func (c *Client) Connect(ctx golly.Context) error {
+func (c *MongoClient) Connect(ctx golly.Context) error {
 	client, err := mongo.Connect(
 		ctx.Context(),
 		makeMongoOptions(ctx),
@@ -38,7 +48,7 @@ func (c *Client) Connect(ctx golly.Context) error {
 	return nil
 }
 
-func (c *Client) Disconnect(gctx golly.Context) error {
+func (c *MongoClient) Disconnect(gctx golly.Context) error {
 	return c.Client.Disconnect(contextWithDeadline(gctx))
 }
 
@@ -74,11 +84,11 @@ func makeMongoOptions(ctx golly.Context) *options.ClientOptions {
 	return opts
 }
 
-func (c Client) IsConnected(gctx golly.Context) bool {
+func (c *MongoClient) IsConnected(gctx golly.Context) bool {
 	return c.Ping(gctx) == nil
 }
 
-func (c Client) Ping(gctx golly.Context, timeout ...time.Duration) error {
+func (c *MongoClient) Ping(gctx golly.Context, timeout ...time.Duration) error {
 	ctx := contextWithDeadline(gctx, timeout...)
 
 	if err := c.Client.Ping(ctx, readpref.Primary()); err != nil {
@@ -87,7 +97,7 @@ func (c Client) Ping(gctx golly.Context, timeout ...time.Duration) error {
 	return nil
 }
 
-func (c Client) Database(gctx golly.Context, options DatabaseOptions) Client {
+func (c *MongoClient) Database(gctx golly.Context, options DatabaseOptions) Client {
 	if c.database == nil {
 		dbName := options.Name
 
@@ -100,21 +110,21 @@ func (c Client) Database(gctx golly.Context, options DatabaseOptions) Client {
 	return c
 }
 
-func (c Client) Collection(gctx golly.Context, obj interface{}) Collection {
+func (c *MongoClient) Collection(gctx golly.Context, obj interface{}) Collection {
 	s, err := collectionName(obj)
 
 	if err != nil {
 		panic(err)
 	}
 
-	return Collection{
+	return MongoCollection{
 		Name:       s,
 		gctx:       gctx,
 		Collection: c.database.Collection(s),
 	}
 }
 
-func (c Client) Transaction(ctx golly.Context, fn func(ctx golly.Context) error) error {
+func (c *MongoClient) Transaction(ctx golly.Context, fn func(ctx golly.Context) error) error {
 	// 1. Start a new session
 	session, err := c.Client.StartSession()
 	if err != nil {

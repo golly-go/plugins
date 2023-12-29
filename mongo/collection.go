@@ -13,7 +13,19 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-type Collection struct {
+type FinderFunc func(interface{}, interface{}, ...*options.FindOptions) error
+
+type Collection interface {
+	Find(out interface{}, filter interface{}, options ...*options.FindOptions) error
+	FindOne(out interface{}, filter interface{}) error
+	UpdateOneDocument(out interface{}) error
+	UpdateOne(out interface{}, updateDocument interface{}) error
+	FindByID(out interface{}, id interface{}) error
+	Insert(out interface{}) error
+	C() *mongo.Collection
+}
+
+type MongoCollection struct {
 	*mongo.Collection
 
 	gctx golly.Context
@@ -21,14 +33,18 @@ type Collection struct {
 	Name string
 }
 
-func (c Collection) logger() *logrus.Entry {
+func (c MongoCollection) logger() *logrus.Entry {
 	return c.gctx.Logger().WithFields(logrus.Fields{
-		"collection": c.Name,
-		"operation":  "insert",
+		"MongoCollection": c.Name,
+		"operation":       "insert",
 	})
 }
 
-func (c Collection) Find(out interface{}, filter interface{}, options ...*options.FindOptions) error {
+func (c MongoCollection) C() *mongo.Collection {
+	return c.Collection
+}
+
+func (c MongoCollection) Find(out interface{}, filter interface{}, options ...*options.FindOptions) error {
 	res, err := c.Collection.Find(c.gctx.Context(), filter, options...)
 	if err != nil {
 		return err
@@ -49,7 +65,7 @@ func (c Collection) Find(out interface{}, filter interface{}, options ...*option
 	return nil
 }
 
-func (c Collection) FindOne(out interface{}, filter interface{}) error {
+func (c MongoCollection) FindOne(out interface{}, filter interface{}) error {
 
 	res := c.Collection.FindOne(c.gctx.Context(), filter)
 
@@ -64,18 +80,18 @@ func (c Collection) FindOne(out interface{}, filter interface{}) error {
 	return nil
 }
 
-func (c Collection) UpdateOneDocument(out interface{}) error {
+func (c MongoCollection) UpdateOneDocument(out interface{}) error {
 	return c.UpdateOne(out, bson.M{"$set": out})
 }
 
-func (c Collection) UpdateOne(out interface{}, updateDocument interface{}) error {
+func (c MongoCollection) UpdateOne(out interface{}, updateDocument interface{}) error {
 	timestamps(out, time.Now())
 
 	_, err := c.Collection.UpdateByID(c.gctx.Context(), IDField(out), updateDocument)
 	return err
 }
 
-func (c Collection) FindByID(out interface{}, id interface{}) error {
+func (c MongoCollection) FindByID(out interface{}, id interface{}) error {
 	filter := bson.M{"_id": id}
 
 	// It gets weird when there is an interface
@@ -87,7 +103,7 @@ func (c Collection) FindByID(out interface{}, id interface{}) error {
 	return c.FindOne(out, filter)
 }
 
-func (c Collection) Insert(out interface{}) (err error) {
+func (c MongoCollection) Insert(out interface{}) (err error) {
 	recordCnt := 0
 
 	t := time.Now()
