@@ -12,6 +12,7 @@ var (
 	vectorContext golly.ContextKeyT = "vectorDBConnection"
 )
 
+
 type VectorDatabase interface {
 	Find(golly.Context, string) (VectorRecord, error)
 	Search(golly.Context, SearchParams) (VectorRecords, error)
@@ -152,21 +153,7 @@ func Connection(ctx golly.Context) VectorDatabase {
 	return Driver
 }
 
-func initializeDefaultConfig(app golly.Application) {
-	app.Config.SetDefault("vectorstore", map[string]any{
-		"pinecone": map[string]any{
-			"key":         "8d94df3e-ecdd-4995-a914-302e4af54fbf",
-			"project":     "2b75b17",
-			"environment": "us-west4-gcp-free",
-			"index":       "dev",
-		},
-	})
-}
-
 func Initializer(app golly.Application) error {
-	initializeDefaultConfig(app)
-
 	Driver = NewPinecone(app.Config)
-
 	return nil
 }
