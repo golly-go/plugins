@@ -12,7 +12,6 @@ import (
 	"github.com/golly-go/golly"
 	"github.com/golly-go/plugins/functional"
 	"github.com/google/uuid"
-	"github.com/spf13/viper"
 )
 
 type Pinecone struct {
@@ -20,6 +19,32 @@ type Pinecone struct {
 	Url    *url.URL
 	client *http.Client
 }
+
+type PineconeConfig struct {
+	Key     string
+	Project string
+	Env     string
+	Index   string
+}
+
+func (p PineconeConfig) ConnectionString() (*url.URL, error) {
+	return url.Parse(fmt.Sprintf("https://%s-%s.svc.%s.pinecone.io:443", p.Index, p.Project, p.Project))
+}
+
+func (p PineconeConfig) APIKey() string {
+	return p.Key
+}
+
+// -func initializeDefaultConfig(app golly.Application) {
+// 	-       app.Config.SetDefault("vectorstore", map[string]any{
+// 	-               "pinecone": map[string]any{
+// 	-                       "key":         "8d94df3e-ecdd-4995-a914-302e4af54fbf",
+// 	-                       "project":     "2b75b17",
+// 	-                       "environment": "us-west4-gcp-free",
+// 	-                       "index":       "dev",
+// 	-               },
+// 	-       })
+// 	-}
 
 type Owner struct {
 	ID   uuid.UUID `json:"ownerID"`
@@ -165,18 +190,14 @@ func (p *Pinecone) request(gctx golly.Context, path, method, payload string) (*h
 }
 
 // NewPinecone creates a new Pinecone client.
-func NewPinecone(config *viper.Viper) *Pinecone {
-	url, err := url.Parse(fmt.Sprintf("https://%s-%s.svc.%s.pinecone.io:443",
-		config.GetString("vectorstore.pinecone.index"),
-		config.GetString("vectorstore.pinecone.project"),
-		config.GetString("vectorstore.pinecone.environment")))
-
+func NewPinecone(p VectorConfig) *Pinecone {
+	url, err := p.ConnectionString()
 	if err != nil {
 		panic(err)
 	}
 
 	return &Pinecone{
-		key:    config.GetString("vectorstore.pinecone.key"),
+		key:    p.APIKey(),
 		Url:    url,
 		client: http.DefaultClient,
 	}

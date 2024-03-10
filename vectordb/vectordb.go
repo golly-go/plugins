@@ -1,17 +1,24 @@
 package vectordb
 
 import (
+	"net/url"
+
 	"github.com/golly-go/golly"
 	"github.com/golly-go/plugins/functional"
 	"github.com/google/uuid"
 )
 
 var (
-	Driver VectorDatabase
-
+	Driver        VectorDatabase
 	vectorContext golly.ContextKeyT = "vectorDBConnection"
 )
 
+type VectorDriverFunc func(VectorConfig) VectorDatabase
+
+type VectorConfig interface {
+	ConnectionString() (*url.URL, error)
+	APIKey() string
+}
 
 type VectorDatabase interface {
 	Find(golly.Context, string) (VectorRecord, error)
@@ -153,7 +160,9 @@ func Connection(ctx golly.Context) VectorDatabase {
 	return Driver
 }
 
-func Initializer(app golly.Application) error {
-	Driver = NewPinecone(app.Config)
-	return nil
+func Initializer(config VectorConfig, fnc VectorDriverFunc) golly.GollyAppFunc {
+	return func(golly.Application) error {
+		Driver = fnc(config)
+		return nil
+	}
 }
