@@ -35,16 +35,7 @@ func (p PineconeConfig) APIKey() string {
 	return p.Key
 }
 
-// -func initializeDefaultConfig(app golly.Application) {
-// 	-       app.Config.SetDefault("vectorstore", map[string]any{
-// 	-               "pinecone": map[string]any{
-// 	-                       "key":         "8d94df3e-ecdd-4995-a914-302e4af54fbf",
-// 	-                       "project":     "2b75b17",
-// 	-                       "environment": "us-west4-gcp-free",
-// 	-                       "index":       "dev",
-// 	-               },
-// 	-       })
-// 	-}
+var _ VectorConfig = PineconeConfig{}
 
 type Owner struct {
 	ID   uuid.UUID `json:"ownerID"`
