@@ -13,6 +13,9 @@ update-golly:
 update-urls:
 	@for f in $(DIRS); do echo go get github.com/golly-go/plugins/$$f; done;
 
+update:
+	@for f in $(DIRS); do echo running on $$f && cd $$f && go get -u -v -t -d ./...; cd ${STARTING}; done;
+	
 vet:
 	@for f in $(DIRS); do echo running on $$f && cd $$f && go vet ./...; cd ${STARTING}; done;
 
