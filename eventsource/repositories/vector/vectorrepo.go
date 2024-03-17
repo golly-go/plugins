@@ -22,7 +22,7 @@ func (VecorRepo) Load(gctx golly.Context, object interface{}) error {
 		return fmt.Errorf("ID field is not a uuid: %v", id)
 	}
 
-	c, _ := helpers.CollectionName(object)
+	c, _ := utils.CollectionName(object)
 
 	record, err := connection.Find(gctx, vectordb.FindParams{
 		ID:        id,
@@ -54,7 +54,7 @@ func (r VecorRepo) Save(gctx golly.Context, object interface{}) error {
 		return fmt.Errorf("object is not a vector model: %v", object)
 	}
 
-	c, _ := helpers.CollectionName(object)
+	c, _ := utils.CollectionName(object)
 
 	_, err := vectordb.
 		Connection(gctx).

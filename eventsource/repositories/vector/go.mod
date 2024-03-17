@@ -1,6 +1,6 @@
 module github.com/golly-go/plugins/eventsource/repositories/vector
 
-go 1.22.1
+go 1.21
 
 require (
 	github.com/golly-go/golly v0.4.1-0.20240317222707-225321b38cd8
