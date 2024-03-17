@@ -19,8 +19,8 @@ func NewTestConnection(ctx golly.Context) (golly.Context, *MockVectorDatabase) {
 	return ctx, mck
 }
 
-func (mvd *MockVectorDatabase) Find(ctx golly.Context, id string) (VectorRecord, error) {
-	args := mvd.Called(ctx, id)
+func (mvd *MockVectorDatabase) Find(ctx golly.Context, params FindParams) (VectorRecord, error) {
+	args := mvd.Called(ctx, params)
 	return args.Get(0).(VectorRecord), args.Error(1)
 }
 

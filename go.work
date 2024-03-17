@@ -1,4 +1,4 @@
-go 1.21
+go 1.22
 
 use ./kafka
 use ./eventsource
@@ -9,3 +9,4 @@ use ./gql
 use ./workers
 use ./mongo
 use ./vectordb
+use ./eventsource/repositories/mongo

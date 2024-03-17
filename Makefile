@@ -1,4 +1,4 @@
-DIRS = $(shell ls -d */)
+DIRS = $(shell ls -d */**/)
 STARTING =  $(shell pwd)
 
 dirs:

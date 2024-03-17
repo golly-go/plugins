@@ -20,8 +20,13 @@ type VectorConfig interface {
 	APIKey() string
 }
 
+type FindParams struct {
+	ID        uuid.UUID `json:"id"`
+	Namespace *string   `json:"namespace,omitempty"`
+}
+
 type VectorDatabase interface {
-	Find(golly.Context, string) (VectorRecord, error)
+	Find(golly.Context, FindParams) (VectorRecord, error)
 	Search(golly.Context, SearchParams) (VectorRecords, error)
 	Update(golly.Context, UpdateParams) ([]byte, error)
 }
@@ -115,8 +120,8 @@ func Upsert(gctx golly.Context, update UpdateParams) ([]byte, error) {
 	return Connection(gctx).Update(gctx, update)
 }
 
-func Find(gctx golly.Context, id string) (VectorRecord, error) {
-	return Connection(gctx).Find(gctx, id)
+func Find(gctx golly.Context, params FindParams) (VectorRecord, error) {
+	return Connection(gctx).Find(gctx, params)
 }
 
 func Search(gctx golly.Context, search SearchParams) (VectorRecords, error) {
