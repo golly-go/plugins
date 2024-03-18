@@ -13,7 +13,7 @@ var (
 	vectorContext golly.ContextKeyT = "vectorDBConnection"
 )
 
-type VectorDriverFunc func(VectorConfig) VectorDatabase
+type VectorDriverFunc func(golly.Application, VectorConfig) VectorDatabase
 
 type VectorConfig interface {
 	ConnectionString() (*url.URL, error)
@@ -166,8 +166,8 @@ func Connection(ctx golly.Context) VectorDatabase {
 }
 
 func Initializer(config VectorConfig, fnc VectorDriverFunc) golly.GollyAppFunc {
-	return func(golly.Application) error {
-		Driver = fnc(config)
+	return func(a golly.Application) error {
+		Driver = fnc(a, config)
 		return nil
 	}
 }
