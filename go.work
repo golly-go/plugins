@@ -9,5 +9,6 @@ use ./gql
 use ./workers
 use ./mongo
 use ./vectordb
+use ./neo4j
 use ./eventsource/repositories/mongo
 use ./eventsource/repositories/vector
