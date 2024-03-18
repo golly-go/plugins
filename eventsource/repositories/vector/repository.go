@@ -12,9 +12,9 @@ import (
 	"github.com/google/uuid"
 )
 
-type VecorRepo struct{}
+type Repository struct{}
 
-func (VecorRepo) Load(gctx golly.Context, object interface{}) error {
+func (Repository) Load(gctx golly.Context, object interface{}) error {
 	connection := vectordb.Connection(gctx)
 
 	id, ok := utils.IDField(object).(uuid.UUID)
@@ -48,7 +48,7 @@ func (VecorRepo) Load(gctx golly.Context, object interface{}) error {
 	return nil
 }
 
-func (r VecorRepo) Save(gctx golly.Context, object interface{}) error {
+func (r Repository) Save(gctx golly.Context, object interface{}) error {
 	vm, ok := object.(vectordb.VectorModel)
 	if !ok {
 		return fmt.Errorf("object is not a vector model: %v", object)
@@ -66,12 +66,12 @@ func (r VecorRepo) Save(gctx golly.Context, object interface{}) error {
 	return err
 }
 
-func (VecorRepo) IsNewRecord(obj interface{}) bool {
+func (Repository) IsNewRecord(obj interface{}) bool {
 	return true
 }
 
-func (r VecorRepo) Transaction(ctx golly.Context, fn func(golly.Context, eventsource.Repository) error) error {
+func (r Repository) Transaction(ctx golly.Context, fn func(golly.Context, eventsource.Repository) error) error {
 	return fn(ctx, r)
 }
 
-var _ = eventsource.Repository(VecorRepo{})
+var _ = eventsource.Repository(Repository{})
