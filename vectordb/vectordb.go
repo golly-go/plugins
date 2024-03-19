@@ -13,11 +13,12 @@ var (
 	vectorContext golly.ContextKeyT = "vectorDBConnection"
 )
 
-type VectorDriverFunc func(golly.Application, VectorConfig) VectorDatabase
+type VectorDriverFunc func(golly.Application) VectorDatabase
 
 type VectorConfig interface {
 	ConnectionString() (*url.URL, error)
 	APIKey() string
+	Valid() error
 }
 
 type FindParams struct {
@@ -165,9 +166,17 @@ func Connection(ctx golly.Context) VectorDatabase {
 	return Driver
 }
 
-func Initializer(config VectorConfig, fnc VectorDriverFunc) golly.GollyAppFunc {
+func Initializer(db VectorDatabase) golly.GollyAppFunc {
 	return func(a golly.Application) error {
-		Driver = fnc(a, config)
+
+		switch db.(type) {
+		case *Pinecone:
+			p, err := initializePinecone(a)
+			if err != nil {
+				return err
+			}
+			Driver = p
+		}
 		return nil
 	}
 }

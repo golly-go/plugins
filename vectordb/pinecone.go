@@ -27,6 +27,23 @@ type PineconeConfig struct {
 	Index   string
 }
 
+func (p PineconeConfig) Valid() error {
+	if p.Env == "" {
+		return fmt.Errorf("vectorstore.environment not set")
+	}
+	if p.Index == "" {
+		return fmt.Errorf("vectorstore.index not set")
+	}
+	if p.Project == "" {
+		return fmt.Errorf("vectorstore.project not set")
+	}
+	if p.Key == "" {
+		return fmt.Errorf("vectorstore.key not set")
+	}
+
+	return nil
+}
+
 func (p PineconeConfig) ConnectionString() (*url.URL, error) {
 	return url.Parse(fmt.Sprintf("https://%s-%s.svc.%s.pinecone.io:443", p.Index, p.Project, p.Project))
 }
@@ -88,10 +105,22 @@ func (p *Pinecone) Update(gctx golly.Context, update UpdateParams) ([]byte, erro
 	return io.ReadAll(res.Body)
 }
 
-func (p *Pinecone) Find(gctx golly.Context, id string) (VectorRecord, error) {
+func (p *Pinecone) Find(gctx golly.Context, params FindParams) (VectorRecord, error) {
 	results := VectorRecord{}
 
-	req, err := p.request(gctx, "/vectors/fetch?ids="+id, http.MethodGet, "")
+	if params.ID == uuid.Nil {
+		return results, fmt.Errorf("id is required")
+	}
+
+	id := params.ID.String()
+
+	url := "/vectors/fetch?ids=" + id
+
+	if params.Namespace != nil && *params.Namespace != "" {
+		url += "&namespace=" + *params.Namespace
+	}
+
+	req, err := p.request(gctx, url, http.MethodGet, "")
 	if err != nil {
 		return results, err
 	}
@@ -193,3 +222,35 @@ func NewPinecone(p VectorConfig) *Pinecone {
 		client: http.DefaultClient,
 	}
 }
+
+func initializePinecone(app golly.Application) (*Pinecone, error) {
+	config := app.Config
+
+	cfg := PineconeConfig{
+		Key:     config.GetString("vectorstore.key"),
+		Index:   config.GetString("vectorstore.index"),
+		Env:     config.GetString("vectorstore.environment"),
+		Project: config.GetString("vectorstore.project"),
+	}
+
+	if err := cfg.Valid(); err != nil {
+		return nil, err
+	}
+
+	return NewPinecone(cfg), nil
+}
+
+// -func NewPinecone(config *viper.Viper) *Pinecone {
+
+// 	func NewPinecone(p VectorConfig) *Pinecone {
+// 	+       url, err := p.ConnectionString()
+// 			if err != nil {
+// 					panic(err)
+// 			}
+
+// 			return &Pinecone{
+// 	-               key:    config.GetString("vectorstore.pinecone.key"),
+// 	+               key:    p.APIKey(),
+// 					Url:    url,
+// 					client: http.DefaultClient,
+// 			}
