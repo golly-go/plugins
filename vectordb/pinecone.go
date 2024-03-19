@@ -29,16 +29,16 @@ type PineconeConfig struct {
 
 func (p PineconeConfig) Valid() error {
 	if p.Env == "" {
-		return fmt.Errorf("vectorstore.environment not set")
+		return fmt.Errorf("vectordb.environment not set")
 	}
 	if p.Index == "" {
-		return fmt.Errorf("vectorstore.index not set")
+		return fmt.Errorf("vectordb.index not set")
 	}
 	if p.Project == "" {
-		return fmt.Errorf("vectorstore.project not set")
+		return fmt.Errorf("vectordb.project not set")
 	}
 	if p.Key == "" {
-		return fmt.Errorf("vectorstore.key not set")
+		return fmt.Errorf("vectordb.key not set")
 	}
 
 	return nil
@@ -227,10 +227,10 @@ func initializePinecone(app golly.Application) (*Pinecone, error) {
 	config := app.Config
 
 	cfg := PineconeConfig{
-		Key:     config.GetString("vectorstore.key"),
-		Index:   config.GetString("vectorstore.index"),
-		Env:     config.GetString("vectorstore.environment"),
-		Project: config.GetString("vectorstore.project"),
+		Key:     config.GetString("vectordb.key"),
+		Index:   config.GetString("vectordb.index"),
+		Env:     config.GetString("vectordb.environment"),
+		Project: config.GetString("vectordb.project"),
 	}
 
 	if err := cfg.Valid(); err != nil {

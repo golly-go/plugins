@@ -1,7 +1,9 @@
 package vectordb
 
 import (
+	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/golly-go/golly"
 	"github.com/golly-go/plugins/functional"
@@ -166,17 +168,16 @@ func Connection(ctx golly.Context) VectorDatabase {
 	return Driver
 }
 
-func Initializer(db VectorDatabase) golly.GollyAppFunc {
-	return func(a golly.Application) error {
-
-		switch db.(type) {
-		case *Pinecone:
-			p, err := initializePinecone(a)
-			if err != nil {
-				return err
-			}
-			Driver = p
+func Initializer(a golly.Application) error {
+	switch strings.ToLower(a.Config.GetString("vectordb.provider")) {
+	case "pinecone":
+		p, err := initializePinecone(a)
+		if err != nil {
+			return err
 		}
-		return nil
+		Driver = p
+	default:
+		return fmt.Errorf("must specify vectordb.provider (right now only pinecone supported)")
 	}
+	return nil
 }
