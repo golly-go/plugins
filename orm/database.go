@@ -3,6 +3,7 @@ package orm
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/golly-go/golly"
@@ -36,10 +37,11 @@ func SetConnection(newDB *gorm.DB) {
 // todo: mkae this more dynamic going forward with interfaces etc
 // since right now we only support gorm
 func Initializer(app golly.Application) error {
+	name := strings.ReplaceAll(strings.ReplaceAll(app.Name, "-", "_"), " ", "_")
 
-	v := setConfigDefaults(app.Name, app.Config)
+	v := setConfigDefaults(name, app.Config)
 
-	driver := v.GetString(fmt.Sprintf("%s.db.driver", app.Name))
+	driver := v.GetString(fmt.Sprintf("%s.db.driver", name))
 
 	switch driver {
 	case "in-memory":
