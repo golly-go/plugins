@@ -34,7 +34,7 @@ type Config struct {
 	User     string
 	Database string
 	Password string
-	Port     string
+	Port     int
 
 	SSL bool
 }
