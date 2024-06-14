@@ -3,7 +3,6 @@ package orm
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/golly-go/golly"
@@ -17,9 +16,34 @@ var lock sync.RWMutex
 
 const contextKey = "database"
 
-func InitializerWithMigration(app golly.Application, modelsToMigrate ...interface{}) golly.GollyAppFunc {
+const DefaultConnection = "default"
+
+type DriverT string
+
+const (
+	InMemoryDriver DriverT = "in-memory"
+	SQLiteDriver   DriverT = "sqlite"
+	PostgresDriver DriverT = "postgres"
+)
+
+type Config struct {
+	ConnectionName string
+	Driver         DriverT
+
+	Host     string
+	User     string
+	Database string
+	Password string
+	Port     string
+
+	SSL bool
+}
+
+func InitializerWithMigration(app golly.Application, config Config, modelsToMigrate ...interface{}) golly.GollyAppFunc {
 	return func(app golly.Application) error {
-		if err := Initializer(app); err != nil {
+		fnc := Initializer(config)
+
+		if err := fnc(app); err != nil {
 			return err
 		}
 		return db.AutoMigrate(modelsToMigrate...)
@@ -36,30 +60,27 @@ func SetConnection(newDB *gorm.DB) {
 // Initializer golly initializer setting up the databse
 // todo: mkae this more dynamic going forward with interfaces etc
 // since right now we only support gorm
-func Initializer(app golly.Application) error {
-	name := strings.ReplaceAll(strings.ReplaceAll(app.Name, "-", "_"), " ", "_")
+func Initializer(config Config) func(app golly.Application) error {
 
-	v := setConfigDefaults(name, app.Config)
-
-	driver := v.GetString(fmt.Sprintf("%s.db.driver", name))
-
-	switch driver {
-	case "in-memory":
-		SetConnection(NewInMemoryConnection())
-	case "sqlite":
-		SetConnection(NewSQLiteConnection(name))
-	case "postgres":
-		d, err := NewPostgresConnection(v, name)
-		if err != nil {
-			return errors.WrapGeneric(err)
+	return func(app golly.Application) error {
+		switch config.Driver {
+		case InMemoryDriver:
+			SetConnection(NewInMemoryConnection())
+		case SQLiteDriver:
+			SetConnection(NewSQLiteConnection(config.ConnectionName))
+		case PostgresDriver:
+			d, err := NewPostgresConnection(app.Config, config)
+			if err != nil {
+				return errors.WrapGeneric(err)
+			}
+			SetConnection(d)
+		default:
+			return errors.WrapGeneric(fmt.Errorf("database drive %s not supported", config.Driver))
 		}
-		SetConnection(d)
-	default:
-		return errors.WrapGeneric(fmt.Errorf("database drive %s not supported", driver))
-	}
 
-	app.Routes().Use(middleware)
-	return nil
+		app.Routes().Use(middleware)
+		return nil
+	}
 }
 
 func Connection() *gorm.DB {
