@@ -47,9 +47,9 @@ func Initializer(app golly.Application) error {
 	case "in-memory":
 		SetConnection(NewInMemoryConnection())
 	case "sqlite":
-		SetConnection(NewSQLiteConnection(app.Name))
+		SetConnection(NewSQLiteConnection(name))
 	case "postgres":
-		d, err := NewPostgresConnection(v, app.Name)
+		d, err := NewPostgresConnection(v, name)
 		if err != nil {
 			return errors.WrapGeneric(err)
 		}
