@@ -13,7 +13,7 @@ import (
 
 // Commands migration commands to be imported into an application
 // these commands allow for sql based migrations.
-var Commands = []*cobra.Command{
+var commands = []*cobra.Command{
 	{
 		Use:   "init",
 		Short: "Init Migration System",
@@ -49,6 +49,16 @@ var Commands = []*cobra.Command{
 			boot(args, MigrationVersion)
 		},
 	},
+}
+
+func Command() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:              "migration",
+		TraverseChildren: true,
+	}
+
+	cmd.AddCommand(commands...)
+	return cmd
 }
 
 func boot(args []string, fn func(*viper.Viper, *gorm.DB, []string) error) {
