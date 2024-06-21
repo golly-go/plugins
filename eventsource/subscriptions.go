@@ -43,12 +43,10 @@ func FireSubscription(ctx golly.Context, ag Aggregate, events ...Event) error {
 	mutex.RLock()
 	defer mutex.RUnlock()
 
-	agg := reflect.TypeOf(ag)
+	aggName := utils.GetTypeWithPackage(ag)
 
 	for _, event := range events {
 		eventType := utils.GetTypeWithPackage(event.Data)
-
-		aggName := utils.GetTypeWithPackage(agg)
 
 		// Execute handlers for the specific event type
 		if specificSubscribers, exists := subscriptions[aggName][eventType]; exists {
