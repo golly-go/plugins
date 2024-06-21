@@ -17,30 +17,26 @@ type Subscription struct {
 }
 
 var (
-	subscriptions = make(map[reflect.Type]map[string][]SubscriptionHandler)
-	allEventType  = Event{}
+	subscriptions = make(map[string]map[string][]SubscriptionHandler)
+	allEventType  = "*"
 
 	mutex sync.RWMutex
 )
 
-func Subscribe(ag Aggregate, e any, handler SubscriptionHandler) {
+func Subscribe(aggregateWithPackage string, e string, handler SubscriptionHandler) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	agg := reflect.TypeOf(ag)
-
-	eventType := utils.GetTypeWithPackage(e)
-
-	if _, exists := subscriptions[agg]; !exists {
-		subscriptions[agg] = make(map[string][]SubscriptionHandler)
+	if _, exists := subscriptions[aggregateWithPackage]; !exists {
+		subscriptions[aggregateWithPackage] = make(map[string][]SubscriptionHandler)
 	}
 
-	subscriptions[agg][eventType] = append(subscriptions[agg][eventType], handler)
+	subscriptions[aggregateWithPackage][e] = append(subscriptions[aggregateWithPackage][e], handler)
 }
 
 // SubscribeAll now uses the precomputed allEventType.
-func SubscribeAll(ag Aggregate, handler SubscriptionHandler) {
-	Subscribe(ag, allEventType, handler)
+func SubscribeAll(aggregateWithPackage string, handler SubscriptionHandler) {
+	Subscribe(aggregateWithPackage, "*", handler)
 }
 
 func FireSubscription(ctx golly.Context, ag Aggregate, events ...Event) error {
@@ -52,8 +48,10 @@ func FireSubscription(ctx golly.Context, ag Aggregate, events ...Event) error {
 	for _, event := range events {
 		eventType := utils.GetTypeWithPackage(event.Data)
 
+		aggName := utils.GetTypeWithPackage(agg)
+
 		// Execute handlers for the specific event type
-		if specificSubscribers, exists := subscriptions[agg][eventType]; exists {
+		if specificSubscribers, exists := subscriptions[aggName][eventType]; exists {
 			for _, handler := range specificSubscribers {
 				if err := handler(ctx, ag, event); err != nil {
 					return err
@@ -62,7 +60,7 @@ func FireSubscription(ctx golly.Context, ag Aggregate, events ...Event) error {
 		}
 
 		// Execute handlers that listen to all events using the precomputed allEventType.
-		if allEventSubscribers, exists := subscriptions[agg][utils.GetTypeWithPackage(allEventType)]; exists {
+		if allEventSubscribers, exists := subscriptions[aggName][utils.GetTypeWithPackage(allEventType)]; exists {
 			for pos, handler := range allEventSubscribers {
 				ctx.Logger().Debugf("Executing handler: %d %#v\n", pos, handler)
 
