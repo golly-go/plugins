@@ -7,7 +7,6 @@ import (
 
 	"github.com/golly-go/golly"
 	"github.com/golly-go/golly/errors"
-	"github.com/spf13/viper"
 	"gorm.io/gorm"
 )
 
@@ -96,6 +95,10 @@ func DB(c golly.Context) *gorm.DB {
 	return Connection()
 }
 
+func NewDB(c golly.Context) *gorm.DB {
+	return DB(c).Session(&gorm.Session{NewDB: true})
+}
+
 func ToContext(parent context.Context, db *gorm.DB) context.Context {
 	return context.WithValue(parent, gorm.DB{}, db)
 }
@@ -132,19 +135,4 @@ func GetDBFromContext(c golly.Context) *gorm.DB {
 		return db.(*gorm.DB)
 	}
 	return nil
-}
-
-// Sane defaults TODO: Clean this up
-func setConfigDefaults(appName string, v *viper.Viper) *viper.Viper {
-	v.SetDefault(appName, map[string]interface{}{
-		"db": map[string]interface{}{
-			"host":     "127.0.0.1",
-			"port":     "5432",
-			"username": "app",
-			"password": "password",
-			"name":     appName,
-			"driver":   "postgres",
-		},
-	})
-	return v
 }
