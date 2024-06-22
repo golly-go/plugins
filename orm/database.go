@@ -109,13 +109,22 @@ func FromContext(ctx context.Context) *gorm.DB {
 
 func middleware(next golly.HandlerFunc) golly.HandlerFunc {
 	return func(c golly.WebContext) {
-		SetDBOnContext(c.Context, Connection())
+		c.Context = SetNewSessionOnContext(c.Context, Connection())
+
 		next(c)
 	}
 }
 
 func SetDBOnContext(c golly.Context, db *gorm.DB) golly.Context {
-	return c.Set(contextKey, db.Session(&gorm.Session{NewDB: true}))
+	return c.Set(contextKey, db)
+}
+
+func SetNewSessionOnContext(c golly.Context, db *gorm.DB) golly.Context {
+	return SetDBOnContext(c, db.Session(&gorm.Session{NewDB: true}))
+}
+
+func CreateTestContext(c golly.Context, modelsToMigration ...interface{}) golly.Context {
+	return SetNewSessionOnContext(c, NewInMemoryConnection(modelsToMigration...))
 }
 
 func GetDBFromContext(c golly.Context) *gorm.DB {
@@ -123,11 +132,6 @@ func GetDBFromContext(c golly.Context) *gorm.DB {
 		return db.(*gorm.DB)
 	}
 	return nil
-}
-
-func CreateTestContext(c golly.Context, modelsToMigration ...interface{}) golly.Context {
-	SetDBOnContext(c, NewInMemoryConnection(modelsToMigration...))
-	return c
 }
 
 // Sane defaults TODO: Clean this up
