@@ -6,6 +6,10 @@ import (
 	"github.com/golly-go/golly/utils"
 )
 
+type AggregateType interface {
+	Type() string
+}
+
 type Command interface {
 	Perform(golly.Context, Aggregate) error
 }
@@ -78,9 +82,15 @@ func Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) er
 		return errors.WrapUnprocessable(err)
 	}
 
-	for _, change := range changes {
+	for pos, change := range changes {
 		change.AggregateID = ag.GetID()
-		change.AggregateType = utils.GetTypeWithPackage(ag)
+
+		if inf, ok := ag.(AggregateType); ok {
+			change.AggregateType = inf.Type()
+		} else {
+			change.AggregateType = utils.GetTypeWithPackage(ag)
+		}
+
 		change.MarkCommited()
 		change.Metadata.Merge(metadata)
 
@@ -90,6 +100,8 @@ func Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) er
 				return errors.WrapGeneric(err)
 			}
 		}
+
+		changes[pos] = change
 	}
 
 	// Only after confirming event persistence, invoke in-memory subscriptions
