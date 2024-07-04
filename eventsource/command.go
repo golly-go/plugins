@@ -1,9 +1,14 @@
 package eventsource
 
 import (
+	"github.com/go-playground/validator/v10"
 	"github.com/golly-go/golly"
 	"github.com/golly-go/golly/errors"
 	"github.com/golly-go/golly/utils"
+)
+
+var (
+	validate = validator.New(validator.WithRequiredStructEnabled())
 )
 
 type AggregateType interface {
@@ -20,6 +25,10 @@ type CommandValidator interface {
 
 func Call(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error {
 	repo := Repo(ctx, ag)
+
+	if err := validate.Struct(cmd); err != nil {
+		return errors.WrapUnprocessable(err)
+	}
 
 	if validator, ok := cmd.(CommandValidator); ok {
 		if err := validator.Validate(ctx, ag); err != nil {
