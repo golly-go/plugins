@@ -115,7 +115,7 @@ func schemaConfig() graphql.SchemaConfig {
 	return sc
 }
 
-func ExecuteGraphQLQuery(gctx golly.Context, graphqlQueries graphql.Fields, query string) (*graphql.Result, error) {
+func ExecuteGraphQLQuery(gctx golly.Context, graphqlQueries graphql.Fields, query string, variables map[string]interface{}) (*graphql.Result, error) {
 	sc := graphql.SchemaConfig{}
 
 	sc.Query = graphql.NewObject(graphql.ObjectConfig{
@@ -123,11 +123,11 @@ func ExecuteGraphQLQuery(gctx golly.Context, graphqlQueries graphql.Fields, quer
 		Fields: graphqlQueries,
 	})
 
-	return ExecuteGraphQL(gctx, sc, query)
+	return ExecuteGraphQL(gctx, sc, query, variables)
 
 }
 
-func ExecuteGraphQLMutation(gctx golly.Context, mutationsFields graphql.Fields, mutation string) (*graphql.Result, error) {
+func ExecuteGraphQLMutation(gctx golly.Context, mutationsFields graphql.Fields, mutation string, variables map[string]interface{}) (*graphql.Result, error) {
 	sc := graphql.SchemaConfig{}
 
 	sc.Query = graphql.NewObject(graphql.ObjectConfig{
@@ -140,11 +140,11 @@ func ExecuteGraphQLMutation(gctx golly.Context, mutationsFields graphql.Fields, 
 		Fields: mutationsFields,
 	})
 
-	return ExecuteGraphQL(gctx, sc, mutation)
+	return ExecuteGraphQL(gctx, sc, mutation, variables)
 }
 
 // Helper method to execute a GraphQL query
-func ExecuteGraphQL(gctx golly.Context, sc graphql.SchemaConfig, query string) (*graphql.Result, error) {
+func ExecuteGraphQL(gctx golly.Context, sc graphql.SchemaConfig, query string, variables map[string]interface{}) (*graphql.Result, error) {
 	schema, err := graphql.NewSchema(sc)
 	if err != nil {
 		return nil, err
@@ -156,9 +156,11 @@ func ExecuteGraphQL(gctx golly.Context, sc graphql.SchemaConfig, query string) (
 	ctx := golly.WebContextToGoContext(gctx.Context(), wctx)
 
 	params := graphql.Params{
-		Schema:        schema,
-		RequestString: query,
-		Context:       ctx,
+		Schema:         schema,
+		RequestString:  query,
+		Context:        ctx,
+		VariableValues: variables,
 	}
+
 	return graphql.Do(params), nil
 }
