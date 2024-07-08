@@ -136,6 +136,10 @@ func (DefaultCommandHandler) Execute(ctx golly.Context, ag Aggregate, cmd Comman
 	return nil
 }
 
+func Call(gctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error {
+	return Handler(gctx).Call(gctx, ag, cmd, metadata)
+}
+
 func Handler(gctx golly.Context) CommandHandler {
 	if handler, ok := gctx.Get(commandHandlerKey); ok {
 		return handler.(CommandHandler)
