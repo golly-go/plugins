@@ -1,6 +1,8 @@
 package gql
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"sync"
 
 	"github.com/golly-go/golly"
@@ -49,19 +51,7 @@ func RegisterMutation(inFields ...graphql.Fields) {
 }
 
 func NewGraphQL() gqlHandler {
-	sc := graphql.SchemaConfig{}
-
-	sc.Query = graphql.NewObject(graphql.ObjectConfig{
-		Name:   "Query",
-		Fields: queries,
-	})
-
-	if len(mutations) > 0 {
-		sc.Mutation = graphql.NewObject(graphql.ObjectConfig{
-			Name:   "Mutation",
-			Fields: mutations,
-		})
-	}
+	sc := schemaConfig()
 
 	schema, err := graphql.NewSchema(sc)
 
@@ -103,4 +93,67 @@ func (gql gqlHandler) Perform(wctx golly.WebContext) {
 	})
 
 	wctx.RenderJSON(result)
+}
+
+func schemaConfig() graphql.SchemaConfig {
+	sc := graphql.SchemaConfig{}
+
+	if len(queries) > 0 {
+		sc.Query = graphql.NewObject(graphql.ObjectConfig{
+			Name:   "Query",
+			Fields: queries,
+		})
+	}
+
+	if len(mutations) > 0 {
+		sc.Mutation = graphql.NewObject(graphql.ObjectConfig{
+			Name:   "Mutation",
+			Fields: mutations,
+		})
+	}
+
+	return sc
+}
+
+func ExecuteGraphQLQuery(gctx golly.Context, graphqlQueries graphql.Fields, query string) (*graphql.Result, error) {
+	sc := graphql.SchemaConfig{}
+
+	sc.Query = graphql.NewObject(graphql.ObjectConfig{
+		Name:   "Query",
+		Fields: graphqlQueries,
+	})
+
+	return ExecuteGraphQL(gctx, sc, query)
+
+}
+
+func ExecuteGraphQLMutation(gctx golly.Context, mutationsFields graphql.Fields, mutation string) (*graphql.Result, error) {
+	sc := graphql.SchemaConfig{}
+
+	sc.Query = graphql.NewObject(graphql.ObjectConfig{
+		Name:   "Mutations",
+		Fields: mutationsFields,
+	})
+
+	return ExecuteGraphQL(gctx, sc, mutation)
+}
+
+// Helper method to execute a GraphQL query
+func ExecuteGraphQL(gctx golly.Context, sc graphql.SchemaConfig, query string) (*graphql.Result, error) {
+	schema, err := graphql.NewSchema(sc)
+	if err != nil {
+		return nil, err
+	}
+
+	req, _ := http.NewRequest("POST", "/graphql", nil)
+	resp := httptest.NewRecorder()
+	wctx := golly.NewWebContext(gctx, req, resp, "test")
+	ctx := golly.WebContextToGoContext(gctx.Context(), wctx)
+
+	params := graphql.Params{
+		Schema:        schema,
+		RequestString: query,
+		Context:       ctx,
+	}
+	return graphql.Do(params), nil
 }
