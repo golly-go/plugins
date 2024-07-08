@@ -130,7 +130,7 @@ func ExecuteGraphQLQuery(gctx golly.Context, graphqlQueries graphql.Fields, quer
 func ExecuteGraphQLMutation(gctx golly.Context, mutationsFields graphql.Fields, mutation string) (*graphql.Result, error) {
 	sc := graphql.SchemaConfig{}
 
-	sc.Query = graphql.NewObject(graphql.ObjectConfig{
+	sc.Mutation = graphql.NewObject(graphql.ObjectConfig{
 		Name:   "Mutations",
 		Fields: mutationsFields,
 	})
