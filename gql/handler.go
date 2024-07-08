@@ -88,7 +88,7 @@ func NewHandler(options Options) graphql.FieldResolveFn {
 
 		// TODO bring back the passport integration here
 		if !options.Public {
-			if !params.Identity.IsLoggedIn() {
+			if params.Identity == nil || !params.Identity.IsLoggedIn() {
 				return nil, errors.WrapForbidden(fmt.Errorf("must be logged in to view/perform this action"))
 			}
 		}
