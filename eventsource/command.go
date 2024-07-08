@@ -7,6 +7,10 @@ import (
 	"github.com/golly-go/golly/utils"
 )
 
+const (
+	commandHandlerKey golly.ContextKeyT = "commandHandler"
+)
+
 var (
 	validate = validator.New(validator.WithRequiredStructEnabled())
 )
@@ -23,7 +27,36 @@ type CommandValidator interface {
 	Validate(golly.Context, Aggregate) error
 }
 
-func Call(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error {
+func Repo(ctx golly.Context, ag Aggregate) Repository {
+	// Tired of not being able to stub this - so now we can (This still doesnt fully help if someone runs)
+	// something within their command that calls ag.Repo(ctx) - but it's a start
+	if repo := repoFromContext(ctx); repo != nil {
+		return repo
+	}
+
+	return ag.Repo(ctx)
+
+}
+
+func LoadIfNotNew(ctx golly.Context, ag Aggregate) error {
+	repo := Repo(ctx, ag)
+
+	if !repo.IsNewRecord(ag) {
+		if err := repo.Load(ctx, ag); err != nil {
+			return errors.WrapNotFound(err)
+		}
+	}
+	return nil
+}
+
+type CommandHandler interface {
+	Call(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error
+	Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error
+}
+
+type DefaultCommandHandler struct{}
+
+func (ch DefaultCommandHandler) Call(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error {
 	repo := Repo(ctx, ag)
 
 	if err := validate.Struct(cmd); err != nil {
@@ -41,34 +74,12 @@ func Call(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error
 	}
 
 	return repo.Transaction(ctx, func(ctx golly.Context, repo Repository) error {
-		return Execute(ctx, ag, cmd, metadata)
+		return ch.Execute(ctx, ag, cmd, metadata)
 	})
 }
 
-func LoadIfNotNew(ctx golly.Context, ag Aggregate) error {
-	repo := Repo(ctx, ag)
-
-	if !repo.IsNewRecord(ag) {
-		if err := repo.Load(ctx, ag); err != nil {
-			return errors.WrapNotFound(err)
-		}
-	}
-	return nil
-}
-
-func Repo(ctx golly.Context, ag Aggregate) Repository {
-	// Tired of not being able to stub this - so now we can (This still doesnt fully help if someone runs)
-	// something within their command that calls ag.Repo(ctx) - but it's a start
-	if repo := repoFromContext(ctx); repo != nil {
-		return repo
-	}
-
-	return ag.Repo(ctx)
-
-}
-
 // Execute executes the command, ensuring that events are saved to the backend before in-memory processing.
-func Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error {
+func (DefaultCommandHandler) Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error {
 	repo := Repo(ctx, ag)
 
 	// Perform the given command on the aggregate
@@ -124,3 +135,12 @@ func Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) er
 
 	return nil
 }
+
+func Handler(gctx golly.Context) CommandHandler {
+	if handler, ok := gctx.Get(commandHandlerKey); ok {
+		return handler.(CommandHandler)
+	}
+	return DefaultCommandHandler{}
+}
+
+var _ CommandHandler = DefaultCommandHandler{}
