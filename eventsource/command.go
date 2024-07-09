@@ -124,6 +124,8 @@ func (DefaultCommandHandler) Execute(ctx golly.Context, ag Aggregate, cmd Comman
 		changes[pos] = change
 	}
 
+	ag.ClearChanges()
+
 	// Only after confirming event persistence, invoke in-memory subscriptions
 	if err := FireSubscription(ctx, ag, changes...); err != nil {
 		return errors.WrapGeneric(err)
