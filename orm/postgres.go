@@ -29,12 +29,12 @@ func postgressConnectionString(v *viper.Viper, config Config) string {
 		return url
 	}
 
-	sslMode := "disable"
+	sslMode := "sslmode=disable"
 	if config.SSL {
-		sslMode = "enable"
+		sslMode = ""
 	}
 
-	return fmt.Sprintf("dbname=%s host=%s port=%d user=%s password=%s sslmode=%s",
+	return fmt.Sprintf("dbname=%s host=%s port=%d user=%s password=%s %s",
 		config.Database,
 		config.Host,
 		config.Port,
