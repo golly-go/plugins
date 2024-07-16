@@ -18,7 +18,7 @@ func NewPostgresConnection(v *viper.Viper, config Config) (*gorm.DB, error) {
 	}
 
 	db, err := gorm.Open(postgres.Open(postgressConnectionString(v, config)), &gorm.Config{
-		Logger: newLogger("postgres", disableLog),
+		Logger: NewLogger("postgres", disableLog),
 	})
 
 	return db, err

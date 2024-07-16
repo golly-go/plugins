@@ -13,7 +13,7 @@ import (
 func NewSQLiteConnection(app string, modelToMigrate ...interface{}) *gorm.DB {
 	dbName := fmt.Sprintf("db/%s.sqlite", golly.Env())
 
-	db, _ := gorm.Open(sqlite.Open(dbName), &gorm.Config{Logger: newLogger(dbName, false)})
+	db, _ := gorm.Open(sqlite.Open(dbName), &gorm.Config{Logger: NewLogger(dbName, false)})
 
 	if len(modelToMigrate) > 0 {
 		db.AutoMigrate(modelToMigrate...)
@@ -26,7 +26,7 @@ func NewSQLiteConnection(app string, modelToMigrate ...interface{}) *gorm.DB {
 // NewInMemoryConnection creates a new database connection and migrates any passed in model
 func NewInMemoryConnection(modelToMigrate ...interface{}) *gorm.DB {
 	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
-		Logger: newLogger("in-memory", false),
+		Logger: NewLogger("in-memory", false),
 	})
 
 	if len(modelToMigrate) > 0 {

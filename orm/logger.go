@@ -28,7 +28,7 @@ type Logger struct {
 	logger *logrus.Entry
 }
 
-func newLogger(driver string, disableLogger bool) *Logger {
+func NewLogger(driver string, disableLogger bool) *Logger {
 	lg := golly.NewLogger()
 
 	if disableLogger {
