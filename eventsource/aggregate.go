@@ -23,6 +23,14 @@ type Aggregate interface {
 	SetID(string)
 }
 
+var (
+	identityFunc func(golly.Context) any = nil
+)
+
+func SetIdentityFunc(fn func(golly.Context) any) {
+	identityFunc = fn
+}
+
 // AggregateBase holds the base aggregate for the db
 type AggregateBase struct {
 	Version uint `json:"version"`
@@ -70,6 +78,10 @@ func ApplyExt(ctx golly.Context, aggregate Aggregate, edata interface{}, meta Me
 	event := NewEvent(edata)
 	event.commit = commit
 	event.commited = false
+
+	if identityFunc != nil {
+		event.Identity = identityFunc(ctx)
+	}
 
 	event.Metadata.Merge(meta)
 

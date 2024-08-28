@@ -55,10 +55,10 @@ type Event struct {
 
 	Data     interface{} `json:"data" gorm:"-"`
 	Metadata Metadata    `json:"metadata" gorm:"-"`
+	Identity any         `json:"identity,omitempty" gorm:"-"`
 
 	commit   bool
 	commited bool
-	publish  bool
 }
 
 type Events []Event
