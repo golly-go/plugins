@@ -58,7 +58,7 @@ func FireSubscription(ctx golly.Context, ag Aggregate, events ...Event) error {
 		}
 
 		// Execute handlers that listen to all events using the precomputed allEventType.
-		if allEventSubscribers, exists := subscriptions[aggName][utils.GetTypeWithPackage(allEventType)]; exists {
+		if allEventSubscribers, exists := subscriptions[aggName]["*"]; exists {
 			for pos, handler := range allEventSubscribers {
 				ctx.Logger().Debugf("Executing handler: %d %#v\n", pos, handler)
 
