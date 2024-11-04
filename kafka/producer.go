@@ -14,6 +14,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type Producer interface {
+	Publish(gctx golly.Context, messages ...Message)
+}
+
 type KafkaPublisher struct {
 	config  Config
 	ctx     golly.Context
@@ -21,6 +25,7 @@ type KafkaPublisher struct {
 	logger  *logrus.Entry
 
 	lock sync.RWMutex
+	wg   sync.WaitGroup
 
 	running bool
 }
@@ -35,7 +40,9 @@ func (k *KafkaPublisher) borrow() *kafka.Writer {
 
 	if len(k.writers) == 0 {
 		for {
-			if writer := k.createProducer(k.ctx); writer != nil {
+			if writer := k.createProducer(); writer != nil {
+				k.wg.Add(1)
+
 				return writer
 			}
 		}
@@ -45,6 +52,8 @@ func (k *KafkaPublisher) borrow() *kafka.Writer {
 	writer := k.writers[index]
 
 	k.writers = k.writers[:index]
+	k.wg.Add(1)
+
 	return writer
 }
 
@@ -53,6 +62,8 @@ func (k *KafkaPublisher) release(writer *kafka.Writer) {
 	defer k.lock.Unlock()
 
 	k.writers = append(k.writers, writer)
+
+	k.wg.Done()
 }
 
 func (k *KafkaPublisher) close() {
@@ -62,17 +73,24 @@ func (k *KafkaPublisher) close() {
 	k.running = false
 	for _, writer := range k.writers {
 		writer.Close()
+
+		k.release(writer)
 	}
+
+	// Wait for all active borrow operations to complete
+	k.wg.Wait()
 
 	k.writers = k.writers[:0]
 }
 
-func (k *KafkaPublisher) Publish(messages ...Message) {
-	if !k.running {
-		return
-	}
-
+func (k *KafkaPublisher) Publish(gctx golly.Context, messages ...Message) {
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				k.logger.Errorf("Recovered from panic: %v", r)
+			}
+		}()
+
 		writer := k.borrow()
 		defer k.release(writer)
 
@@ -81,17 +99,19 @@ func (k *KafkaPublisher) Publish(messages ...Message) {
 			var err error = nil
 
 			for pos, message := range m {
-				err = writer.WriteMessages(k.ctx.Context(), kafka.Message{
+				err = writer.WriteMessages(gctx.Context(), kafka.Message{
 					Topic: message.Topic,
 					Key:   []byte(message.Key),
 					Value: message.Marshal(),
 				})
 
-				if err == nil {
-					k.logger.Debugf("published message to %s (%s)", message.Topic, message.Key)
+				if err != nil {
+					k.logger.Warnf("Failed to publish message to %s (%s): %v", message.Topic, message.Key, err)
+					m = m[pos:]
 					break
 				}
-				m = messages[:pos]
+
+				k.logger.Debugf("published message to %s (%s)", message.Topic, message.Key)
 			}
 
 			if err == nil {
@@ -106,14 +126,16 @@ func (k *KafkaPublisher) Publish(messages ...Message) {
 			time.Sleep(time.Millisecond * 500)
 			k.logger.Errorf("unable to write kafka message: %v (retries %d)", err, retries)
 		}
+
 	}()
 }
 
-func (k *KafkaPublisher) createProducer(ctx golly.Context) *kafka.Writer {
+func (k *KafkaPublisher) createProducer() *kafka.Writer {
 	w := &kafka.Writer{
 		Addr:                   kafka.TCP(k.config.Brokers...),
 		Balancer:               &kafka.Murmur2Balancer{},
 		AllowAutoTopicCreation: true,
+		Async:                  false,
 		ErrorLogger:            errorLogger{newKafkaLogger(k.logger, "producer")},
 	}
 
@@ -145,10 +167,16 @@ func InitializerPublisher(app golly.Application) error {
 	return nil
 }
 
-func Publisher() *KafkaPublisher { return publisher }
+type NoOpProducer struct{}
 
-func Publish(messages ...Message) {
-	publisher.Publish(messages...)
+func (NoOpProducer) Publish(golly.Context, ...Message) {}
+
+// For now
+func Publisher() Producer {
+	if golly.Env().IsTest() {
+		return NoOpProducer{}
+	}
+	return publisher
 }
 
 func NewPublisher(app golly.Application) *KafkaPublisher {
