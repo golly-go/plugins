@@ -37,11 +37,9 @@ type Consumer interface {
 	ConsumerConfig
 
 	Name() string
-
 	Topics() []string
 
 	Handler(golly.Context, Message) error
-	Config(golly.Context) Config
 	Init(golly.Context, Consumer) error
 
 	Run(golly.Context, Consumer)
@@ -118,19 +116,16 @@ func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 
 	cb.running = true
 
-	config := consumer.Config(ctx)
-
 	cb.wp = workers.NewPool(consumer.Name(),
-		int32(config.MinPool),
-		int32(config.MaxPool),
+		int32(consumer.MinPool()),
+		int32(consumer.MaxPool()),
 		wrap(consumer.Handler),
 	)
 
 	logger := newKafkaLogger(ctx.Logger(), "consumers").
 		WithFields(logrus.Fields{
-			"spawner":        cb.wp.Name(),
-			"consumer.name":  consumer.Name(),
-			"consumer.hosts": config.Brokers[0],
+			"spawner":       cb.wp.Name(),
+			"consumer.name": consumer.Name(),
 		})
 
 	logger.Debugf("starting consumer %s topics: %#v", consumer.Name(), consumer.Topics())

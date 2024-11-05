@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	errs "errors"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -19,12 +20,17 @@ type Producer interface {
 }
 
 type KafkaPublisher struct {
+	brokers []string
+
 	ctx     golly.Context
 	writers []*kafka.Writer
 	logger  *logrus.Entry
 
 	lock sync.RWMutex
 	wg   sync.WaitGroup
+
+	user     string
+	password string
 
 	running bool
 }
@@ -87,10 +93,17 @@ func (k *KafkaPublisher) Publish(gctx golly.Context, messages ...Message) {
 		defer func() {
 			if r := recover(); r != nil {
 				k.logger.Errorf("Recovered from panic: %v", r)
+				debug.PrintStack()
 			}
 		}()
 
 		writer := k.borrow()
+
+		if writer == nil {
+			gctx.Logger().Warnf("cannot get writer to send message")
+			return
+		}
+
 		defer k.release(writer)
 
 		m := messages
@@ -130,27 +143,22 @@ func (k *KafkaPublisher) Publish(gctx golly.Context, messages ...Message) {
 }
 
 func (k *KafkaPublisher) createProducer() *kafka.Writer {
-	brokers := k.ctx.Config().GetStringSlice("kafka.address")
-
 	w := &kafka.Writer{
-		Addr:                   kafka.TCP(brokers...),
+		Addr:                   kafka.TCP(k.brokers...),
 		Balancer:               &kafka.Murmur2Balancer{},
 		AllowAutoTopicCreation: true,
 		Async:                  false,
 		ErrorLogger:            errorLogger{newKafkaLogger(k.logger, "producer")},
 	}
 
-	user := k.ctx.Config().GetString("kafka.username")
-	password := k.ctx.Config().GetString("kafka.password")
-
-	if user != "" && password != "" {
+	if k.user != "" && k.password != "" {
 		w.Transport = &kafka.Transport{
 			DialTimeout: 20 * time.Second,
 			IdleTimeout: 45 * time.Second,
 			TLS:         &tls.Config{MinVersion: tls.VersionTLS12},
 			SASL: plain.Mechanism{
-				Username: user,
-				Password: password,
+				Username: k.user,
+				Password: k.password,
 			},
 		}
 	}
@@ -183,9 +191,15 @@ func Publisher() Producer {
 
 func NewPublisher(app golly.Application) *KafkaPublisher {
 	return &KafkaPublisher{
-		ctx:     golly.NewContext(app.GoContext()),
+		ctx: golly.NewContext(app.GoContext()),
+
 		writers: []*kafka.Writer{},
+
 		running: true,
 		logger:  newKafkaLogger(golly.NewLogger(), "publisher"),
+
+		brokers:  app.Config.GetStringSlice("kafka.address"),
+		user:     app.Config.GetString("kafka.username"),
+		password: app.Config.GetString("kafka.password"),
 	}
 }
