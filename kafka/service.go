@@ -28,18 +28,14 @@ func (cs *ConsumerService) Quit() {
 }
 
 func (cs *ConsumerService) Initialize(app golly.Application) error {
-	InitDefaultConfig(app.Config)
-
 	return nil
 }
 
 func (cs *ConsumerService) Run(ctx golly.Context) error {
 	for _, consumer := range consumers {
 		go func(ctx golly.Context, consumer Consumer) {
-
 			consumer.Init(ctx, consumer)
 			consumer.Run(ctx, consumer)
-
 		}(ctx, consumer)
 	}
 

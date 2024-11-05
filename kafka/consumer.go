@@ -14,7 +14,28 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type ConsumerConfig interface {
+	Brokers(gctx golly.Context) []string
+	UserName(gctx golly.Context) string
+	Password(gctx golly.Context) string
+	UseErrorLogger() bool
+	Group(ctx golly.Context) string
+	MaxPool() int
+	MinPool() int
+	BufferSize() int
+	Partition() int
+	MinRead() int
+	MaxRead() int
+	StartOffset() int64
+	BalanceStrategy() kafka.Balancer
+	IdleTimeout() time.Duration
+	ConnectTimeout() time.Duration
+	Retries() int
+}
+
 type Consumer interface {
+	ConsumerConfig
+
 	Name() string
 
 	Topics() []string
@@ -26,6 +47,7 @@ type Consumer interface {
 	Run(golly.Context, Consumer)
 	Stop(golly.Context)
 	Wait(golly.Context)
+	Group(golly.Context) string
 
 	Logger() *logrus.Entry
 	SetLogger(logger *logrus.Entry)
@@ -47,13 +69,39 @@ type ConsumerBase struct {
 	cancel context.CancelFunc
 }
 
+// These should be configured via ENV
+func (cb *ConsumerBase) Brokers(gctx golly.Context) []string {
+	return gctx.Config().GetStringSlice("kafka.address")
+}
+func (cb *ConsumerBase) UserName(gctx golly.Context) string {
+	return gctx.Config().GetString("kafka.username")
+}
+func (cb *ConsumerBase) Password(gctx golly.Context) string {
+	return gctx.Config().GetString("kafka.password")
+}
+
+func (cb *ConsumerBase) UseErrorLogger() bool           { return true }
 func (cb *ConsumerBase) SetLogger(logger *logrus.Entry) { cb.logger = logger }
 func (cb *ConsumerBase) Logger() *logrus.Entry          { return cb.logger }
 func (cb *ConsumerBase) Running() bool                  { return cb.running }
 func (cb *ConsumerBase) Pool() *workers.Pool            { return cb.wp }
 
-// Sensible defaults
-func (cb *ConsumerBase) Config(ctx golly.Context) Config { return NewConfig(ctx.Config()) }
+func (cb *ConsumerBase) Group(ctx golly.Context) string { return "default-group" }
+func (cb *ConsumerBase) MaxPool() int                   { return 10 }
+func (cb *ConsumerBase) MinPool() int                   { return 1 }
+func (cb *ConsumerBase) BufferSize() int                { return 50 }
+
+func (cb *ConsumerBase) Partition() int { return 0 }
+
+func (cb *ConsumerBase) MinRead() int                    { return 10_000 }
+func (cb *ConsumerBase) MaxRead() int                    { return 10_000_000 }
+func (cb *ConsumerBase) StartOffset() int64              { return kafka.FirstOffset }
+func (cb *ConsumerBase) BalanceStrategy() kafka.Balancer { return kafka.Murmur2Balancer{} }
+
+func (cb *ConsumerBase) IdleTimeout() time.Duration    { return 45 * time.Second }
+func (cb *ConsumerBase) ConnectTimeout() time.Duration { return 10 * time.Second }
+
+func (cb *ConsumerBase) Retries() int { return 3 }
 
 func (cb *ConsumerBase) Init(ctx golly.Context, consumer Consumer) error {
 	return nil
@@ -150,44 +198,40 @@ func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 }
 
 func (cb *ConsumerBase) Reader(ctx golly.Context, consumer Consumer) *kafka.Reader {
-	config := consumer.Config(ctx)
-
 	var dialer *kafka.Dialer = &kafka.Dialer{
-		Timeout:   config.Timeouts.Connection,
+		Timeout:   consumer.ConnectTimeout(),
 		DualStack: true,
 		KeepAlive: 1 * time.Second,
 	}
 
-	if config.Username != "" {
+	user := consumer.UserName(ctx)
+	password := consumer.Password(ctx)
+
+	if user != "" {
 		dialer.TLS = &tls.Config{MinVersion: tls.VersionTLS12}
 		dialer.SASLMechanism = plain.Mechanism{
-			Username: config.Username,
-			Password: config.Password,
+			Username: user,
+			Password: password,
 		}
-	}
-
-	var logger kafka.Logger
-	if config.UseErrorLogger {
-		logger = errorLogger{ctx.Logger()}
 	}
 
 	return kafka.NewReader(
 		kafka.ReaderConfig{
 			GroupTopics:           consumer.Topics(),
-			Brokers:               config.Brokers,
-			Partition:             config.Partition,
-			MinBytes:              config.MinRead,
-			MaxBytes:              config.MaxRead,
+			Brokers:               consumer.Brokers(ctx),
+			Partition:             consumer.Partition(),
+			MinBytes:              consumer.MinRead(),
+			MaxBytes:              consumer.MaxRead(),
 			MaxWait:               1 * time.Second,
-			GroupID:               config.GroupID,
+			GroupID:               consumer.Group(ctx),
 			Dialer:                dialer,
 			WatchPartitionChanges: true,
 			JoinGroupBackoff:      10 * time.Second,
 			ReadBackoffMin:        250 * time.Millisecond,
 			ReadBackoffMax:        10 * time.Second,
-			StartOffset:           config.StartOffset,
+			StartOffset:           consumer.StartOffset(),
 			GroupBalancers:        []kafka.GroupBalancer{kafka.RoundRobinGroupBalancer{}},
-			ErrorLogger:           logger,
+			// ErrorLogger:           logger,
 		},
 	)
 }

@@ -19,7 +19,6 @@ type Producer interface {
 }
 
 type KafkaPublisher struct {
-	config  Config
 	ctx     golly.Context
 	writers []*kafka.Writer
 	logger  *logrus.Entry
@@ -111,7 +110,7 @@ func (k *KafkaPublisher) Publish(gctx golly.Context, messages ...Message) {
 					break
 				}
 
-				k.logger.Debugf("published message to %s (%s)", message.Topic, message.Key)
+				// k.logger.Debugf("published message to %s (%s)", message.Topic, message.Key)
 			}
 
 			if err == nil {
@@ -131,22 +130,27 @@ func (k *KafkaPublisher) Publish(gctx golly.Context, messages ...Message) {
 }
 
 func (k *KafkaPublisher) createProducer() *kafka.Writer {
+	brokers := k.ctx.Config().GetStringSlice("kafka.address")
+
 	w := &kafka.Writer{
-		Addr:                   kafka.TCP(k.config.Brokers...),
+		Addr:                   kafka.TCP(brokers...),
 		Balancer:               &kafka.Murmur2Balancer{},
 		AllowAutoTopicCreation: true,
 		Async:                  false,
 		ErrorLogger:            errorLogger{newKafkaLogger(k.logger, "producer")},
 	}
 
-	if k.config.Username != "" && k.config.Password != "" {
+	user := k.ctx.Config().GetString("kafka.username")
+	password := k.ctx.Config().GetString("kafka.password")
+
+	if user != "" && password != "" {
 		w.Transport = &kafka.Transport{
 			DialTimeout: 20 * time.Second,
 			IdleTimeout: 45 * time.Second,
 			TLS:         &tls.Config{MinVersion: tls.VersionTLS12},
 			SASL: plain.Mechanism{
-				Username: k.config.Username,
-				Password: k.config.Password,
+				Username: user,
+				Password: password,
 			},
 		}
 	}
@@ -155,8 +159,6 @@ func (k *KafkaPublisher) createProducer() *kafka.Writer {
 }
 
 func InitializerPublisher(app golly.Application) error {
-	InitDefaultConfig(app.Config)
-
 	publisher = NewPublisher(app)
 
 	golly.Events().Add(golly.EventAppShutdown, func(golly.Context, golly.Event) error {
@@ -185,6 +187,5 @@ func NewPublisher(app golly.Application) *KafkaPublisher {
 		writers: []*kafka.Writer{},
 		running: true,
 		logger:  newKafkaLogger(golly.NewLogger(), "publisher"),
-		config:  NewConfig(app.Config),
 	}
 }
