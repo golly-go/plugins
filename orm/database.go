@@ -136,3 +136,12 @@ func GetDBFromContext(c golly.Context) *gorm.DB {
 	}
 	return nil
 }
+
+func Close(c golly.Context) error {
+	db, err := DB(c).DB()
+	if err != nil {
+		return err
+	}
+
+	return db.Close()
+}

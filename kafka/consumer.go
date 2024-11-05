@@ -128,7 +128,7 @@ func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 			"consumer.name": consumer.Name(),
 		})
 
-	logger.Debugf("starting consumer %s topics: %#v", consumer.Name(), consumer.Topics())
+	logger.Debugf("starting consumer %s topics: %v (pool %d:%d)", consumer.Name(), consumer.Topics(), consumer.MinPool(), consumer.MaxPool())
 
 	consumer.SetLogger(logger)
 
@@ -144,8 +144,6 @@ func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 	for cb.running && reattempts <= 3 {
 		goCtx, cancel := context.WithCancel(ctx.Context())
 		cb.cancel = cancel
-
-		logger.Debug("Fetching kafka messages")
 
 		m, err := reader.ReadMessage(goCtx)
 		// Do we break here if the error occurs or should we retry 3 times?
@@ -181,8 +179,6 @@ func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 			Time:    m.Time,
 			Headers: m.Headers,
 		})
-
-		consumer.Logger().Debugf("loop %s (%s)", m.Topic, string(m.Value))
 
 	}
 
