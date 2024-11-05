@@ -198,6 +198,13 @@ func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 }
 
 func (cb *ConsumerBase) Reader(ctx golly.Context, consumer Consumer) *kafka.Reader {
+	brokers := consumer.Brokers(ctx)
+
+	if len(brokers) == 0 {
+		ctx.Logger().Error("Brokers not defined for consumer or in env")
+		panic("brokers set in consumer or kafka.address array")
+	}
+
 	var dialer *kafka.Dialer = &kafka.Dialer{
 		Timeout:   consumer.ConnectTimeout(),
 		DualStack: true,
