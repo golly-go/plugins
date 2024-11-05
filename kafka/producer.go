@@ -43,20 +43,26 @@ func (k *KafkaPublisher) borrow() *kafka.Writer {
 		return nil
 	}
 
+	// Check if there are writers available
 	if len(k.writers) == 0 {
-		for {
-			if writer := k.createProducer(); writer != nil {
+		// Set a limit for retries
+		for retries := 3; retries > 0; retries-- {
+			writer := k.createProducer()
+			if writer != nil {
 				k.wg.Add(1)
-
 				return writer
 			}
+
+			time.Sleep(100 * time.Nanosecond) // Wait before retrying
 		}
+		return nil
 	}
 
+	// If there are writers available, borrow one
 	index := len(k.writers) - 1
 	writer := k.writers[index]
-
 	k.writers = k.writers[:index]
+
 	k.wg.Add(1)
 
 	return writer
@@ -67,44 +73,44 @@ func (k *KafkaPublisher) release(writer *kafka.Writer) {
 	defer k.lock.Unlock()
 
 	k.writers = append(k.writers, writer)
-
 	k.wg.Done()
 }
 
 func (k *KafkaPublisher) close() {
 	k.lock.Lock()
-	defer k.lock.Unlock()
-
 	k.running = false
-	for _, writer := range k.writers {
-		writer.Close()
-
-		k.release(writer)
-	}
+	k.lock.Unlock()
 
 	// Wait for all active borrow operations to complete
 	k.wg.Wait()
+
+	k.lock.Lock()
+	defer k.lock.Unlock()
+
+	for _, writer := range k.writers {
+		writer.Close()
+	}
 
 	k.writers = k.writers[:0]
 }
 
 func (k *KafkaPublisher) Publish(gctx golly.Context, messages ...Message) {
-	go func() {
+	writer := k.borrow()
+
+	if writer == nil {
+		gctx.Logger().Warnf("cannot get writer to send message")
+		return
+	}
+
+	go func(ctx golly.Context, k *KafkaPublisher, writer *kafka.Writer) {
+		defer k.release(writer)
+
 		defer func() {
 			if r := recover(); r != nil {
 				k.logger.Errorf("Recovered from panic: %v", r)
 				debug.PrintStack()
 			}
 		}()
-
-		writer := k.borrow()
-
-		if writer == nil {
-			gctx.Logger().Warnf("cannot get writer to send message")
-			return
-		}
-
-		defer k.release(writer)
 
 		m := messages
 		for retries := 0; retries < 3; retries++ {
@@ -122,8 +128,6 @@ func (k *KafkaPublisher) Publish(gctx golly.Context, messages ...Message) {
 					m = m[pos:]
 					break
 				}
-
-				// k.logger.Debugf("published message to %s (%s)", message.Topic, message.Key)
 			}
 
 			if err == nil {
@@ -138,8 +142,7 @@ func (k *KafkaPublisher) Publish(gctx golly.Context, messages ...Message) {
 			time.Sleep(time.Millisecond * 500)
 			k.logger.Errorf("unable to write kafka message: %v (retries %d)", err, retries)
 		}
-
-	}()
+	}(gctx, k, writer)
 }
 
 func (k *KafkaPublisher) createProducer() *kafka.Writer {
