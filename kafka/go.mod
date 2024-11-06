@@ -6,7 +6,7 @@ toolchain go1.23.0
 
 require (
 	github.com/golly-go/golly v0.4.1-0.20231127002627-3b526f4c98ca
-	github.com/golly-go/plugins/workers v0.0.0-20240929075144-8b2b23ce446b
+	github.com/golly-go/plugins/workers v0.0.0-20241105093646-4ea70cef6768
 	github.com/segmentio/kafka-go v0.4.47
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.19.0

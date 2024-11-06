@@ -98,6 +98,8 @@ github.com/golly-go/plugins/workers v0.0.0-20231119205746-8cf27e7fb893 h1:/4TXK+
 github.com/golly-go/plugins/workers v0.0.0-20231119205746-8cf27e7fb893/go.mod h1:wEZ6bvcTdeSC3th4xeHtDJkTIIuZZh7PsygisBZsVGg=
 github.com/golly-go/plugins/workers v0.0.0-20240929075144-8b2b23ce446b h1:L5YTeDViXvnpPP7b6bep5Kfetp7obYAbS412gb0NLe8=
 github.com/golly-go/plugins/workers v0.0.0-20240929075144-8b2b23ce446b/go.mod h1:Z9w1G6vvZAJEjwThx9WX9UbINIPHnkFXfkp8c8PpNks=
+github.com/golly-go/plugins/workers v0.0.0-20241105093646-4ea70cef6768 h1:Si0QBV0dYdnEX8oUwqyulPp7NhJOYedwSW/OpUwxfcQ=
+github.com/golly-go/plugins/workers v0.0.0-20241105093646-4ea70cef6768/go.mod h1:Z9w1G6vvZAJEjwThx9WX9UbINIPHnkFXfkp8c8PpNks=
 github.com/google/btree v0.0.0-20180813153112-4030bb1f1f0c/go.mod h1:lNA+9X1NB3Zf8V7Ke586lFgjr2dZNuvo3lPJSGZ5JPQ=
 github.com/google/btree v1.0.0/go.mod h1:lNA+9X1NB3Zf8V7Ke586lFgjr2dZNuvo3lPJSGZ5JPQ=
 github.com/google/go-cmp v0.2.0/go.mod h1:oXzfMopK8JAjlY9xF4vHSVASa0yLyX7SntLO5aqRK0M=
