@@ -107,8 +107,6 @@ func (pb *Pool) reap() (reaped int32) {
 	active := int32(pb.activeWorkers.Load())
 
 	if active > pb.minW {
-		fmt.Printf("reaped: %d, active: %d, minW: %d\n", reaped, active, pb.minW)
-
 		for pos, worker := range pb.workers {
 
 			if active-reaped <= pb.minW {
@@ -129,7 +127,7 @@ func (pb *Pool) reap() (reaped int32) {
 	}
 
 	if reaped > 0 {
-		pb.logger.Infof("%s: repead %d workers", pb.name, reaped)
+		pb.logger.Debugf("reaped %d inactive workers", reaped)
 	}
 
 	return
@@ -183,22 +181,21 @@ func (pb *Pool) Perform(j Job) {
 
 	worker, err := pb.Checkout()
 	if err != nil {
-		if err == ErrorMaxWorker {
-			// Optionally, implement a back-off strategy before re-enqueuing the job
-			pb.jobs <- j
-		} else {
+		if err != ErrorMaxWorker {
 			pb.logger.Errorf("Error checking out worker: %#v", err)
-			// Consider handling the error differently if needed
 		}
+		pb.jobs <- j
 		return
 	}
 
 	pb.workerWG.Add(1)
-
 	go func() {
 		defer func() {
-			pb.workerWG.Done()
+			if r := recover(); r != nil {
+				pb.logger.Errorln("panic in performing job: ", r)
+			}
 			pb.Checkin(worker)
+			pb.workerWG.Done()
 		}()
 		worker.Perform(j)
 	}()
