@@ -157,12 +157,16 @@ func UnmarshalEvent(data []byte) (*Event, error) {
 	return &event, nil
 }
 
-func Apply(aggregate Aggregate, edata interface{}) {
-	ApplyExt(aggregate, edata, true)
+func Apply(aggregate Aggregate, edata ...interface{}) {
+	golly.Each(edata, func(e interface{}) {
+		ApplyExt(aggregate, e, true)
+	})
 }
 
-func NoCommit(aggregate Aggregate, edata interface{}) {
-	ApplyExt(aggregate, edata, false)
+func NoCommit(aggregate Aggregate, edata ...interface{}) {
+	golly.Each(edata, func(e interface{}) {
+		ApplyExt(aggregate, e, false)
+	})
 }
 
 func ApplyExt(aggregate Aggregate, edata interface{}, commit bool) {
