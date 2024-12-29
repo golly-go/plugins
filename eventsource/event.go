@@ -61,50 +61,8 @@ type Event struct {
 	commited bool
 }
 
-type Events []Event
-
-func (evts Events) HasCommited() bool {
-	for _, event := range evts {
-		if event.commit {
-			return true
-		}
-	}
-	return false
-}
-
 func (event *Event) MarkCommited() {
 	event.commited = true
-}
-
-func (evts Events) Uncommited() Events {
-	return evts.Filter(func(e Event) bool { return !e.commited })
-}
-
-func (evts Events) Filter(filterFnc func(e Event) bool) Events {
-	ret := Events{}
-
-	for _, event := range evts {
-		if filterFnc(event) {
-			ret = append(ret, event)
-		}
-	}
-	return ret
-}
-
-func (evts Events) Find(finder func(e Event) bool) *Event {
-	for _, event := range evts {
-		if finder(event) {
-			return &event
-		}
-	}
-	return nil
-}
-
-func (evts Events) FindByName(name string) *Event {
-	return evts.Find(func(event Event) bool {
-		return strings.EqualFold(name, utils.GetType(event)) ||
-			strings.EqualFold(name, utils.GetTypeWithPackage(event))
-	})
 }
 
 func NewEvent(evtData interface{}) Event {
@@ -119,6 +77,32 @@ func NewEvent(evtData interface{}) Event {
 		Data:      evtData,
 		CreatedAt: time.Now(),
 	}
+}
+
+type Events []Event
+
+func (evts Events) HasCommited() bool {
+	for _, event := range evts {
+		if event.commit {
+			return true
+		}
+	}
+	return false
+}
+
+func (evts Events) Uncommited() Events {
+	return golly.Filter(evts, func(e Event) bool { return !e.commited })
+}
+
+func (evts Events) Commited() Events {
+	return golly.Filter(evts, func(e Event) bool { return e.commited })
+}
+
+func (evts Events) FindByName(name string) *Event {
+	return golly.Find(evts, func(event Event) bool {
+		return strings.EqualFold(name, utils.GetType(event)) ||
+			strings.EqualFold(name, utils.GetTypeWithPackage(event))
+	})
 }
 
 // Decode return a deserialized event, ready to user
@@ -155,4 +139,42 @@ func UnmarshalEvent(data []byte) (*Event, error) {
 	event.Data = marshal.Elem().Interface()
 
 	return &event, nil
+}
+
+func Apply(gctx golly.Context, aggregate Aggregate, edata interface{}) {
+	ApplyExt(gctx, aggregate, edata, true)
+}
+
+func NoCommit(gctx golly.Context, aggregate Aggregate, edata interface{}) {
+	ApplyExt(gctx, aggregate, edata, false)
+}
+
+func ApplyExt(gctx golly.Context, aggregate Aggregate, edata interface{}, commit bool) {
+	if edata == nil {
+		return
+	}
+
+	event := NewEvent(edata)
+	event.commit = commit
+	event.commited = false
+
+	if inf, ok := aggregate.(AggregateType); ok {
+		event.AggregateType = inf.Type()
+	} else {
+		event.AggregateType = utils.GetTypeWithPackage(aggregate)
+	}
+
+	if identityFunc != nil {
+		event.Identity = identityFunc(gctx)
+	}
+
+	event.Version = aggregate.GetVersion()
+
+	aggregate.Apply(event)
+
+	if commit {
+		aggregate.IncrementVersion()
+	}
+
+	aggregate.Append(event)
 }

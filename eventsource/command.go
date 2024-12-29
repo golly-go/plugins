@@ -4,7 +4,6 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/golly-go/golly"
 	"github.com/golly-go/golly/errors"
-	"github.com/golly-go/golly/utils"
 )
 
 const (
@@ -27,6 +26,10 @@ type CommandValidator interface {
 	Validate(golly.Context, Aggregate) error
 }
 
+type CommandRollback interface {
+	Rollback(golly.Context, Aggregate, error)
+}
+
 func Repo(ctx golly.Context, ag Aggregate) Repository {
 	// Tired of not being able to stub this - so now we can (This still doesnt fully help if someone runs)
 	// something within their command that calls ag.Repo(ctx) - but it's a start
@@ -38,20 +41,8 @@ func Repo(ctx golly.Context, ag Aggregate) Repository {
 
 }
 
-func LoadIfNotNew(ctx golly.Context, ag Aggregate) error {
-	repo := Repo(ctx, ag)
-
-	if !repo.IsNewRecord(ag) {
-		if err := repo.Load(ctx, ag); err != nil {
-			return errors.WrapNotFound(err)
-		}
-	}
-	return nil
-}
-
 type CommandHandler interface {
 	Call(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error
-	Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error
 }
 
 type DefaultCommandHandler struct{}
@@ -69,17 +60,20 @@ func (ch DefaultCommandHandler) Call(ctx golly.Context, ag Aggregate, cmd Comman
 		}
 	}
 
-	if err := LoadIfNotNew(ctx, ag); err != nil {
-		return err
-	}
-
 	return repo.Transaction(ctx, func(ctx golly.Context, repo Repository) error {
-		return ch.Execute(ctx, ag, cmd, metadata)
+		err := ch.execute(ctx, ag, cmd, metadata)
+		if err != nil {
+			if rbk, ok := cmd.(CommandRollback); ok {
+				rbk.Rollback(ctx, ag, err)
+			}
+		}
+
+		return err
 	})
 }
 
 // Execute executes the command, ensuring that events are saved to the backend before in-memory processing.
-func (DefaultCommandHandler) Execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error {
+func (DefaultCommandHandler) execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error {
 	repo := Repo(ctx, ag)
 
 	// Perform the given command on the aggregate
@@ -89,12 +83,7 @@ func (DefaultCommandHandler) Execute(ctx golly.Context, ag Aggregate, cmd Comman
 
 	changes := ag.Changes().Uncommited()
 
-	if len(changes) == 0 {
-		return nil
-	}
-
-	// If there are uncommitted changes, first save them to the backend
-	if !changes.HasCommited() {
+	if len(changes) == 0 || !changes.HasCommited() {
 		return nil
 	}
 
@@ -102,20 +91,16 @@ func (DefaultCommandHandler) Execute(ctx golly.Context, ag Aggregate, cmd Comman
 		return errors.WrapUnprocessable(err)
 	}
 
+	ag.SetPersisted()
+
 	for pos, change := range changes {
 		change.AggregateID = ag.GetID()
-
-		if inf, ok := ag.(AggregateType); ok {
-			change.AggregateType = inf.Type()
-		} else {
-			change.AggregateType = utils.GetTypeWithPackage(ag)
-		}
 
 		change.MarkCommited()
 		change.Metadata.Merge(metadata)
 
-		// Save event to the backend event store (assuming it's committed)
-		if eventBackend != nil && ag.Topic() != "" && change.commit {
+		// Save event to the backend event store
+		if eventBackend != nil && change.commit {
 			if err := eventBackend.Save(ctx, &change); err != nil {
 				return errors.WrapGeneric(err)
 			}

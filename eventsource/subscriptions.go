@@ -1,7 +1,8 @@
 package eventsource
 
 import (
-	"reflect"
+	"errors"
+	"strings"
 	"sync"
 
 	"github.com/golly-go/golly"
@@ -10,12 +11,6 @@ import (
 
 type SubscriptionHandler func(golly.Context, Aggregate, Event) error
 
-type Subscription struct {
-	All     bool
-	Event   reflect.Type
-	Handler SubscriptionHandler
-}
-
 var (
 	subscriptions = make(map[string]map[string][]SubscriptionHandler)
 	allEventType  = "*"
@@ -23,51 +18,60 @@ var (
 	mutex sync.RWMutex
 )
 
-func Subscribe(aggregateWithPackage string, e string, handler SubscriptionHandler) {
+func Subscribe(aggWithPackage string, e string, handler ...SubscriptionHandler) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	if _, exists := subscriptions[aggregateWithPackage]; !exists {
-		subscriptions[aggregateWithPackage] = make(map[string][]SubscriptionHandler)
+	if _, exists := subscriptions[aggWithPackage]; !exists {
+		subscriptions[aggWithPackage] = make(map[string][]SubscriptionHandler)
 	}
 
-	subscriptions[aggregateWithPackage][e] = append(subscriptions[aggregateWithPackage][e], handler)
+	subscriptions[aggWithPackage][e] = append(subscriptions[aggWithPackage][e], handler...)
 }
 
-// SubscribeAll now uses the precomputed allEventType.
-func SubscribeAll(aggregateWithPackage string, handler SubscriptionHandler) {
-	Subscribe(aggregateWithPackage, "*", handler)
+func SubscribeAll(aggregateWithPackage string, handler ...SubscriptionHandler) {
+	Subscribe(aggregateWithPackage, allEventType, handler...)
 }
 
 func FireSubscription(ctx golly.Context, ag Aggregate, events ...Event) error {
-	mutex.RLock()
-	defer mutex.RUnlock()
-
 	aggName := utils.GetTypeWithPackage(ag)
+	var errs []error
 
+	handlers := getHandlers(aggName, events)
 	for _, event := range events {
-		eventType := utils.GetTypeWithPackage(event.Data)
-
-		// Execute handlers for the specific event type
-		if specificSubscribers, exists := subscriptions[aggName][eventType]; exists {
-			for _, handler := range specificSubscribers {
-				if err := handler(ctx, ag, event); err != nil {
-					return err
-				}
-			}
-		}
-
-		// Execute handlers that listen to all events using the precomputed allEventType.
-		if allEventSubscribers, exists := subscriptions[aggName]["*"]; exists {
-			for pos, handler := range allEventSubscribers {
-				ctx.Logger().Debugf("Executing handler: %d %#v\n", pos, handler)
-
-				if err := handler(ctx, ag, event); err != nil {
-					return err
-				}
+		for _, handler := range handlers {
+			if err := handler(ctx, ag, event); err != nil {
+				errs = append(errs, err)
 			}
 		}
 	}
 
-	return nil
+	return aggregateErrors(errs)
+}
+
+func getHandlers(aggName string, events []Event) []SubscriptionHandler {
+	mutex.RLock()
+	defer mutex.RUnlock()
+
+	handlers := []SubscriptionHandler{}
+	for _, event := range events {
+		if specificHandlers, exists := subscriptions[aggName][event.Event]; exists {
+			handlers = append(handlers, specificHandlers...)
+		}
+		if allHandlers, exists := subscriptions[aggName][allEventType]; exists {
+			handlers = append(handlers, allHandlers...)
+		}
+	}
+	return handlers
+}
+
+func aggregateErrors(errs []error) error {
+	if len(errs) == 0 {
+		return nil
+	}
+
+	return errors.New(
+		strings.Join(golly.Map(errs, func(e error) string {
+			return e.Error()
+		}), "; "))
 }

@@ -7,7 +7,7 @@ import (
 type Aggregate interface {
 	Repo(golly.Context) Repository
 
-	Apply(golly.Context, Event)
+	Apply(Event)
 
 	Topic() string
 
@@ -21,6 +21,9 @@ type Aggregate interface {
 
 	GetID() string
 	SetID(string)
+
+	Persisted() bool
+	SetPersisted()
 }
 
 var (
@@ -39,10 +42,20 @@ type AggregateBase struct {
 
 	// TODO:
 	// Events Events `gorm:"-" bson:"events"`
+
+	persisted bool
 }
 
 func (ab *AggregateBase) IncrementVersion() {
 	ab.Version++
+}
+
+func (ab *AggregateBase) SetPersisted() {
+	ab.persisted = true
+}
+
+func (ab *AggregateBase) Persisted() bool {
+	return ab.persisted
 }
 
 // GetID return the aggregatebase id
@@ -60,38 +73,4 @@ func (ab *AggregateBase) ClearChanges() {
 
 func (ab *AggregateBase) Append(events ...Event) {
 	ab.changes = append(ab.changes, events...)
-}
-
-func Apply(ctx golly.Context, aggregate Aggregate, edata interface{}) {
-	ApplyExt(ctx, aggregate, edata, nil, true)
-}
-
-func NoCommit(ctx golly.Context, aggregate Aggregate, edata interface{}) {
-	ApplyExt(ctx, aggregate, edata, nil, false)
-}
-
-func ApplyExt(ctx golly.Context, aggregate Aggregate, edata interface{}, meta Metadata, commit bool) {
-	if edata == nil {
-		return
-	}
-
-	event := NewEvent(edata)
-	event.commit = commit
-	event.commited = false
-
-	if identityFunc != nil {
-		event.Identity = identityFunc(ctx)
-	}
-
-	event.Metadata.Merge(meta)
-
-	aggregate.Apply(ctx, event)
-
-	if commit {
-		aggregate.IncrementVersion()
-	}
-
-	event.Version = aggregate.GetVersion()
-
-	aggregate.Append(event)
 }
