@@ -59,10 +59,15 @@ type Event struct {
 
 	commit   bool
 	commited bool
+	failed   bool
 }
 
 func (event *Event) MarkCommited() {
 	event.commited = true
+}
+
+func (event *Event) MarkFailed() {
+	event.failed = true
 }
 
 func NewEvent(evtData interface{}) Event {
@@ -88,6 +93,17 @@ func (evts Events) HasCommited() bool {
 		}
 	}
 	return false
+}
+
+func (evts Events) MarkFailed() {
+	for pos := range evts {
+		evts[pos].commit = false
+		evts[pos].failed = true
+	}
+}
+
+func (evts Events) Failed() Events {
+	return golly.Filter(evts, func(e Event) bool { return e.failed })
 }
 
 func (evts Events) Uncommited() Events {

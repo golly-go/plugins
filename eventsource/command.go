@@ -66,8 +66,9 @@ func (ch DefaultCommandHandler) Call(ctx golly.Context, ag Aggregate, cmd Comman
 			if rbk, ok := cmd.(CommandRollback); ok {
 				rbk.Rollback(ctx, ag, err)
 			}
-		}
 
+			ag.Changes().MarkFailed()
+		}
 		return err
 	})
 }
@@ -100,7 +101,6 @@ func (DefaultCommandHandler) execute(ctx golly.Context, ag Aggregate, cmd Comman
 			change.Identity = identityFunc(ctx)
 		}
 
-		change.MarkCommited()
 		change.Metadata.Merge(metadata)
 
 		// Save event to the backend event store
