@@ -141,15 +141,15 @@ func UnmarshalEvent(data []byte) (*Event, error) {
 	return &event, nil
 }
 
-func Apply(gctx golly.Context, aggregate Aggregate, edata interface{}) {
-	ApplyExt(gctx, aggregate, edata, true)
+func Apply(aggregate Aggregate, edata interface{}) {
+	ApplyExt(aggregate, edata, true)
 }
 
-func NoCommit(gctx golly.Context, aggregate Aggregate, edata interface{}) {
-	ApplyExt(gctx, aggregate, edata, false)
+func NoCommit(aggregate Aggregate, edata interface{}) {
+	ApplyExt(aggregate, edata, false)
 }
 
-func ApplyExt(gctx golly.Context, aggregate Aggregate, edata interface{}, commit bool) {
+func ApplyExt(aggregate Aggregate, edata interface{}, commit bool) {
 	if edata == nil {
 		return
 	}
@@ -162,10 +162,6 @@ func ApplyExt(gctx golly.Context, aggregate Aggregate, edata interface{}, commit
 		event.AggregateType = inf.Type()
 	} else {
 		event.AggregateType = utils.GetTypeWithPackage(aggregate)
-	}
-
-	if identityFunc != nil {
-		event.Identity = identityFunc(gctx)
 	}
 
 	event.Version = aggregate.GetVersion()

@@ -96,6 +96,10 @@ func (DefaultCommandHandler) execute(ctx golly.Context, ag Aggregate, cmd Comman
 	for pos, change := range changes {
 		change.AggregateID = ag.GetID()
 
+		if identityFunc != nil {
+			change.Identity = identityFunc(ctx)
+		}
+
 		change.MarkCommited()
 		change.Metadata.Merge(metadata)
 
