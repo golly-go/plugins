@@ -185,10 +185,20 @@ func (ab *AggregateBase) ProcessChanges(gctx golly.Context, ag Aggregate) {
 
 // Replay reloads and applies all events for a given aggregate.
 func Replay(ctx golly.Context, agg Aggregate) error {
+	id := agg.GetID()
+
+	if id == "" || id == uuid.Nil.String() && id == "0" {
+		return ErrorAggregateNotInitialized
+	}
+
+	if len(agg.Changes()) > 0 {
+		agg.Replay(agg, agg.Changes())
+		return nil
+	}
+
 	estore := agg.EventStore()
 
 	snapshot, _ := estore.LoadSnapshot(ctx, ObjectName(agg), agg.GetID())
-
 	if err := ApplySnapshot(agg, snapshot); err != nil {
 		return err
 	}
@@ -197,14 +207,13 @@ func Replay(ctx golly.Context, agg Aggregate) error {
 		LoadEvents(ctx, EventFilter{
 			AggregateType: ObjectName(agg),
 			AggregateID:   agg.GetID(),
-			FromVersion:   int(snapshot.Version) + 1,
+			FromVersion:   int(agg.Version()) + 1,
 		})
 
 	if err != nil {
 		return err
 	}
 
-	events = append([]Event{snapshot}, events...)
 	agg.Replay(agg, events)
 
 	return nil
