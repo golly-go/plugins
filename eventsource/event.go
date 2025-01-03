@@ -4,193 +4,173 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/golly-go/golly"
-	"github.com/golly-go/golly/errors"
-	"github.com/golly-go/golly/utils"
 	"github.com/google/uuid"
 )
 
-var (
-	eventBackend EventBackend
+// EventState represents the state of an event using bitwise flags.
+type EventState string
+
+type EventKind string
+
+const (
+	EventStateReady     EventState = "ready"
+	EventStateApplied   EventState = "applied"
+	EventStateFailed    EventState = "failed"
+	EventStateCompleted EventState = "completed"
+	EventStateRetry     EventState = "retry"
+	EventStateCanceled  EventState = "canceled"
 )
 
-type EventBackend interface {
-	Repository
+const (
+	EventKindSnapshot EventKind = "snapshot"
+	EventKindEvent    EventKind = "event"
+)
 
-	PublishEvent(golly.Context, Aggregate, ...Event)
-}
-
-func SetEventRepository(backend EventBackend) {
-	eventBackend = backend
-}
-
-type Metadata map[string]interface{}
-
-func (m1 Metadata) Merge(m2 Metadata) {
-	if len(m2) == 0 {
-		return
-	}
-
-	if m1 == nil {
-		m1 = Metadata{}
-	}
-
-	for k, v := range m2 {
-		m1[k] = v
-	}
-}
-
+// Event represents a single event in the system.
 type Event struct {
 	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"eventAt"`
+	Kind      EventKind `json:"kind"`
+	CreatedAt time.Time `json:"createdAt"`
 
-	Event   string `json:"event"`
-	Version uint   `json:"version"`
+	Type string `json:"eventType"`
 
-	AggregateID   string `json:"aggregateID"`
+	AggregateID   string `json:"aggregateId"`
 	AggregateType string `json:"aggregateType"`
 
-	Data     interface{} `json:"data" gorm:"-"`
-	Metadata Metadata    `json:"metadata" gorm:"-"`
-	Identity any         `json:"identity,omitempty" gorm:"-"`
+	Version int64 `json:"version"`
 
-	commit   bool
-	commited bool
-	failed   bool
+	State EventState `json:"state,omitempty" gorm:"-"`
+
+	Data     any      `json:"data" gorm:"-"`
+	Identity any      `json:"identity,omitempty" gorm:"-"`
+	Metadata Metadata `json:"metadata" gorm:"-"`
 }
 
-func (event *Event) MarkCommited() {
-	event.commited = true
+// SetID assigns a UUID to the event.
+func (e *Event) SetID(id uuid.UUID) {
+	e.ID = id
 }
 
-func (event *Event) MarkFailed() {
-	event.failed = true
+// GetState returns the current state of the event.
+func (e *Event) GetState() EventState {
+	return e.State
 }
 
-func NewEvent(evtData interface{}) Event {
-	id, _ := uuid.NewRandom()
+// SetState adds a state to the event if it doesn't exist.
+func (e *Event) SetState(s EventState) {
+	e.State = s
+}
+
+// HasState checks if the event has a specific state.
+func (e *Event) InState(s EventState) bool {
+	return e.State == s
+}
+
+// NewEvent creates a new Event with the provided data and aggregate information.
+func NewEvent(aggregate Aggregate, data any, state EventState, metadata Metadata) Event {
+	id, _ := uuid.NewV7()
+
+	if metadata == nil {
+		metadata = make(Metadata)
+	}
+
+	s := EventStateReady
+	if state != "" {
+		s = state
+	}
 
 	return Event{
-		ID:        id,
-		commit:    true,
-		commited:  false,
-		Event:     utils.GetTypeWithPackage(evtData),
-		Metadata:  Metadata{},
-		Data:      evtData,
-		CreatedAt: time.Now(),
+		ID:            id,
+		CreatedAt:     time.Now(),
+		Type:          ObjectName(data),
+		AggregateID:   aggregate.GetID(),
+		AggregateType: ObjectName(aggregate),
+		State:         s,
+		Data:          data,
+		Metadata:      metadata,
+		Kind:          EventKindEvent,
 	}
 }
 
 type Events []Event
 
-func (evts Events) HasCommited() bool {
-	for _, event := range evts {
-		if event.commit {
-			return true
+func (evts Events) Ready() Events {
+	return golly.Filter(evts, func(e Event) bool { return e.InState(EventStateReady) })
+}
+
+func (evts Events) Uncommitted() Events {
+	return golly.Filter(evts, func(e Event) bool { return e.InState(EventStateApplied) })
+}
+
+func (evts Events) Completed() Events {
+	return golly.Filter(evts, func(e Event) bool { return e.InState(EventStateCompleted) })
+}
+
+func (evts Events) Ptr() []*Event {
+	return golly.Map(evts, func(e Event) *Event { return &e })
+}
+
+func (evts Events) MarkFailed() Events {
+	for i := range evts {
+		if !evts[i].InState(EventStateCompleted) {
+			evts[i].SetState(EventStateFailed)
 		}
 	}
-	return false
+	return evts
 }
 
-func (evts Events) MarkFailed() {
-	for pos := range evts {
-		evts[pos].commit = false
-		evts[pos].failed = true
-	}
-}
-
-func (evts Events) Failed() Events {
-	return golly.Filter(evts, func(e Event) bool { return e.failed })
-}
-
-func (evts Events) Uncommited() Events {
-	return golly.Filter(evts, func(e Event) bool { return !e.commited })
-}
-
-func (evts Events) Commited() Events {
-	return golly.Filter(evts, func(e Event) bool { return e.commited })
-}
-
-func (evts Events) FindByName(name string) *Event {
-	return golly.Find(evts, func(event Event) bool {
-		return strings.EqualFold(name, utils.GetType(event)) ||
-			strings.EqualFold(name, utils.GetTypeWithPackage(event))
-	})
-}
-
-// Decode return a deserialized event, ready to user
-func UnmarshalEvent(data []byte) (*Event, error) {
-	event := Event{}
-
-	if err := json.Unmarshal(data, &event); err != nil {
-		return nil, errors.WrapUnprocessable(err)
-	}
-
-	definition := registry.FindDefinition(event.AggregateType)
-
-	if definition == nil {
-		return nil, errors.WrapNotFound(fmt.Errorf("aggregate not found"))
-	}
-
-	var evt reflect.Type
-	for _, e := range definition.Events {
-		if event.Event == utils.GetTypeWithPackage(e) {
-			evt = reflect.TypeOf(e)
-			break
+func (evts Events) MarkComplete() Events {
+	for i := range evts {
+		if !evts[i].InState(EventStateCanceled) {
+			evts[i].SetState(EventStateCompleted)
 		}
 	}
+	return evts
+}
 
-	dataValue := reflect.New(evt)
-
-	marshal := dataValue.Elem().Addr()
-	b, _ := json.Marshal(event.Data)
-
-	if err := json.Unmarshal(b, marshal.Interface()); err != nil {
-		return nil, errors.WrapGeneric(fmt.Errorf("error when decoding %s %#v", event.Event, err))
+// Hydrate reconstructs the event from JSON data and matches the appropriate type from the global aggregate registry.
+func (e *Event) Hydrate(data any) error {
+	if e.Type == "" || e.AggregateType == "" {
+		return fmt.Errorf("cannot unmarshal Type and Aggregate not defined for event (%s)", e.ID)
 	}
 
-	event.Data = marshal.Elem().Interface()
+	var instance reflect.Value
 
-	return &event, nil
-}
-
-func Apply(aggregate Aggregate, edata ...interface{}) {
-	golly.Each(edata, func(e interface{}) {
-		ApplyExt(aggregate, e, true)
-	})
-}
-
-func NoCommit(aggregate Aggregate, edata ...interface{}) {
-	golly.Each(edata, func(e interface{}) {
-		ApplyExt(aggregate, e, false)
-	})
-}
-
-func ApplyExt(aggregate Aggregate, edata interface{}, commit bool) {
-	if edata == nil {
-		return
-	}
-
-	event := NewEvent(edata)
-	event.commit = commit
-	event.commited = false
-
-	if inf, ok := aggregate.(AggregateType); ok {
-		event.AggregateType = inf.Type()
+	if e.Kind == EventKindSnapshot {
+		instance = reflect.ValueOf(&AggregateSnapshottedEvent{})
 	} else {
-		event.AggregateType = utils.GetTypeWithPackage(aggregate)
+		// Use global aggregate registry
+		evtType, exists := Aggregates().GetEventType(e.AggregateType, e.Type)
+		if !exists {
+			return fmt.Errorf("cannot unmarshal event type (%s) not registered for (%s)", e.Type, e.ID)
+		}
+		instance = reflect.New(evtType.Elem())
 	}
 
-	event.Version = aggregate.GetVersion()
-
-	aggregate.Apply(event)
-
-	if commit {
-		aggregate.IncrementVersion()
+	switch v := data.(type) {
+	case json.RawMessage:
+		if err := json.Unmarshal(v, instance.Interface()); err != nil {
+			return err
+		}
+	case []byte:
+		if err := json.Unmarshal(v, instance.Interface()); err != nil {
+			return err
+		}
+	case map[string]interface{}:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(b, instance.Interface()); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("do not know how to handle data %v", v)
 	}
 
-	aggregate.Append(event)
+	e.Data = instance.Elem().Interface()
+	return nil
 }

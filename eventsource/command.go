@@ -1,22 +1,16 @@
 package eventsource
 
 import (
-	"github.com/go-playground/validator/v10"
-	"github.com/golly-go/golly"
-	"github.com/golly-go/golly/errors"
-)
+	"fmt"
 
-const (
-	commandHandlerKey golly.ContextKeyT = "commandHandler"
+	"github.com/golly-go/golly"
 )
 
 var (
-	validate = validator.New(validator.WithRequiredStructEnabled())
+	ErrorRepositoryIsNil   = fmt.Errorf("eventstore is nil for aggregate")
+	ErrorAggregateNotFound = fmt.Errorf("aggregate is not found in registry")
+	ErrorNoAggregateID     = fmt.Errorf("no aggregate id was defined after processing events (no such stream)")
 )
-
-type AggregateType interface {
-	Type() string
-}
 
 type Command interface {
 	Perform(golly.Context, Aggregate) error
@@ -30,112 +24,58 @@ type CommandRollback interface {
 	Rollback(golly.Context, Aggregate, error)
 }
 
-func Repo(ctx golly.Context, ag Aggregate) Repository {
-	// Tired of not being able to stub this - so now we can (This still doesnt fully help if someone runs)
-	// something within their command that calls ag.Repo(ctx) - but it's a start
-	if repo := repoFromContext(ctx); repo != nil {
-		return repo
+// Execute handles command execution, including loading the aggregate, replaying events, validating, and persisting changes.
+func Execute(gctx golly.Context, agg Aggregate, cmd Command) (err error) {
+	var estore EventStore
+
+	estore = agg.EventStore()
+	if estore == nil {
+		return handleExecutionError(gctx, agg, cmd, ErrorRepositoryIsNil)
 	}
 
-	return ag.Repo(ctx)
-
-}
-
-type CommandHandler interface {
-	Call(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error
-}
-
-type DefaultCommandHandler struct{}
-
-func (ch DefaultCommandHandler) Call(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error {
-	repo := Repo(ctx, ag)
-
-	if err := validate.Struct(cmd); err != nil {
-		return errors.WrapUnprocessable(err)
+	if err = Replay(gctx, agg); err != nil {
+		return handleExecutionError(gctx, agg, cmd, err)
 	}
 
-	if validator, ok := cmd.(CommandValidator); ok {
-		if err := validator.Validate(ctx, ag); err != nil {
-			return errors.WrapUnprocessable(err)
+	if v, ok := cmd.(CommandValidator); ok {
+		if err = v.Validate(gctx, agg); err != nil {
+			return handleExecutionError(gctx, agg, cmd, err)
 		}
 	}
-
-	return repo.Transaction(ctx, func(ctx golly.Context, repo Repository) error {
-		err := ch.execute(ctx, ag, cmd, metadata)
-		if err != nil {
-			if rbk, ok := cmd.(CommandRollback); ok {
-				rbk.Rollback(ctx, ag, err)
-			}
-
-			ag.Changes().MarkFailed()
-		}
-		return err
-	})
-}
-
-// Execute executes the command, ensuring that events are saved to the backend before in-memory processing.
-func (DefaultCommandHandler) execute(ctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error {
-	repo := Repo(ctx, ag)
 
 	// Perform the given command on the aggregate
-	if err := cmd.Perform(ctx, ag); err != nil {
-		return errors.WrapUnprocessable(err)
+	if err = cmd.Perform(gctx, agg); err != nil {
+		return handleExecutionError(gctx, agg, cmd, err)
 	}
 
-	changes := ag.Changes().Uncommited()
-
-	if len(changes) == 0 || !changes.HasCommited() {
-		return nil
+	if agg.GetID() == "" {
+		return handleExecutionError(gctx, agg, cmd, ErrorNoAggregateID)
 	}
 
-	if err := repo.Save(ctx, ag); err != nil {
-		return errors.WrapUnprocessable(err)
+	// Apply changes to the aggregate
+	agg.ProcessChanges(agg)
+
+	changes := agg.Changes().Uncommitted()
+	if err = estore.Save(gctx, changes.Ptr()...); err != nil {
+		return handleExecutionError(gctx, agg, cmd, err)
 	}
 
-	ag.SetPersisted()
+	streamManager.Send(changes...)
 
-	for pos, change := range changes {
-		change.AggregateID = ag.GetID()
-
-		if identityFunc != nil {
-			change.Identity = identityFunc(ctx)
-		}
-
-		change.Metadata.Merge(metadata)
-
-		// Save event to the backend event store
-		if eventBackend != nil && change.commit {
-			if err := eventBackend.Save(ctx, &change); err != nil {
-				return errors.WrapGeneric(err)
-			}
-		}
-
-		changes[pos] = change
-	}
-
-	ag.ClearChanges()
-
-	// Only after confirming event persistence, invoke in-memory subscriptions
-	if err := FireSubscription(ctx, ag, changes...); err != nil {
-		return errors.WrapGeneric(err)
-	}
-
-	if eventBackend != nil {
-		eventBackend.PublishEvent(ctx, ag, changes...)
-	}
+	agg.Changes().MarkComplete()
 
 	return nil
 }
 
-func Call(gctx golly.Context, ag Aggregate, cmd Command, metadata Metadata) error {
-	return Handler(gctx).Call(gctx, ag, cmd, metadata)
-}
-
-func Handler(gctx golly.Context) CommandHandler {
-	if handler, ok := gctx.Get(commandHandlerKey); ok {
-		return handler.(CommandHandler)
+// handleExecutionError processes errors and rolls back if necessary
+func handleExecutionError(ctx golly.Context, agg Aggregate, cmd Command, err error) error {
+	if agg != nil {
+		agg.SetChanges(agg.Changes().MarkFailed())
 	}
-	return DefaultCommandHandler{}
-}
 
-var _ CommandHandler = DefaultCommandHandler{}
+	if r, ok := cmd.(CommandRollback); ok {
+		r.Rollback(ctx, agg, err)
+	}
+
+	return err
+}
