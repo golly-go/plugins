@@ -32,9 +32,6 @@ jobs:
       - name: Dirs
         run: make dirs
 
-      - name: Dependencies
-        run: make deps
-
       - name: Vet
         run: make vet
 
