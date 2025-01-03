@@ -187,7 +187,7 @@ func (ab *AggregateBase) ProcessChanges(gctx golly.Context, ag Aggregate) {
 func Replay(ctx golly.Context, agg Aggregate) error {
 	id := agg.GetID()
 
-	if id == "" || id == uuid.Nil.String() && id == "0" {
+	if id == "" || id == uuid.Nil.String() || id == "0" {
 		return ErrorAggregateNotInitialized
 	}
 
