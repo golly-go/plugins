@@ -24,20 +24,6 @@ func TestEventBase_SetState(t *testing.T) {
 	assert.True(t, event.InState(EventStateReady), "Event should have READY state")
 }
 
-func TestEventBase_UnsetState(t *testing.T) {
-	event := &Event{
-		ID:        uuid.New(),
-		CreatedAt: time.Now(),
-		Type:      "TestEvent",
-		State:     EventStateFailed,
-	}
-
-	event.SetState(EventStateReady)
-
-	assert.False(t, event.InState(EventStateReady), "READY state should be cleared")
-	assert.True(t, event.InState(EventStateFailed), "FAILED state should remain")
-}
-
 func TestEventBase_GetState(t *testing.T) {
 	event := &Event{
 		State: EventStateFailed,

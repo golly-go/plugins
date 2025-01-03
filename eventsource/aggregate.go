@@ -126,7 +126,15 @@ func (ab *AggregateBase) Record(ag Aggregate, data ...any) {
 // Events are stored as uncommitted changes, ready for processing by the handler.
 // Allows for additional metadata to be added to the event
 func (ab *AggregateBase) RecordWithMetadata(ag Aggregate, data any, metadata Metadata) {
-	version := ag.Version() + 1
+	var version int64
+
+	changes := ag.Changes()
+
+	if l := len(changes); l > 0 {
+		version = changes[l-1].Version + 1
+	} else {
+		version = ag.Version() + 1
+	}
 
 	event := NewEvent(ag, data, EventStateReady, nil)
 	event.Version = version

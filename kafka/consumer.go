@@ -116,11 +116,12 @@ func (cb *ConsumerBase) Run(ctx golly.Context, consumer Consumer) {
 
 	cb.running = true
 
-	cb.wp = workers.NewPool(consumer.Name(),
-		int32(consumer.MinPool()),
-		int32(consumer.MaxPool()),
-		wrap(consumer.Handler),
-	)
+	cb.wp = workers.NewPool(workers.PoolConfig{
+		Name:    consumer.Name(),
+		MinW:    int32(consumer.MinPool()),
+		MaxW:    int32(consumer.MaxPool()),
+		Handler: wrap(consumer.Handler),
+	})
 
 	logger := newKafkaLogger(ctx.Logger(), "consumers").
 		WithFields(logrus.Fields{
