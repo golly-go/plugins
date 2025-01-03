@@ -23,10 +23,10 @@ type Aggregate interface {
 	Apply(Aggregate, Event)
 
 	// Record events to applied later with metadata
-	Record(Aggregate, ...any)
+	Record(...any)
 
 	// Record events to be applied later with metadata
-	RecordWithMetadata(Aggregate, any, Metadata)
+	RecordWithMetadata(any, Metadata)
 
 	// Process the events into the aggregation
 	ProcessChanges(golly.Context, Aggregate)
@@ -116,30 +116,30 @@ func (ab *AggregateBase) Apply(ag Aggregate, event Event) {
 
 // Record generates and tracks events for the aggregate, incrementing the version for each event.
 // Events are stored as uncommitted changes, ready for processing by the handler.
-func (ab *AggregateBase) Record(ag Aggregate, data ...any) {
+func (ab *AggregateBase) Record(data ...any) {
 	for _, d := range data {
-		ab.RecordWithMetadata(ag, d, nil)
+		ab.RecordWithMetadata(d, nil)
 	}
 }
 
 // Record generates and tracks events for the aggregate, incrementing the version for each event.
 // Events are stored as uncommitted changes, ready for processing by the handler.
 // Allows for additional metadata to be added to the event
-func (ab *AggregateBase) RecordWithMetadata(ag Aggregate, data any, metadata Metadata) {
+func (ab *AggregateBase) RecordWithMetadata(data any, metadata Metadata) {
 	var version int64
 
-	changes := ag.Changes()
+	changes := ab.Changes()
 
 	if l := len(changes); l > 0 {
 		version = changes[l-1].Version + 1
 	} else {
-		version = ag.Version() + 1
+		version = ab.Version() + 1
 	}
 
-	event := NewEvent(ag, data, EventStateReady, nil)
+	event := NewEvent(data, EventStateReady, nil)
 	event.Version = version
 
-	ag.AppendChanges(event)
+	ab.AppendChanges(event)
 }
 
 // ProcessChanges applies all uncommitted changes to the aggregate.
@@ -168,6 +168,8 @@ func (ab *AggregateBase) ProcessChanges(gctx golly.Context, ag Aggregate) {
 		}
 
 		change.AggregateID = ag.GetID()
+		change.AggregateType = ObjectName(ag)
+
 		change.SetState(EventStateApplied)
 		changes[pos] = change
 	}

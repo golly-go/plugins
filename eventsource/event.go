@@ -70,7 +70,7 @@ func (e *Event) InState(s EventState) bool {
 }
 
 // NewEvent creates a new Event with the provided data and aggregate information.
-func NewEvent(aggregate Aggregate, data any, state EventState, metadata Metadata) Event {
+func NewEvent(data any, state EventState, metadata Metadata) Event {
 	id, _ := uuid.NewV7()
 
 	if metadata == nil {
@@ -83,15 +83,13 @@ func NewEvent(aggregate Aggregate, data any, state EventState, metadata Metadata
 	}
 
 	return Event{
-		ID:            id,
-		CreatedAt:     time.Now(),
-		Type:          ObjectName(data),
-		AggregateID:   aggregate.GetID(),
-		AggregateType: ObjectName(aggregate),
-		State:         s,
-		Data:          data,
-		Metadata:      metadata,
-		Kind:          EventKindEvent,
+		ID:        id,
+		CreatedAt: time.Now(),
+		Type:      ObjectName(data),
+		State:     s,
+		Data:      data,
+		Metadata:  metadata,
+		Kind:      EventKindEvent,
 	}
 }
 

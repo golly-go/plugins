@@ -60,7 +60,7 @@ func Execute(gctx golly.Context, agg Aggregate, cmd Command) (err error) {
 		return handleExecutionError(gctx, agg, cmd, err)
 	}
 
-	streamManager.Send(changes...)
+	streamManager.Send(gctx, changes...)
 
 	agg.Changes().MarkComplete()
 

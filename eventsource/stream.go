@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"sync"
 
+	"github.com/golly-go/golly"
 	"github.com/golly-go/golly/utils"
 )
 
@@ -23,13 +24,15 @@ func DefaultStream() *Stream {
 	return streamManager.Register(DefaultStreamName)
 }
 
+type StreamHandler func(golly.Context, Event)
+
 // Stream represents a single in-memory event stream with subscriptions.
 type Stream struct {
 	name string
 	mu   sync.RWMutex
 
-	handlers     map[string][]func(Event) // eventType -> list of handler funcs
-	aggregations map[string][]func(Event) // Aggregations
+	handlers     map[string][]StreamHandler // eventType -> list of handler funcs
+	aggregations map[string][]StreamHandler // Aggregations
 
 }
 
@@ -37,8 +40,8 @@ type Stream struct {
 func NewStream(name string) *Stream {
 	return &Stream{
 		name:         name,
-		handlers:     make(map[string][]func(Event)),
-		aggregations: make(map[string][]func(Event)),
+		handlers:     make(map[string][]StreamHandler),
+		aggregations: make(map[string][]StreamHandler),
 	}
 }
 
@@ -49,13 +52,13 @@ func (s *Stream) Name() string {
 
 // Send dispatches an event to all subscribers of event.Type and to any
 // subscribers of AllEvents ("*"). Dispatching is done asynchronously.
-func (s *Stream) Send(events ...Event) {
+func (s *Stream) Send(gctx golly.Context, events ...Event) {
 	for _, event := range events {
 		eventType := utils.GetTypeWithPackage(event)
 
 		s.mu.RLock()
 
-		combined := []func(Event){}
+		combined := []StreamHandler{}
 		if sh, ok := s.handlers[eventType]; ok {
 			combined = sh
 		}
@@ -72,12 +75,12 @@ func (s *Stream) Send(events ...Event) {
 
 		// Invoke handlers asynchronously
 		for _, handler := range combined {
-			handler(event)
+			handler(gctx, event)
 		}
 	}
 }
 
-func (s *Stream) Aggregate(aggregateType string, handler func(Event)) {
+func (s *Stream) Aggregate(aggregateType string, handler StreamHandler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -85,7 +88,7 @@ func (s *Stream) Aggregate(aggregateType string, handler func(Event)) {
 }
 
 // Subscribe registers a handler for a specific event type (or AllEvents).
-func (s *Stream) Subscribe(eventType string, handler func(Event)) {
+func (s *Stream) Subscribe(eventType string, handler StreamHandler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -93,7 +96,7 @@ func (s *Stream) Subscribe(eventType string, handler func(Event)) {
 }
 
 // Unsubscribe removes a handler for a specific event type (or AllEvents).
-func (s *Stream) Unsubscribe(eventType string, handler func(Event)) {
+func (s *Stream) Unsubscribe(eventType string, handler StreamHandler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

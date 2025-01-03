@@ -2,6 +2,8 @@ package eventsource
 
 import (
 	"sync"
+
+	"github.com/golly-go/golly"
 )
 
 var (
@@ -42,22 +44,22 @@ func (sm *StreamManager) Register(name string) *Stream {
 }
 
 // SendTo sends an event to a specific named stream.
-func (sm *StreamManager) SendTo(streamName string, event Event) {
+func (sm *StreamManager) SendTo(gctx golly.Context, streamName string, event Event) {
 	sm.mu.RLock()
 	stream, ok := sm.streams[streamName]
 	sm.mu.RUnlock()
 
 	if ok {
-		stream.Send(event)
+		stream.Send(gctx, event)
 	}
 }
 
 // Send sends an event to all streams.
-func (sm *StreamManager) Send(events ...Event) {
+func (sm *StreamManager) Send(gctx golly.Context, events ...Event) {
 	streams := sm.getStreams()
 
 	for _, s := range streams {
-		go s.Send(events...)
+		go s.Send(gctx, events...)
 	}
 }
 

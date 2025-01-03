@@ -140,7 +140,7 @@ func TestRecord(t *testing.T) {
 		testEvent{Name: "SecondEvent"},
 	}
 
-	mockAggregate.Record(mockAggregate, mockData...)
+	mockAggregate.Record(mockData...)
 	changes := mockAggregate.Changes()
 
 	assert.Len(t, changes, 2, "There should be two recorded events")

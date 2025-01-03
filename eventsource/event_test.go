@@ -38,13 +38,10 @@ func TestNewEvent(t *testing.T) {
 		Amount float64
 	}{Amount: 100.0}
 
-	aggregate := TestAggregate{ID: "aggregate-123"}
-
-	event := NewEvent(&aggregate, mockData, EventStateReady, nil)
+	event := NewEvent(mockData, EventStateReady, nil)
 
 	assert.NotNil(t, event.ID, "Event ID should be generated")
 	assert.Equal(t, "struct { Amount float64 }", event.Type, "Event type should match data type")
-	assert.Equal(t, "aggregate-123", event.AggregateID, "Aggregate ID should match")
 	assert.True(t, event.InState(EventStateReady), "Event should have READY state")
 	assert.False(t, event.InState(EventStateFailed), "Event should not have FAILED state")
 	assert.Equal(t, mockData, event.Data, "Event data should match input data")
