@@ -206,8 +206,6 @@ func (p *Pool) Run(ctx golly.Context) {
 		}
 	}
 
-	fmt.Printf("Here")
-
 	logger.Debug("Waiting for workers to finish...")
 
 	// set maxW to 0 so any leftover idle workers can exit

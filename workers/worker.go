@@ -1,7 +1,6 @@
 package workers
 
 import (
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -96,8 +95,6 @@ func (w *Worker) loop() {
 			Job:    &job,
 		}
 	}
-
-	fmt.Printf("Stopping worker")
 
 	w.running.Store(false)
 }
