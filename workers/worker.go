@@ -1,112 +1,117 @@
 package workers
 
 import (
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/golly-go/golly"
-	"github.com/sirupsen/logrus"
 )
 
+type Notification struct {
+	Worker *Worker
+	Job    *Job
+}
+
+// Job holds data plus the specific WorkerFunc to handle it.
 type Job struct {
 	Ctx     golly.Context
 	Data    interface{}
 	Handler WorkerFunc
+
+	OnComplete chan Notification
 }
 
-type Workers []*Worker
-
-func (wks Workers) Find(finder func(*Worker) bool) *Worker {
-	for _, worker := range wks {
-		if finder(worker) {
-			return worker
-		}
-	}
-	return nil
-}
-
-func (wks Workers) Each(fnc func(*Worker)) {
-	for _, worker := range wks {
-		fnc(worker)
-	}
-}
-
-func (wks Workers) Parition(finder func(*Worker) bool) (match []*Worker, nmatch []*Worker) {
-	for _, worker := range wks {
-		if finder(worker) {
-			match = append(match, worker)
-		} else {
-			nmatch = append(nmatch, worker)
-		}
-	}
-	return
-}
-
-type WorkerConfig struct {
-	ID string
-
-	OnJobStart func(*Worker, Job) error
-	OnJobEnd   func(*Worker, Job) error
-
-	Logger *logrus.Entry
-
-	IdleTimeout time.Duration
-}
+// Worker is a single goroutine that processes jobs.
 type Worker struct {
-	id          string
-	startedAt   time.Time
-	lastJobAt   time.Time
-	processing  bool
-	logger      *logrus.Entry
-	onJobStart  func(*Worker, Job) error
-	onJobEnd    func(*Worker, Job) error
-	IdleTimeout time.Duration
+	id string
+
+	startedAt time.Time
+	lastJobAt time.Time
+
+	running    atomic.Bool
+	processing atomic.Bool
+
+	job     chan Job
+	checkin chan *Worker
+
+	wg sync.WaitGroup
 }
 
-func NewWorker(config WorkerConfig) *Worker {
+// NewWorker constructs a Worker from WorkerConfig.
+func NewWorker(id string) *Worker {
 	return &Worker{
-		id: config.ID,
-		logger: config.Logger.WithFields(logrus.Fields{
-			"worker.type": "Worker",
-			"worker.id":   config.ID,
-		}),
-		onJobStart:  config.OnJobStart,
-		onJobEnd:    config.OnJobEnd,
-		startedAt:   time.Now(),
-		processing:  false,
-		IdleTimeout: config.IdleTimeout,
+		id:        id,
+		startedAt: time.Now(),
+		job:       make(chan Job),
 	}
 }
 
+// ID returns the Worker's identifier.
 func (w *Worker) ID() string {
 	return w.id
 }
 
-func (w *Worker) IsIdle() bool {
-	return !w.processing && time.Since(w.lastJobAt) > w.IdleTimeout
+// Start begins the worker goroutine.
+func (w *Worker) Start() {
+	w.running.Store(true)
+
+	w.wg.Add(1)
+	go w.loop()
 }
 
-func (w *Worker) Perform(j Job) {
-	w.processing = true
-	defer func() {
-		w.processing = false
-		w.lastJobAt = time.Now()
-	}()
+// IsIdleFor checks if the worker is not processing and has been idle > IdleTimeout.
+func (w *Worker) IsIdleFor(timeout time.Duration) bool {
+	processing := w.processing.Load()
 
-	if w.onJobStart != nil {
-		if err := w.onJobStart(w, j); err != nil {
-			w.logger.Errorln("Error in job start callback:", err)
-			return
+	return !processing && time.Since(w.lastJobAt) > timeout
+}
+
+func (w *Worker) IsRunning() bool {
+	return w.running.Load()
+}
+
+// loop is the main routine that processes jobs until we receive a quit signal.
+func (w *Worker) loop() {
+	defer w.wg.Done()
+
+	for {
+		job, ok := <-w.job
+		if !ok {
+			break
+		}
+
+		if err := job.Handler(job.Ctx, job.Data); err != nil {
+			job.Ctx.Logger().Error(err)
+			break
+		}
+
+		if job.OnComplete == nil {
+			continue
+		}
+
+		job.OnComplete <- Notification{
+			Worker: w,
+			Job:    &job,
 		}
 	}
 
-	// Perform the job
-	if err := j.Handler(j.Ctx, j.Data); err != nil {
-		w.logger.Errorln("Error performing job:", err)
+	w.running.Store(false)
+}
+
+func (w *Worker) Perform(job Job) {
+	w.job <- job
+}
+
+// Stop signals the worker to shut down, then waits for it to exit.
+func (w *Worker) Stop() {
+	if !w.running.Load() {
+		return
 	}
 
-	if w.onJobEnd != nil {
-		if err := w.onJobEnd(w, j); err != nil {
-			w.logger.Errorln("Error in job end callback:", err)
-		}
-	}
+	w.running.Store(false)
+
+	close(w.job)
+
+	w.wg.Wait()
 }

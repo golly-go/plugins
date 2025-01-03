@@ -1,43 +1,171 @@
 package eventsource
 
 import (
-	"github.com/golly-go/golly"
+	"testing"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
 )
 
-type testAggregate struct {
+type TestAggregate struct {
 	AggregateBase
 
-	repo Repository
+	ID               string
+	LastAppliedEvent *Event
+
+	es EventStore
 }
 
-func (a *testAggregate) Repo(golly.Context) Repository { return a.repo }
-func (*testAggregate) Topic() string                   { return "test/topic" }
-func (*testAggregate) Apply(Event)                     {}
-func (*testAggregate) GetID() string                   { return "" }
-func (*testAggregate) SetID(id string)                 {}
-
-type testRepostoryBase struct {
-	loadCalled       int
-	saveCalled       int
-	trasactionCalled int
+func (ta *TestAggregate) TestEventHandler(event Event) {
+	ta.LastAppliedEvent = &event
 }
 
-func (r *testRepostoryBase) Load(golly.Context, interface{}) error {
-	r.loadCalled++
-	return nil
+func (ta *TestAggregate) GetID() string          { return ta.ID }
+func (ta *TestAggregate) SetID(string)           {}
+func (ta *TestAggregate) EventStore() EventStore { return &TestEventStore{} }
+func (ta *TestAggregate) Apply(agg Aggregate, event Event) {
+
+	ta.changes = append(ta.changes, event)
+
+	ta.AggregateBase.Apply(ta, event)
 }
 
-func (r *testRepostoryBase) Save(golly.Context, interface{}) error {
-	r.saveCalled++
-	return nil
+func TestReplay(t *testing.T) {
+	tests := []struct {
+		name        string
+		events      []Event
+		expectOrder []int64
+	}{
+		{
+			name: "Events in order",
+			events: []Event{
+				{Version: 1},
+				{Version: 2},
+				{Version: 3},
+			},
+			expectOrder: []int64{1, 2, 3},
+		},
+		{
+			name: "Events out of order",
+			events: []Event{
+				{Version: 3},
+				{Version: 1},
+				{Version: 2},
+			},
+			expectOrder: []int64{1, 2, 3},
+		},
+		{
+			name: "Single event",
+			events: []Event{
+				{Version: 1},
+			},
+			expectOrder: []int64{1},
+		},
+
+		{
+			name:   "No events",
+			events: []Event{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			aggregate := &TestAggregate{}
+			aggregate.Replay(aggregate, tt.events)
+
+			changes := aggregate.Changes()
+
+			var versions []int64
+			for _, evt := range changes {
+				versions = append(versions, evt.Version)
+			}
+
+			assert.Equal(t, tt.expectOrder, versions)
+		})
+	}
 }
 
-func (r *testRepostoryBase) Transaction(ctx golly.Context, handler func(golly.Context, Repository) error) error {
-	r.trasactionCalled++
+func TestAggregateBase_Apply(t *testing.T) {
+	type testEvent struct{}
+	type unhandledEvent struct{}
 
-	return handler(ctx, r)
+	tests := []struct {
+		name         string
+		event        Event
+		handlerExist bool
+		shouldApply  bool
+	}{
+		{
+			name:         "Handler Exists",
+			event:        Event{Type: "TestEvent", Data: testEvent{}},
+			handlerExist: true,
+			shouldApply:  true,
+		},
+		{
+			name:         "Handler Missing",
+			event:        Event{Type: "UnknownEvent", Data: unhandledEvent{}},
+			handlerExist: false,
+			shouldApply:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			aggregate := &TestAggregate{}
+
+			aggregate.Apply(aggregate, tt.event)
+
+			if tt.handlerExist {
+				assert.Equal(t, tt.event.Type, aggregate.LastAppliedEvent.Type)
+			} else {
+				assert.Nil(t, aggregate.LastAppliedEvent)
+			}
+		})
+	}
 }
 
-func (r *testRepostoryBase) IsNewRecord(interface{}) bool {
-	return true
+// Test for Record function
+func TestRecord(t *testing.T) {
+	mockAggregate := &TestAggregate{
+		AggregateBase: AggregateBase{
+			AggregateVersion: 3,
+		},
+		ID: "aggregate-456",
+	}
+
+	mockData := []any{
+		testEvent{Name: "FirstEvent"},
+		testEvent{Name: "SecondEvent"},
+	}
+
+	mockAggregate.Record(mockAggregate, mockData...)
+	changes := mockAggregate.Changes()
+
+	assert.Len(t, changes, 2, "There should be two recorded events")
+	assert.Equal(t, int64(4), changes[0].Version, "First event version should increment")
+	assert.Equal(t, int64(5), changes[1].Version, "Second event version should increment")
+	assert.Equal(t, "eventsource.testEvent", changes[0].Type, "First event type should match")
+	assert.Equal(t, "eventsource.testEvent", changes[1].Type, "Second event type should match")
+}
+
+// Test for ProcessChanges function
+func TestProcessChanges(t *testing.T) {
+	mockAggregate := &TestAggregate{
+		ID: "aggregate-789",
+	}
+
+	mockAggregate.SetChanges([]Event{
+		{ID: uuid.New(), State: EventStateFailed},
+		{ID: uuid.New(), State: EventStateReady},
+		{ID: uuid.New(), State: EventStateRetry},
+	})
+
+	mockAggregate.ProcessChanges(mockAggregate)
+	changes := mockAggregate.Changes()
+
+	assert.Equal(t, EventStateApplied, changes[0].GetState(), "First event should be marked as APPLIED")
+	assert.Equal(t, EventStateApplied, changes[1].GetState(), "Second event should remain APPLIED")
+	assert.Equal(t, EventStateApplied, changes[2].GetState(), "Third event should be marked as APPLIED")
+
+	assert.Equal(t, mockAggregate.GetID(), changes[0].AggregateID, "Aggregate ID should not be updated")
 }

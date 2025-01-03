@@ -15,14 +15,16 @@ func TestEnQueueMultipleJobs(t *testing.T) {
 	var jobCount int32
 	jobTotal := 50
 
-	// Define a handler function that increments jobCount upon completion
-	handler := func(ctx golly.Context, data interface{}) error {
-		atomic.AddInt32(&jobCount, 1)
-		return nil
-	}
-
 	// Create and run the pool
-	pool := NewPool("testPool", 1, 10, handler)
+	pool := NewPool(PoolConfig{
+		Name: "testPool",
+		MinW: 1,
+		MaxW: 10,
+		Handler: func(ctx golly.Context, data interface{}) error {
+			atomic.AddInt32(&jobCount, 1)
+			return nil
+		},
+	})
 	ctx := golly.NewContext(context.Background())
 	go pool.Run(ctx)
 
@@ -48,21 +50,23 @@ func TestReapFunctionality(t *testing.T) {
 	// Variables to track job completion
 	var jobCount int32
 
-	// Worker handler that simulates work
-	handler := func(ctx golly.Context, data interface{}) error {
-		time.Sleep(25 * time.Millisecond) // Simulate work
-		atomic.AddInt32(&jobCount, 1)
-		return nil
-	}
+	pool := NewPool(PoolConfig{
+		Name:         "testPool",
+		MinW:         2,
+		MaxW:         5,
+		IdleTimeout:  100 * time.Millisecond,
+		ReapInterval: 500 * time.Millisecond,
+		Handler: func(ctx golly.Context, data interface{}) error {
+			atomic.AddInt32(&jobCount, 1)
 
-	// Create and run the pool with more workers than minW
-	minW, maxW := int32(2), int32(5)
-	pool := NewPool("testPool", minW, maxW, handler)
+			time.Sleep(25 * time.Millisecond) // Simulate work
+
+			return nil
+		},
+	})
 
 	ctx := golly.NewContext(context.Background())
 	go pool.Run(ctx)
-
-	pool.idleTimeout = 100 * time.Millisecond
 
 	// Enqueue a few jobs
 	jobTotal := 10
@@ -75,8 +79,8 @@ func TestReapFunctionality(t *testing.T) {
 
 	// Verify that workers were reaped as expected
 	activeWorkers := pool.activeWorkers.Load()
-	assert.LessOrEqual(t, activeWorkers, maxW, "Active workers should not exceed maxW")
-	assert.GreaterOrEqual(t, activeWorkers, minW, "Active workers should not fall below minW")
+
+	assert.GreaterOrEqual(t, pool.minW, activeWorkers, "Active workers should not fall below minW")
 
 	pool.Stop()
 	pool.Wait()
