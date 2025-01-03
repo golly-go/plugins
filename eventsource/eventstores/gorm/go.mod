@@ -8,6 +8,7 @@ require (
 	github.com/golly-go/plugins/orm v0.0.0-20241229122508-173914c54f5d
 	github.com/google/uuid v1.6.0
 	github.com/jinzhu/gorm v1.9.16
+	github.com/stretchr/testify v1.9.0
 	gorm.io/gorm v1.25.12
 )
 
@@ -44,7 +45,6 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/spf13/viper v1.19.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
-	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.28.0 // indirect

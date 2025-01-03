@@ -8,7 +8,7 @@ dirs:
 	@for f in $(DIRS); do echo $$f; done;
 
 deps:
-	@for f in $(DIRS); do echo "running on $$f" && cd $$f && go get -v -t -d ./...; cd $(STARTING); done;
+	@for f in $(DIRS); do echo "running on $$f" && cd $$f && go get -v -t ./...; cd $(STARTING); done;
 
 update-golly:
 	@for f in $(DIRS); do cd $$f && GOPROXY=direct go get -v -u github.com/golly-go/golly; cd $(STARTING); done;
