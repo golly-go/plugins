@@ -40,21 +40,43 @@ import (
 	"github.com/golly-go/plugins/eventsource"
 )
 
-func Initailizer(app golly.Application) error {
+func main() {
 	eventsource.Aggregates().Register(&MyAggregate{}, []any{
 		Created{},
 		Updated{},
 		SomeRelationAdded{},
 	})
-
-    return nil
 }
 ```
 
 - `MyAggregate` is the aggregate representing your domain object.
 - `Created`, `Updated`, and `SomeRelationAdded` are events that the aggregate can handle.
 
-### 2. Stream Event Handling
+### 2. Update Handlers for Events
+
+Define event handlers in the aggregate by creating methods that follow the pattern `<EventName>Handler`:
+
+```go
+func (ma *MyAggregate) CreatedHandler(event eventsource.Event) {
+	evt := event.Data.(Created)
+	ma.ID = evt.ID
+	ma.Name = evt.Name
+}
+
+func (ma *MyAggregate) UpdatedHandler(event eventsource.Event) {
+	evt := event.Data.(Updated)
+	ma.Name = evt.Name
+}
+
+func (ma *MyAggregate) SomeRelationAddedHandler(event eventsource.Event) {
+	evt := event.Data.(SomeRelationAdded)
+	ma.SomeRelation = golly.Unique(append(ma.SomeRelation, evt.Relation))
+}
+```
+
+These handlers allow aggregates to apply state changes when events are replayed.
+
+### 3. Stream Event Handling
 
 Attach handlers to process events for specific aggregates:
 
@@ -66,7 +88,7 @@ eventsource.DefaultStream().Aggregate(eventsource.ObjectName(MyAggregate{}), fun
 
 This will print each event processed by the `MyAggregate` to the console.
 
-### 3. Execute Commands
+### 4. Execute Commands
 
 Commands represent user actions or requests that trigger state changes:
 
@@ -87,7 +109,6 @@ if err != nil {
 ## Command Example
 
 ### Define a Command
-
 ```go
 type UpdateMyAggregate struct {
 	Name string
@@ -105,7 +126,6 @@ func (cmd UpdateMyAggregate) Perform(gctx golly.Context, agg eventsource.Aggrega
 	return nil
 }
 ```
-
 - `Validate` ensures the command's data is correct before proceeding.
 - `Perform` applies the event to the aggregate.
 
@@ -114,19 +134,15 @@ func (cmd UpdateMyAggregate) Perform(gctx golly.Context, agg eventsource.Aggrega
 ## Key Concepts
 
 ### Aggregates
-
 Aggregates represent the core business entities that emit events. They ensure consistency and encapsulate state changes.
 
 ### Events
-
 Events are immutable records of state changes. They represent facts that have occurred in the system.
 
 ### Streams
-
 Streams manage event distribution. They allow handlers to listen to and react to specific events or aggregates.
 
 ### Commands
-
 Commands trigger actions that may result in new events. They represent user intent.
 
 ---
@@ -145,6 +161,17 @@ func TestUpdateMyAggregate(t *testing.T) {
 	}
 }
 ```
+
+---
+
+## Event Stores
+Prebuilt event stores can be found at:
+
+```bash
+github.com/golly-go/plugins/eventsource/eventstore/<name>
+```
+
+These event stores can be used to persist and manage events across different backends.
 
 ---
 
