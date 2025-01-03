@@ -7,9 +7,11 @@ import (
 )
 
 var (
-	ErrorRepositoryIsNil   = fmt.Errorf("eventstore is nil for aggregate")
-	ErrorAggregateNotFound = fmt.Errorf("aggregate is not found in registry")
-	ErrorNoAggregateID     = fmt.Errorf("no aggregate id was defined after processing events (no such stream)")
+	ErrorRepositoryIsNil         = fmt.Errorf("eventstore is nil for aggregate")
+	ErrorAggregateNotFound       = fmt.Errorf("aggregate is not found in registry")
+	ErrorNoEventsFound           = fmt.Errorf("no events found matching this aggregation")
+	ErrorNoAggregateID           = fmt.Errorf("no aggregate id was defined after processing events (no such stream)")
+	ErrorAggregateNotInitialized = fmt.Errorf("aggregate was not created properly and IsNewRecord is still true after events")
 )
 
 type Command interface {
@@ -54,6 +56,10 @@ func Execute(gctx golly.Context, agg Aggregate, cmd Command) (err error) {
 
 	// Apply changes to the aggregate
 	agg.ProcessChanges(gctx, agg)
+
+	if agg.IsNewRecord() {
+		return handleExecutionError(gctx, agg, cmd, ErrorAggregateNotInitialized)
+	}
 
 	changes := agg.Changes().Uncommitted()
 	if err = estore.Save(gctx, changes.Ptr()...); err != nil {

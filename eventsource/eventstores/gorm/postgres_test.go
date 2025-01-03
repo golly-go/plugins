@@ -24,6 +24,7 @@ type TestAggregate struct {
 func (ta *TestAggregate) ApplytestEvent(event Event)         { ta.AppliedEvent = &event }
 func (ta *TestAggregate) GetID() string                      { return ta.ID }
 func (ta *TestAggregate) EventStore() eventsource.EventStore { return nil }
+func (ta *TestAggregate) IsNewRecord() bool                  { return false }
 
 type TestEvent struct {
 	Key string `json:"key"`

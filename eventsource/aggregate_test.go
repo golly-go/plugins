@@ -25,6 +25,7 @@ func (ta *TestAggregate) TestEventHandler(event Event) {
 func (ta *TestAggregate) GetID() string          { return ta.ID }
 func (ta *TestAggregate) SetID(string)           {}
 func (ta *TestAggregate) EventStore() EventStore { return &TestEventStore{} }
+func (ta *TestAggregate) IsNewRecord() bool      { return false }
 func (ta *TestAggregate) Apply(agg Aggregate, event Event) {
 
 	ta.changes = append(ta.changes, event)

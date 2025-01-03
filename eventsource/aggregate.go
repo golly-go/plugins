@@ -45,6 +45,8 @@ type Aggregate interface {
 
 	Version() int64
 	SetVersion(int64)
+
+	IsNewRecord() bool
 }
 
 type AggregateBase struct {
@@ -204,6 +206,18 @@ func Replay(ctx golly.Context, agg Aggregate) error {
 
 	events = append([]Event{snapshot}, events...)
 	agg.Replay(agg, events)
+
+	return nil
+}
+
+func Load(ctx golly.Context, agg Aggregate) error {
+	if err := Replay(ctx, agg); err != nil {
+		return err
+	}
+
+	if agg.IsNewRecord() {
+		return ErrorNoEventsFound
+	}
 
 	return nil
 }
