@@ -1,4 +1,4 @@
-module github.com/golly-go/plugins/eventsource/repositories/gormrepo
+module github.com/golly-go/plugins/eventsource/eventstores/gorm
 
 go 1.23.4
 

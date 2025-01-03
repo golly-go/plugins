@@ -1,8 +1,10 @@
 package eventsource
 
 import (
+	"context"
 	"testing"
 
+	"github.com/golly-go/golly"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 )
@@ -160,7 +162,7 @@ func TestProcessChanges(t *testing.T) {
 		{ID: uuid.New(), State: EventStateRetry},
 	})
 
-	mockAggregate.ProcessChanges(mockAggregate)
+	mockAggregate.ProcessChanges(golly.NewContext(context.Background()), mockAggregate)
 	changes := mockAggregate.Changes()
 
 	assert.Equal(t, EventStateApplied, changes[0].GetState(), "First event should be marked as APPLIED")

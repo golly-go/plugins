@@ -29,7 +29,7 @@ type Aggregate interface {
 	RecordWithMetadata(Aggregate, any, Metadata)
 
 	// Process the events into the aggregation
-	ProcessChanges(Aggregate)
+	ProcessChanges(golly.Context, Aggregate)
 
 	// Replay events
 	Replay(Aggregate, []Event)
@@ -145,7 +145,7 @@ func (ab *AggregateBase) RecordWithMetadata(ag Aggregate, data any, metadata Met
 // ProcessChanges applies all uncommitted changes to the aggregate.
 // Each change is processed if it does not have the READY state set.
 // Changes are updated to reflect their applied state and reattached to the aggregate.
-func (ab *AggregateBase) ProcessChanges(ag Aggregate) {
+func (ab *AggregateBase) ProcessChanges(gctx golly.Context, ag Aggregate) {
 	changes := ag.Changes()
 
 	if len(changes) == 0 {
@@ -160,6 +160,12 @@ func (ab *AggregateBase) ProcessChanges(ag Aggregate) {
 		}
 
 		ag.Apply(ag, change)
+
+		// For now put this here till i can find a better way todo this
+		// perhaps we move Identity to be top level in Golly
+		if identiyFunc != nil {
+			change.Identity = identiyFunc(gctx)
+		}
 
 		change.AggregateID = ag.GetID()
 		change.SetState(EventStateApplied)

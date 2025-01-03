@@ -53,7 +53,7 @@ func Execute(gctx golly.Context, agg Aggregate, cmd Command) (err error) {
 	}
 
 	// Apply changes to the aggregate
-	agg.ProcessChanges(agg)
+	agg.ProcessChanges(gctx, agg)
 
 	changes := agg.Changes().Uncommitted()
 	if err = estore.Save(gctx, changes.Ptr()...); err != nil {
