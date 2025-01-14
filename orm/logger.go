@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
@@ -16,14 +14,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-var gollySourceDir string
-
-func init() {
-	_, file, _, _ := runtime.Caller(0)
-
-	gollySourceDir = regexp.MustCompile(`logger\.source\.go`).ReplaceAllString(file, "")
-}
-
 type Logger struct {
 	logger *logrus.Entry
 }
@@ -32,7 +22,7 @@ func NewLogger(driver string, disableLogger bool) *Logger {
 	lg := golly.NewLogger()
 
 	if disableLogger {
-		lg.Logger.SetLevel(logrus.WarnLevel)
+		lg.SetLevel(logrus.WarnLevel)
 	}
 
 	return &Logger{
@@ -90,22 +80,22 @@ func (l Logger) Trace(ctx context.Context, begin time.Time, fc func() (string, i
 	}
 }
 
-// FileWithLineNum return the file name and line number of the current file
+// FileWithLineNum returns the file name and line number of the most recent
+// caller outside specific libraries or test files, optimized for production use.
 func FileWithLineNum() string {
-	// the second caller usually from gorm internal, so set i start from 2
 	for i := 2; i < 15; i++ {
 		_, file, line, ok := runtime.Caller(i)
+		if !ok {
+			break
+		}
 
-		if ok {
-			notLibrary :=
-				!strings.Contains(file, "golly-go") &&
-					!strings.Contains(file, "gorm") &&
-					!strings.HasSuffix(file, "_test.go")
-
-			if notLibrary {
-				return file + ":" + strconv.FormatInt(int64(line), 10)
-			}
+		// Check exclusions as early as possible to avoid unnecessary allocations
+		if !strings.Contains(file, "golly-go") &&
+			!strings.Contains(file, "gorm") &&
+			!strings.HasSuffix(file, "_test.go") {
+			return fmt.Sprintf("%s:%d", file, line)
 		}
 	}
+
 	return ""
 }

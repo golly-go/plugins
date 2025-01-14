@@ -2,30 +2,29 @@ package orm
 
 import (
 	"fmt"
-	"os"
 
-	"github.com/spf13/viper"
+	"github.com/golly-go/golly"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 // NewDBConnection new db connection
-func NewPostgresConnection(v *viper.Viper, config Config) (*gorm.DB, error) {
+func NewPostgresConnection(app *golly.Application, config Config) (*gorm.DB, error) {
 	disableLog := false
 
-	if str := viper.GetString("DISABLE_DB_LOG"); str != "" {
+	if str := app.Config().GetString("database.logger"); str != "" {
 		disableLog = true
 	}
 
-	db, err := gorm.Open(postgres.Open(postgressConnectionString(v, config)), &gorm.Config{
+	db, err := gorm.Open(postgres.Open(postgressConnectionString(app, config)), &gorm.Config{
 		Logger: NewLogger("postgres", disableLog),
 	})
 
 	return db, err
 }
 
-func postgressConnectionString(v *viper.Viper, config Config) string {
-	if url := os.Getenv("DATABASE_URL"); url != "" {
+func postgressConnectionString(app *golly.Application, config Config) string {
+	if url := app.Config().GetString("database.url"); url != "" {
 		return url
 	}
 
