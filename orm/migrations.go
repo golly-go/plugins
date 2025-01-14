@@ -21,12 +21,53 @@ const (
 	migrationPath = dbFolder + "/migrations/"
 )
 
+var (
+	rootCmd = &cobra.Command{
+		Use:              "migration",
+		Aliases:          []string{"migrate", "migrations"},
+		TraverseChildren: true,
+	}
+
+	commands = []*cobra.Command{
+		{
+			Use:     "run",
+			Aliases: []string{"migrate"},
+			Short:   "Run all pending migrations to bring the database up to date",
+			Run:     wrapCommand(MigrationPerform),
+		},
+		{
+			Use:     "create",
+			Aliases: []string{"generate", "make"},
+			Short:   "Generate a new migration file with the specified name",
+			Run:     wrapCommand(MigrationGenerate),
+			Args:    cobra.MinimumNArgs(1),
+		},
+		{
+			Use:   "down",
+			Short: "Revert the specified migration version",
+			Run:   wrapCommand(MigrationDown),
+			Args:  cobra.MinimumNArgs(1),
+		},
+		{
+			Use:     "init",
+			Short:   "Initialize the application for migrations, setting up the migration table",
+			Aliases: []string{"setup"},
+			Run:     wrapCommand(MigrationInit),
+		},
+		{
+			Use:   "version",
+			Short: "Display the current database version and any pending migrations",
+			Run:   wrapCommand(MigrationVersion),
+		},
+	}
+)
+
 type dbCliCommand func(db *gorm.DB, args []string) error
 
-func wrapCommand(dbCmd dbCliCommand) golly.CLICommand {
-	return func(app *golly.Application, cmd *cobra.Command, args []string) error {
+func wrapCommand(dbCmd dbCliCommand) func(cmd *cobra.Command, args []string) {
+	return golly.Command(func(app *golly.Application, cmd *cobra.Command, args []string) error {
 		return dbCmd(GlobalConnection(), args)
-	}
+	})
 }
 
 // MigrationInit initializes the migration folder and creates the schema migrations table.
