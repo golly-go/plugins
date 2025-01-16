@@ -15,58 +15,58 @@ var (
 )
 
 type Command interface {
-	Perform(golly.Context, Aggregate) error
+	Perform(*golly.Context, Aggregate) error
 }
 
 type CommandValidator interface {
-	Validate(golly.Context, Aggregate) error
+	Validate(*golly.Context, Aggregate) error
 }
 
 type CommandRollback interface {
-	Rollback(golly.Context, Aggregate, error)
+	Rollback(*golly.Context, Aggregate, error)
 }
 
 // Execute handles command execution, including loading the aggregate, replaying events, validating, and persisting changes.
-func Execute(gctx golly.Context, agg Aggregate, cmd Command) (err error) {
+func Execute(ctx *golly.Context, agg Aggregate, cmd Command) (err error) {
 	var estore EventStore
 
 	estore = agg.EventStore()
 	if estore == nil {
-		return handleExecutionError(gctx, agg, cmd, ErrorRepositoryIsNil)
+		return handleExecutionError(ctx, agg, cmd, ErrorRepositoryIsNil)
 	}
 
-	if err = Replay(gctx, agg); err != nil {
-		return handleExecutionError(gctx, agg, cmd, err)
+	if err = Replay(ctx, agg); err != nil {
+		return handleExecutionError(ctx, agg, cmd, err)
 	}
 
 	if v, ok := cmd.(CommandValidator); ok {
-		if err = v.Validate(gctx, agg); err != nil {
-			return handleExecutionError(gctx, agg, cmd, err)
+		if err = v.Validate(ctx, agg); err != nil {
+			return handleExecutionError(ctx, agg, cmd, err)
 		}
 	}
 
 	// Perform the given command on the aggregate
-	if err = cmd.Perform(gctx, agg); err != nil {
-		return handleExecutionError(gctx, agg, cmd, err)
+	if err = cmd.Perform(ctx, agg); err != nil {
+		return handleExecutionError(ctx, agg, cmd, err)
 	}
 
 	if agg.GetID() == "" {
-		return handleExecutionError(gctx, agg, cmd, ErrorNoAggregateID)
+		return handleExecutionError(ctx, agg, cmd, ErrorNoAggregateID)
 	}
 
 	// Apply changes to the aggregate
-	agg.ProcessChanges(gctx, agg)
+	agg.ProcessChanges(ctx, agg)
 
 	if agg.IsNewRecord() {
-		return handleExecutionError(gctx, agg, cmd, ErrorAggregateNotInitialized)
+		return handleExecutionError(ctx, agg, cmd, ErrorAggregateNotInitialized)
 	}
 
 	changes := agg.Changes().Uncommitted()
-	if err = estore.Save(gctx, changes.Ptr()...); err != nil {
-		return handleExecutionError(gctx, agg, cmd, err)
+	if err = estore.Save(ctx, changes.Ptr()...); err != nil {
+		return handleExecutionError(ctx, agg, cmd, err)
 	}
 
-	streamManager.Send(gctx, changes...)
+	streamManager.Send(ctx, changes...)
 
 	agg.Changes().MarkComplete()
 
@@ -74,7 +74,7 @@ func Execute(gctx golly.Context, agg Aggregate, cmd Command) (err error) {
 }
 
 // handleExecutionError processes errors and rolls back if necessary
-func handleExecutionError(ctx golly.Context, agg Aggregate, cmd Command, err error) error {
+func handleExecutionError(ctx *golly.Context, agg Aggregate, cmd Command, err error) error {
 	if agg != nil {
 		agg.SetChanges(agg.Changes().MarkFailed())
 	}

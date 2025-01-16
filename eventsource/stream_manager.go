@@ -44,7 +44,7 @@ func (sm *StreamManager) Register(name string) *Stream {
 }
 
 // SendTo sends an event to a specific named stream.
-func (sm *StreamManager) SendTo(gctx golly.Context, streamName string, event Event) {
+func (sm *StreamManager) SendTo(gctx *golly.Context, streamName string, event Event) {
 	sm.mu.RLock()
 	stream, ok := sm.streams[streamName]
 	sm.mu.RUnlock()
@@ -55,7 +55,7 @@ func (sm *StreamManager) SendTo(gctx golly.Context, streamName string, event Eve
 }
 
 // Send sends an event to all streams.
-func (sm *StreamManager) Send(gctx golly.Context, events ...Event) {
+func (sm *StreamManager) Send(gctx *golly.Context, events ...Event) {
 	streams := sm.getStreams()
 
 	for _, s := range streams {

@@ -26,12 +26,6 @@ func (ta *TestAggregate) GetID() string          { return ta.ID }
 func (ta *TestAggregate) SetID(string)           {}
 func (ta *TestAggregate) EventStore() EventStore { return &TestEventStore{} }
 func (ta *TestAggregate) IsNewRecord() bool      { return false }
-func (ta *TestAggregate) Apply(agg Aggregate, event Event) {
-
-	ta.changes = append(ta.changes, event)
-
-	ta.AggregateBase.Apply(ta, event)
-}
 
 func TestReplay(t *testing.T) {
 	tests := []struct {
@@ -116,7 +110,7 @@ func TestAggregateBase_Apply(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			aggregate := &TestAggregate{}
 
-			aggregate.Apply(aggregate, tt.event)
+			apply(aggregate, tt.event)
 
 			if tt.handlerExist {
 				assert.Equal(t, tt.event.Type, aggregate.LastAppliedEvent.Type)
@@ -130,10 +124,7 @@ func TestAggregateBase_Apply(t *testing.T) {
 // Test for Record function
 func TestRecord(t *testing.T) {
 	mockAggregate := &TestAggregate{
-		AggregateBase: AggregateBase{
-			AggregateVersion: 3,
-		},
-		ID: "aggregate-456",
+		AggregateBase: AggregateBase{AggregateVersion: 3},
 	}
 
 	mockData := []any{

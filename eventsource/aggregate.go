@@ -1,6 +1,7 @@
 package eventsource
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -8,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/golly-go/golly"
-	"github.com/golly-go/golly/utils"
 	"github.com/google/uuid"
 )
 
@@ -16,11 +16,13 @@ var (
 	legacy = true
 )
 
+type Applier interface {
+	// Repo(golly.Context) Repository
+	Apply(Event)
+}
+
 type Aggregate interface {
 	EventStore() EventStore
-
-	// Repo(golly.Context) Repository
-	Apply(Aggregate, Event)
 
 	// Record events to applied later with metadata
 	Record(...any)
@@ -29,7 +31,7 @@ type Aggregate interface {
 	RecordWithMetadata(any, Metadata)
 
 	// Process the events into the aggregation
-	ProcessChanges(golly.Context, Aggregate)
+	ProcessChanges(context.Context, Aggregate)
 
 	// Replay events
 	Replay(Aggregate, []Event)
@@ -71,49 +73,10 @@ func (a *AggregateBase) Replay(agg Aggregate, events []Event) {
 	sort.Slice(events, func(i, j int) bool { return events[i].Version < events[j].Version })
 
 	for _, evt := range events {
-		agg.Apply(agg, evt)
-	}
-}
-
-// Apply dynamically routes an event to the appropriate handler method on the aggregate.
-//
-// This function uses reflection to identify and call a method named "Apply<EventName>",
-// where <EventName> is derived from the event's data type. If the appropriate method
-// does not exist, the function will fail silently in production but log the absence of
-// the handler in development or test environments.
-//
-// Usage:
-// If an event named "RatingUpdated" is passed, the function will attempt to call
-// "ApplyRatingUpdated" on the provided aggregate.
-//
-// To bypass this dynamic behavior, define the "Apply" method explicitly
-// on the aggregate to ensure it overrides the reflection-based handler lookup.
-//
-// Example:
-//
-//	func (o *OrderAggregate) ApplyRatingUpdated(event Event) {
-//	    // Custom application logic here
-//	}
-func (ab *AggregateBase) Apply(ag Aggregate, event Event) {
-	if event.Data == nil {
-		return
+		apply(agg, evt)
 	}
 
-	_, name := utils.GetTypeName(event.Data)
-
-	methodName := fmt.Sprintf("%sHandler", capitalizeFirstCharASCII(name))
-	method := reflect.ValueOf(ag).MethodByName(methodName)
-
-	if !method.IsValid() {
-		if golly.Env().IsDevelopmentOrTest() {
-			fmt.Printf("No handler for %s#%s %s", utils.GetTypeWithPackage(ag), methodName, method)
-		}
-		return
-	}
-
-	method.Call([]reflect.Value{reflect.ValueOf(event)})
-
-	ag.SetVersion(event.Version)
+	agg.SetChanges(events)
 }
 
 // Record generates and tracks events for the aggregate, incrementing the version for each event.
@@ -147,7 +110,7 @@ func (ab *AggregateBase) RecordWithMetadata(data any, metadata Metadata) {
 // ProcessChanges applies all uncommitted changes to the aggregate.
 // Each change is processed if it does not have the READY state set.
 // Changes are updated to reflect their applied state and reattached to the aggregate.
-func (ab *AggregateBase) ProcessChanges(gctx golly.Context, ag Aggregate) {
+func (ab *AggregateBase) ProcessChanges(ctx context.Context, ag Aggregate) {
 	changes := ag.Changes()
 
 	if len(changes) == 0 {
@@ -161,12 +124,12 @@ func (ab *AggregateBase) ProcessChanges(gctx golly.Context, ag Aggregate) {
 			continue
 		}
 
-		ag.Apply(ag, change)
+		apply(ag, change)
 
 		// For now put this here till i can find a better way todo this
 		// perhaps we move Identity to be top level in Golly
 		if identiyFunc != nil {
-			change.Identity = identiyFunc(gctx)
+			change.Identity = identiyFunc(ctx)
 		}
 
 		change.AggregateID = ag.GetID()
@@ -184,15 +147,14 @@ func (ab *AggregateBase) ProcessChanges(gctx golly.Context, ag Aggregate) {
 }
 
 // Replay reloads and applies all events for a given aggregate.
-func Replay(ctx golly.Context, agg Aggregate) error {
+func Replay(ctx *golly.Context, agg Aggregate) error {
 	id := agg.GetID()
 
 	if id == "" || id == uuid.Nil.String() || id == "0" {
-		return ErrorAggregateNotInitialized
+		return nil
 	}
 
 	if len(agg.Changes()) > 0 {
-		agg.Replay(agg, agg.Changes())
 		return nil
 	}
 
@@ -219,7 +181,7 @@ func Replay(ctx golly.Context, agg Aggregate) error {
 	return nil
 }
 
-func Load(ctx golly.Context, agg Aggregate) error {
+func Load(ctx *golly.Context, agg Aggregate) error {
 	if err := Replay(ctx, agg); err != nil {
 		return err
 	}
@@ -245,7 +207,7 @@ func capitalizeFirstCharASCII(str string) string {
 
 func ObjectName(object any) string {
 	if legacy {
-		return utils.GetTypeWithPackage(object)
+		return golly.TypeNoPtr(object).String()
 	}
 
 	return ObjectPath(object)
@@ -253,7 +215,7 @@ func ObjectName(object any) string {
 }
 
 func ObjectPath(object any) string {
-	val := utils.GetRawType(object)
+	val := golly.TypeNoPtr(object)
 
 	pieces := strings.Split(val.String(), ".")
 
@@ -275,4 +237,52 @@ func ApplySnapshot(ag Aggregate, event Event) error {
 	}
 
 	return nil
+}
+
+// Apply dynamically routes an event to the appropriate handler method on the aggregate.
+//
+// This function uses reflection to identify and call a method named "Apply<EventName>",
+// where <EventName> is derived from the event's data type. If the appropriate method
+// does not exist, the function will fail silently in production but log the absence of
+// the handler in development or test environments.
+//
+// Usage:
+// If an event named "RatingUpdated" is passed, the function will attempt to call
+// "ApplyRatingUpdated" on the provided aggregate.
+//
+// To bypass this dynamic behavior, define the "Apply" method explicitly
+// on the aggregate to ensure it overrides the reflection-based handler lookup.
+//
+// Example:
+//
+//	func (o *OrderAggregate) ApplyRatingUpdated(event Event) {
+//	    // Custom application logic here
+//	}
+func apply(ag Aggregate, event Event) {
+	if event.Data == nil {
+		return
+	}
+
+	if app, ok := ag.(Applier); ok {
+		fmt.Println("Applier")
+
+		app.Apply(event)
+		return
+	}
+
+	name := golly.InfNameNoPackage(event.Data)
+
+	methodName := fmt.Sprintf("%sHandler", capitalizeFirstCharASCII(name))
+	method := reflect.ValueOf(ag).MethodByName(methodName)
+
+	if !method.IsValid() {
+		if golly.Env().IsDevelopmentOrTest() {
+			fmt.Printf("No handler for %s#%s %s", golly.TypeNoPtr(ag).String(), methodName, method)
+		}
+		return
+	}
+
+	method.Call([]reflect.Value{reflect.ValueOf(event)})
+
+	ag.SetVersion(event.Version)
 }

@@ -1,3 +1,3 @@
 module github.com/golly-plugins
 
-go 1.21
+go 1.23

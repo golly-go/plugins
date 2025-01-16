@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"github.com/golly-go/golly"
-	"github.com/golly-go/golly/utils"
 )
 
 const (
@@ -24,7 +23,7 @@ func DefaultStream() *Stream {
 	return streamManager.Register(DefaultStreamName)
 }
 
-type StreamHandler func(golly.Context, Event)
+type StreamHandler func(*golly.Context, Event)
 
 // Stream represents a single in-memory event stream with subscriptions.
 type Stream struct {
@@ -52,9 +51,9 @@ func (s *Stream) Name() string {
 
 // Send dispatches an event to all subscribers of event.Type and to any
 // subscribers of AllEvents ("*"). Dispatching is done asynchronously.
-func (s *Stream) Send(gctx golly.Context, events ...Event) {
+func (s *Stream) Send(gctx *golly.Context, events ...Event) {
 	for _, event := range events {
-		eventType := utils.GetTypeWithPackage(event)
+		eventType := golly.TypeNoPtr(event).String()
 
 		s.mu.RLock()
 

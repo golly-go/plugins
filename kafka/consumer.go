@@ -68,13 +68,13 @@ type ConsumerBase struct {
 }
 
 // These should be configured via ENV
-func (cb *ConsumerBase) Brokers(gctx golly.Context) []string {
+func (cb *ConsumerBase) Brokers(gctx *golly.Context) []string {
 	return gctx.Config().GetStringSlice("kafka.address")
 }
-func (cb *ConsumerBase) UserName(gctx golly.Context) string {
+func (cb *ConsumerBase) UserName(gctx *golly.Context) string {
 	return gctx.Config().GetString("kafka.username")
 }
-func (cb *ConsumerBase) Password(gctx golly.Context) string {
+func (cb *ConsumerBase) Password(gctx *golly.Context) string {
 	return gctx.Config().GetString("kafka.password")
 }
 

@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/golly-go/golly"
 	"github.com/google/uuid"
 )
 
@@ -95,20 +94,37 @@ func NewEvent(data any, state EventState, metadata Metadata) Event {
 
 type Events []Event
 
+func (evts Events) ByState(state EventState) Events {
+	events := Events{}
+
+	for pos := range evts {
+		if evts[pos].InState(EventStateCompleted) {
+			events = append(events, evts[pos])
+		}
+	}
+
+	return events
+}
+
 func (evts Events) Ready() Events {
-	return golly.Filter(evts, func(e Event) bool { return e.InState(EventStateReady) })
+	return evts.ByState(EventStateReady)
 }
 
 func (evts Events) Uncommitted() Events {
-	return golly.Filter(evts, func(e Event) bool { return e.InState(EventStateApplied) })
+	return evts.ByState(EventStateApplied)
 }
 
 func (evts Events) Completed() Events {
-	return golly.Filter(evts, func(e Event) bool { return e.InState(EventStateCompleted) })
+	return evts.ByState(EventStateCompleted)
 }
 
 func (evts Events) Ptr() []*Event {
-	return golly.Map(evts, func(e Event) *Event { return &e })
+	events := make([]*Event, len(evts))
+	for pos := range evts {
+		events[pos] = &evts[pos]
+
+	}
+	return events
 }
 
 func (evts Events) MarkFailed() Events {

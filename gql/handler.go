@@ -2,11 +2,8 @@ package gql
 
 import (
 	"fmt"
-	"net/http"
-	"runtime/debug"
 
 	"github.com/golly-go/golly"
-	"github.com/golly-go/golly/errors"
 	"github.com/golly-go/plugins/passport"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
@@ -14,7 +11,7 @@ import (
 
 // This plugins provides golly wrappers to allow easy to use GQL integration
 
-type HandlerFunc func(golly.WebContext, Params) (interface{}, error)
+type HandlerFunc func(*golly.WebContext, Params) (interface{}, error)
 
 type Options struct {
 	Public bool
@@ -22,17 +19,11 @@ type Options struct {
 	Roles  []string
 	Scopes []string
 
-	Handler func(golly.WebContext, Params) (interface{}, error)
+	Handler HandlerFunc
 }
 
 type Params struct {
 	graphql.ResolveParams
-
-	Request *http.Request
-
-	HasInput bool
-
-	Input map[string]interface{}
 
 	Identity passport.Identity
 }
@@ -49,58 +40,44 @@ func (p Params) Metadata() map[string]interface{} {
 		name = "anonymous"
 	}
 
-	metaData := map[string]interface{}{
+	return map[string]interface{}{
 		"gql.operation.type": p.ResolveParams.Info.Operation.GetOperation(),
 		"gql.operation.name": name,
 	}
-
-	return metaData
 }
 
+// NewHandler creates a GraphQL field resolver with WebContext and identity handling.
 func NewHandler(options Options) graphql.FieldResolveFn {
 	return func(p graphql.ResolveParams) (interface{}, error) {
-		wctx := golly.WebContextFromGoContext(p.Context)
-
-		defer func(ctx golly.WebContext) {
-			if err := recover(); err != nil {
-				ctx.Logger().Errorln("panic occurred:", err, string(debug.Stack()))
-				panic(err)
-			}
-		}(*wctx)
-
-		ident, _ := passport.FromContext(wctx.Context)
-		params := Params{ResolveParams: p, HasInput: false, Identity: ident}
-
-		// Add additional GQL logging to the lines
-		wctx.Context.SetLogger(
-			wctx.Context.
-				Logger().
-				WithFields(params.Metadata()),
-		)
-
-		if p.Args["input"] != nil {
-			params.Input = map[string]interface{}{}
-			if inp, ok := p.Args["input"].(map[string]interface{}); ok {
-				params.HasInput = true
-				params.Input = inp
-			}
+		// Ensure the context is of type WebContext
+		wctx, ok := p.Context.(*golly.WebContext)
+		if !ok {
+			return nil, fmt.Errorf("invalid context type")
 		}
 
-		// TODO bring back the passport integration here
-		if !options.Public {
-			if params.Identity == nil || !params.Identity.IsLoggedIn() {
-				return nil, errors.WrapForbidden(fmt.Errorf("must be logged in to view/perform this action"))
-			}
+		// Retrieve identity from context
+		ident, _ := passport.FromContext(*wctx.Context)
+
+		// Prepare GraphQL parameters
+		params := Params{ResolveParams: p, Identity: ident}
+
+		// Enrich logging with metadata
+		wctx.Context = golly.WithLoggerFields(wctx.Context, params.Metadata())
+
+		if !options.Public && (ident == nil || !ident.IsLoggedIn()) {
+			return nil, fmt.Errorf("authentication required for this action")
 		}
 
-		ret, err := options.Handler(*wctx, params)
+		// Execute the handler
+		result, err := options.Handler(wctx, params)
 		if err != nil {
-			wctx.Logger().Errorf("error in GQL request %s", err.Error())
+			wctx.Logger().Errorf("error in GQL handler: %v", err)
 			return nil, err
 		}
 
-		p.Context = golly.WebContextToGoContext(p.Context, *wctx)
+		// Ensure the modified context is passed back
+		p.Context = wctx
 
-		return ret, nil
+		return result, nil
 	}
 }

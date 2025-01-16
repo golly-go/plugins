@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/golly-go/golly"
-	"github.com/golly-go/golly/utils"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
@@ -22,12 +21,12 @@ var ErrorNotRunning = errors.New("pool is not running")
 var ErrorOverloaded = errors.New("poo")
 
 // WorkerFunc is the signature of the job handler.
-type WorkerFunc func(golly.Context, interface{}) error
+type WorkerFunc func(*golly.Context, interface{}) error
 
 // Pool manages worker goroutines that can grow/shrink between minW and maxW.
 type Pool struct {
 	name string
-	ctx  golly.Context
+	ctx  *golly.Context
 
 	// Worker lifecycle
 	minW, maxW int32
@@ -121,7 +120,7 @@ func (p *Pool) Wait() {
 	p.poolWG.Wait()
 }
 
-func (p *Pool) EnQueueFunc(ctx golly.Context, handler WorkerFunc, data any) error {
+func (p *Pool) EnQueueFunc(ctx *golly.Context, handler WorkerFunc, data any) error {
 
 	if !p.running {
 		return ErrorNotRunning
@@ -138,15 +137,15 @@ func (p *Pool) EnQueueFunc(ctx golly.Context, handler WorkerFunc, data any) erro
 	case <-time.After(p.waitTimeout):
 		// We waited 2s for capacity in the channel, timed out
 		return fmt.Errorf("job queue is full; enqueue timed out")
-	case <-ctx.Context().Done():
+	case <-ctx.Done():
 		// The caller’s context might have been cancelled
-		return ctx.Context().Err()
+		return ctx.Err()
 	}
 
 }
 
 // EnQueue adds a job to the pool's job channel. Non-blocking if channel has capacity.
-func (p *Pool) EnQueue(ctx golly.Context, data any) error {
+func (p *Pool) EnQueue(ctx *golly.Context, data any) error {
 	if p.handler == nil {
 		return fmt.Errorf("global handler not set use EnqueFunc instead")
 	}
@@ -163,26 +162,25 @@ func (p *Pool) Stop() {
 }
 
 // Run starts the main loop, spawning workers up to minW right away if desired.
-func (p *Pool) Run(ctx golly.Context) {
+func (p *Pool) Run(ctx *golly.Context) {
 	p.running = true
 	p.poolWG.Add(1)
 
 	defer p.poolWG.Done()
 
-	logger := ctx.Logger().WithFields(logrus.Fields{"pool": p.name})
-
-	p.ctx = ctx.Dup()
-	p.ctx.SetLogger(logger)
+	p.ctx = golly.
+		WithLoggerFields(p.ctx, logrus.Fields{"pool": p.name})
 
 	reap := time.NewTicker(p.reapInterval)
 	defer reap.Stop()
 
-	logger.Debug("Pool started.")
+	p.ctx.Logger().Debug("Pool started.")
 
 	for p.running {
 		select {
-		case <-ctx.Context().Done():
-			logger.Debug("Stopping: context canceled")
+		case <-ctx.Done():
+			p.ctx.Logger().Debug("Stopping: context canceled")
+
 			p.running = false
 
 		case job, ok := <-p.jobs:
@@ -206,15 +204,15 @@ func (p *Pool) Run(ctx golly.Context) {
 		}
 	}
 
-	logger.Debug("Waiting for workers to finish...")
+	p.ctx.Logger().Debug("Waiting for workers to finish...")
 
 	// set maxW to 0 so any leftover idle workers can exit
 	p.maxW = 0
 	p.reap()
 
-	logger.Debugf("Reaping leftover workers (active jobs: %d)", p.activeWorkers.Load())
+	p.ctx.Logger().Debugf("Reaping leftover workers (active jobs: %d)", p.activeWorkers.Load())
 
-	logger.Debug("Pool terminated.")
+	p.ctx.Logger().Debug("Pool terminated.")
 }
 
 // dispatch checks out an idle worker or spawns a new one, then performs the job.
@@ -386,7 +384,7 @@ func NewPool(config ...PoolConfig) *Pool {
 
 	if pc.Name == "" {
 		if handler := pc.Handler; handler != nil {
-			pc.Name = utils.GetTypeWithPackage(handler)
+			pc.Name = golly.TypeNoPtr(handler).String()
 		} else {
 			pc.Name = fmt.Sprintf("pool-%s", uuid.NewString())
 		}

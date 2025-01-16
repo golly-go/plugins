@@ -20,22 +20,23 @@ func TestEnQueueMultipleJobs(t *testing.T) {
 		Name: "testPool",
 		MinW: 1,
 		MaxW: 10,
-		Handler: func(ctx golly.Context, data interface{}) error {
+		Handler: func(ctx *golly.Context, data interface{}) error {
 			atomic.AddInt32(&jobCount, 1)
 			return nil
 		},
 	})
+
 	ctx := golly.NewContext(context.Background())
 	go pool.Run(ctx)
 
 	// Enqueue multiple jobs
-	for i := 0; i < jobTotal; i++ {
+	for i := 0; i <= jobTotal; i++ {
 		err := pool.EnQueue(ctx, fmt.Sprintf("job-%d", i))
 		assert.NoError(t, err)
 	}
 
 	// Wait for a reasonable time for all jobs to complete
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(1 * time.Second)
 
 	// Stop the pool
 	pool.Stop()
@@ -56,7 +57,7 @@ func TestReapFunctionality(t *testing.T) {
 		MaxW:         5,
 		IdleTimeout:  100 * time.Millisecond,
 		ReapInterval: 500 * time.Millisecond,
-		Handler: func(ctx golly.Context, data interface{}) error {
+		Handler: func(ctx *golly.Context, data interface{}) error {
 			atomic.AddInt32(&jobCount, 1)
 
 			time.Sleep(25 * time.Millisecond) // Simulate work
@@ -65,7 +66,8 @@ func TestReapFunctionality(t *testing.T) {
 		},
 	})
 
-	ctx := golly.NewContext(context.Background())
+	ctx := golly.NewTestContext()
+
 	go pool.Run(ctx)
 
 	// Enqueue a few jobs

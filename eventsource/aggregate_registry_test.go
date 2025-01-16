@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/golly-go/golly/utils"
+	"github.com/golly-go/golly"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -17,8 +17,8 @@ func TestRegistry_RegisterAndRetrieve(t *testing.T) {
 		},
 	)
 
-	itemName := utils.GetTypeWithPackage(TestAggregate{})
-	eventName := utils.GetTypeWithPackage(testEvent{})
+	itemName := golly.TypeNoPtr(TestAggregate{}).String()
+	eventName := golly.TypeNoPtr(testEvent{}).String()
 
 	// Test aggregate registration
 	item, exists := reg.Get(itemName)
@@ -42,7 +42,8 @@ func TestRegistry_GetNonExistent(t *testing.T) {
 
 func TestRegistry_GetEventTypeNonExistent(t *testing.T) {
 	reg := NewAggregateRegistry()
-	itemName := utils.GetTypeWithPackage(TestAggregate{})
+	itemName := golly.TypeNoPtr(TestAggregate{}).String()
+
 	_, exists := reg.GetEventType(itemName, "NonExistentEvent")
 	assert.False(t, exists, "Non-existent event should not be found")
 }

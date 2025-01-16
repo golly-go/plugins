@@ -12,7 +12,7 @@ import (
 
 var (
 	Driver        VectorDatabase
-	vectorContext golly.ContextKeyT = "vectorDBConnection"
+	vectorContext golly.ContextKey = "vectorDBConnection"
 )
 
 type VectorDriverFunc func(golly.Application) VectorDatabase
@@ -29,9 +29,9 @@ type FindParams struct {
 }
 
 type VectorDatabase interface {
-	Find(golly.Context, FindParams) (VectorRecord, error)
-	Search(golly.Context, SearchParams) (VectorRecords, error)
-	Update(golly.Context, UpdateParams) ([]byte, error)
+	Find(*golly.Context, FindParams) (VectorRecord, error)
+	Search(*golly.Context, SearchParams) (VectorRecords, error)
+	Update(*golly.Context, UpdateParams) ([]byte, error)
 }
 
 type UpdateParams struct {
@@ -50,11 +50,11 @@ type SearchParams struct {
 }
 
 type EmbeddingText interface {
-	GenerateVector(golly.Context) ([]float64, error)
+	GenerateVector(*golly.Context) ([]float64, error)
 }
 
 type VectorModel interface {
-	VectorRecord(ctx golly.Context) VectorRecord
+	VectorRecord(ctx *golly.Context) VectorRecord
 }
 
 type VectorRecord struct {
@@ -68,7 +68,7 @@ type VectorRecord struct {
 	Metadata interface{} `json:"metadata"`
 }
 
-func (vr *VectorRecord) GenerateVector(ctx golly.Context) (err error) {
+func (vr *VectorRecord) GenerateVector(ctx *golly.Context) (err error) {
 	vr.Vectors, err = vr.EmbeddingText.GenerateVector(ctx)
 	return
 }
@@ -79,7 +79,7 @@ func (vr *VectorRecord) Valid() bool {
 
 type VectorRecords []VectorRecord
 
-func (vrs VectorRecords) GenerateVectors(ctx golly.Context) VectorRecords {
+func (vrs VectorRecords) GenerateVectors(ctx *golly.Context) VectorRecords {
 	ret := functional.AsyncMap[VectorRecord, VectorRecord](vrs, func(entry VectorRecord) VectorRecord {
 		if err := entry.GenerateVector(ctx); err != nil {
 			ctx.Logger().Warnf("GenerateVectors: %v", err)
@@ -97,7 +97,7 @@ func (vrs VectorRecords) Valid() VectorRecords {
 	}))
 }
 
-func UpsertVectorRecordObjects(gctx golly.Context, namespace string, objects ...VectorModel) ([]byte, error) {
+func UpsertVectorRecordObjects(gctx *golly.Context, namespace string, objects ...VectorModel) ([]byte, error) {
 	return Upsert(gctx, UpdateParams{
 		Namespace: &namespace,
 		Records: functional.Map[VectorModel, VectorRecord](objects, func(v VectorModel) VectorRecord {
@@ -106,7 +106,7 @@ func UpsertVectorRecordObjects(gctx golly.Context, namespace string, objects ...
 	})
 }
 
-func Upsert(gctx golly.Context, update UpdateParams) ([]byte, error) {
+func Upsert(gctx *golly.Context, update UpdateParams) ([]byte, error) {
 	if len(update.Records) == 0 {
 		return []byte{}, nil
 	}
@@ -123,11 +123,11 @@ func Upsert(gctx golly.Context, update UpdateParams) ([]byte, error) {
 	return Connection(gctx).Update(gctx, update)
 }
 
-func Find(gctx golly.Context, params FindParams) (VectorRecord, error) {
+func Find(gctx *golly.Context, params FindParams) (VectorRecord, error) {
 	return Connection(gctx).Find(gctx, params)
 }
 
-func Search(gctx golly.Context, search SearchParams) (VectorRecords, error) {
+func Search(gctx *golly.Context, search SearchParams) (VectorRecords, error) {
 
 	if search.Namespace != nil && *search.Namespace == "" {
 		search.Namespace = nil
@@ -147,34 +147,33 @@ func Search(gctx golly.Context, search SearchParams) (VectorRecords, error) {
 	}), nil
 }
 
-func ConnectionToContext(ctx golly.Context, db VectorDatabase) golly.Context {
-	return ctx.Set(vectorContext, db)
+func ConnectionToContext(ctx *golly.Context, db VectorDatabase) *golly.Context {
+	return golly.WithValue(ctx, vectorContext, db)
 }
 
-func Connection(ctx golly.Context) VectorDatabase {
-	if driver, ok := ctx.Get(vectorContext); ok {
-		if d, ok := driver.(VectorDatabase); ok {
-			return d
-		}
+func Connection(ctx *golly.Context) VectorDatabase {
+	if d, ok := ctx.Value(vectorContext).(VectorDatabase); ok && d != nil {
+		return d
 	}
 
 	// Guard here to prevent to prevent this ever
 	// running env.IsTest() for now, we may want an integraiton layer
 	// but we should accurately set the ENV for it
-	if ctx.Env().IsTest() {
+	if golly.Env().IsTest() {
 		return NewMockVectorDatabase()
 	}
 
 	return Driver
 }
 
-func Initializer(a golly.Application) error {
-	switch strings.ToLower(a.Config.GetString("vectordb.provider")) {
+func Initializer(a *golly.Application) error {
+	switch strings.ToLower(a.Config().GetString("vectordb.provider")) {
 	case "pinecone":
 		p, err := initializePinecone(a)
 		if err != nil {
 			return err
 		}
+
 		Driver = p
 	default:
 		return fmt.Errorf("must specify vectordb.provider (right now only pinecone supported)")

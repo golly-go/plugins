@@ -72,7 +72,7 @@ type PineconeFetchResponse struct {
 	Vectors map[string]VectorRecord `json:"vectors"`
 }
 
-func (p *Pinecone) Update(gctx golly.Context, update UpdateParams) ([]byte, error) {
+func (p *Pinecone) Update(gctx *golly.Context, update UpdateParams) ([]byte, error) {
 	defer func(start time.Time) {
 		gctx.Logger().WithField("duration", time.Since(start)).Debugf("Upserted (%d) objects", len(update.Records))
 
@@ -89,7 +89,7 @@ func (p *Pinecone) Update(gctx golly.Context, update UpdateParams) ([]byte, erro
 		return []byte{}, err
 	}
 
-	if gctx.Env().IsDevelopment() {
+	if golly.Env().IsDevelopment() {
 		gctx.Logger().Debugf("Upserted: (%s)", strings.Join(functional.MapStrings[VectorRecord](update.Records, func(up VectorRecord) string {
 			return fmt.Sprintf("%s", up.ID.String())
 		}), ","))
@@ -105,7 +105,7 @@ func (p *Pinecone) Update(gctx golly.Context, update UpdateParams) ([]byte, erro
 	return io.ReadAll(res.Body)
 }
 
-func (p *Pinecone) Find(gctx golly.Context, params FindParams) (VectorRecord, error) {
+func (p *Pinecone) Find(gctx *golly.Context, params FindParams) (VectorRecord, error) {
 	results := VectorRecord{}
 
 	if params.ID == uuid.Nil {
@@ -146,7 +146,7 @@ func (p *Pinecone) Find(gctx golly.Context, params FindParams) (VectorRecord, er
 	return pineconeGetResult.Vectors[id], nil
 }
 
-func (p *Pinecone) Search(gctx golly.Context, params SearchParams) (VectorRecords, error) {
+func (p *Pinecone) Search(gctx *golly.Context, params SearchParams) (VectorRecords, error) {
 	results := []VectorRecord{}
 
 	params.IncludeMetadata = true
@@ -183,7 +183,7 @@ func (p *Pinecone) Search(gctx golly.Context, params SearchParams) (VectorRecord
 	return searchResponse.Matches, nil
 }
 
-func (p *Pinecone) request(gctx golly.Context, path, method, payload string) (*http.Request, error) {
+func (p *Pinecone) request(gctx *golly.Context, path, method, payload string) (*http.Request, error) {
 	pieces := strings.Split(path, "?")
 
 	url := p.Url.JoinPath(pieces[0])
@@ -192,7 +192,7 @@ func (p *Pinecone) request(gctx golly.Context, path, method, payload string) (*h
 		url.RawQuery = pieces[1]
 	}
 
-	req, err := http.NewRequestWithContext(gctx.Context(),
+	req, err := http.NewRequestWithContext(gctx,
 		method,
 		url.String(),
 		strings.NewReader(payload),
@@ -223,8 +223,8 @@ func NewPinecone(p VectorConfig) *Pinecone {
 	}
 }
 
-func initializePinecone(app golly.Application) (*Pinecone, error) {
-	config := app.Config
+func initializePinecone(app *golly.Application) (*Pinecone, error) {
+	config := app.Config()
 
 	cfg := PineconeConfig{
 		Key:     config.GetString("vectordb.key"),

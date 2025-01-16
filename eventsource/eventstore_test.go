@@ -1,9 +1,9 @@
 package eventsource
 
 import (
+	"context"
 	"sync"
 
-	"github.com/golly-go/golly"
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
 	"gorm.io/gorm"
@@ -18,7 +18,7 @@ type TestEventStore struct {
 }
 
 // Load retrieves an object or aggregate by its primary key.
-func (s *TestEventStore) Load(ctx golly.Context, object interface{}) error {
+func (s *TestEventStore) Load(ctx context.Context, object interface{}) error {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -29,7 +29,7 @@ func (s *TestEventStore) Load(ctx golly.Context, object interface{}) error {
 }
 
 // LoadEventsForAggregate fetches all events for a given aggregate.
-func (s *TestEventStore) LoadEventsForAggregate(ctx golly.Context, aggregateType, aggregateID string) ([]Event, error) {
+func (s *TestEventStore) LoadEventsForAggregate(ctx context.Context, aggregateType, aggregateID string) ([]Event, error) {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -43,7 +43,7 @@ func (s *TestEventStore) LoadEventsForAggregate(ctx golly.Context, aggregateType
 }
 
 // LoadEvents retrieves all events.
-func (s *TestEventStore) LoadEvents(ctx golly.Context, filters ...EventFilter) ([]Event, error) {
+func (s *TestEventStore) LoadEvents(ctx context.Context, filters ...EventFilter) ([]Event, error) {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -55,7 +55,7 @@ func (s *TestEventStore) LoadEvents(ctx golly.Context, filters ...EventFilter) (
 }
 
 // Save persists one or more events in-memory.
-func (s *TestEventStore) Save(ctx golly.Context, events ...*Event) error {
+func (s *TestEventStore) Save(ctx context.Context, events ...*Event) error {
 	if s.SaveFail != nil {
 		return s.SaveFail
 	}
@@ -83,7 +83,7 @@ func (s *TestEventStore) IsNewEvent(event Event) bool {
 }
 
 // Exists checks if an event exists by its ID.
-func (s *TestEventStore) Exists(ctx golly.Context, eventID uuid.UUID) (bool, error) {
+func (s *TestEventStore) Exists(ctx context.Context, eventID uuid.UUID) (bool, error) {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -96,7 +96,7 @@ func (s *TestEventStore) Exists(ctx golly.Context, eventID uuid.UUID) (bool, err
 }
 
 // DeleteEvent removes an event by ID.
-func (s *TestEventStore) DeleteEvent(ctx golly.Context, eventID uuid.UUID) error {
+func (s *TestEventStore) DeleteEvent(ctx context.Context, eventID uuid.UUID) error {
 	s.Lock()
 	defer s.Unlock()
 
@@ -110,13 +110,13 @@ func (s *TestEventStore) DeleteEvent(ctx golly.Context, eventID uuid.UUID) error
 }
 
 // SaveSnapshot persists an aggregate snapshot in-memory.
-func (s *TestEventStore) SaveSnapshot(ctx golly.Context, aggregate Aggregate) error {
+func (s *TestEventStore) SaveSnapshot(ctx context.Context, aggregate Aggregate) error {
 	snapshot := NewSnapshot(aggregate)
 	return s.Save(ctx, &snapshot)
 }
 
 // LoadSnapshot retrieves the latest snapshot for an aggregate.
-func (s *TestEventStore) LoadSnapshot(ctx golly.Context, aggregateType, aggregateID string) (Event, error) {
+func (s *TestEventStore) LoadSnapshot(ctx context.Context, aggregateType, aggregateID string) (Event, error) {
 	s.RLock()
 	defer s.RUnlock()
 

@@ -1,18 +1,17 @@
 package eventsource
 
 import (
+	"context"
 	"sync"
-
-	"github.com/golly-go/golly"
 )
 
 var (
-	identiyFunc func(golly.Context) any
+	identiyFunc func(context.Context) any
 
 	lock sync.RWMutex
 )
 
-func IdentityFunc(fnc func(golly.Context) any) {
+func IdentityFunc(fnc func(context.Context) any) {
 	lock.Lock()
 	defer lock.Unlock()
 

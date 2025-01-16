@@ -15,7 +15,7 @@ type Notification struct {
 
 // Job holds data plus the specific WorkerFunc to handle it.
 type Job struct {
-	Ctx     golly.Context
+	Ctx     *golly.Context
 	Data    interface{}
 	Handler WorkerFunc
 

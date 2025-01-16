@@ -7,8 +7,6 @@ import (
 	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
-	"github.com/golly-go/golly"
-	"github.com/golly-go/golly/errors"
 	"github.com/google/uuid"
 )
 
@@ -41,7 +39,8 @@ func secret() []byte {
 	if s := os.Getenv("JWT_SECRET"); s != "" {
 		return []byte(s)
 	}
-	return []byte(golly.Secret())
+
+	panic("must set JWT_SECRET")
 }
 
 // Issue issues a new ident
@@ -58,11 +57,11 @@ func (ident JWT) Issue() JWT {
 // Valid returns error if not valid
 func (ident JWT) Valid() error {
 	if !ident.StandardClaims.VerifyExpiresAt(time.Now().Unix(), true) {
-		return errors.WrapForbidden(ErrorExpiredClaim)
+		return ErrorExpiredClaim
 	}
 
 	if !ident.StandardClaims.VerifyNotBefore(time.Now().Unix(), true) {
-		return errors.WrapForbidden(ErrorInvalidClaim)
+		return ErrorInvalidClaim
 	}
 
 	return nil

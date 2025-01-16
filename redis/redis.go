@@ -7,11 +7,6 @@ import (
 
 	redis "github.com/go-redis/redis/v8"
 	"github.com/golly-go/golly"
-	"github.com/golly-go/golly/errors"
-)
-
-var (
-	server Redis = newRedis()
 )
 
 type Event struct {
@@ -24,103 +19,127 @@ type Redis struct {
 	*redis.Client
 
 	PubSub *redis.PubSub
-
-	events *golly.EventChain
 }
 
-func newRedis() Redis {
-	return Redis{
-		events: &golly.EventChain{},
+// RedisService implements the golly.Service interface for Redis.
+type RedisService struct {
+	address  string
+	password string
+	db       int
+	client   *redis.Client
+	events   *golly.EventManager
+	running  bool
+	cancel   context.CancelFunc
+}
+
+// NewRedisService creates a new Redis service instance.
+func NewRedisService(address, password string, db int) *RedisService {
+	return &RedisService{
+		address:  address,
+		password: password,
+		db:       db,
+		events:   &golly.EventManager{},
 	}
 }
 
-// Initializer builds an initializer for redis
-func Initializer(address, password string, db int) golly.GollyAppFunc {
-	return func(a golly.Application) error {
-		a.Logger.Infof("Redis connection initalized to %s", address)
+// Initialize sets up the Redis client and prepares the service.
+func (s *RedisService) Initialize(app *golly.Application) error {
+	app.Logger().Infof("Initializing Redis connection to %s", s.address)
 
-		server.Client = redis.NewClient(
-			&redis.Options{
-				Addr:     address,
-				Password: password,
-				DB:       db,
-			})
-
-		return nil
-	}
-}
-
-func Client() Redis {
-	return server
-}
-
-func Subscribe(handler golly.EventHandlerFunc, channels ...string) error {
-	for _, channel := range channels {
-		server.events.Add(channel, handler)
-	}
-	return nil
-}
-
-func Publish(ctx golly.Context, channel string, payload interface{}) {
-	// Guard against missconfigured
-	if server.Client != nil {
-		p, _ := json.Marshal(payload)
-		server.Client.Publish(ctx.Context(), channel, p)
-	}
-}
-
-func Run() {
-	if err := golly.Boot(func(a golly.Application) error { return run(a) }); err != nil {
-		panic(err)
-	}
-}
-
-func run(a golly.Application) error {
-	quit := make(chan struct{})
-
-	a.Logger.Info("Booting redis pubsub listener")
-
-	golly.Events().Add(golly.EventAppShutdown, func(golly.Context, golly.Event) error {
-		close(quit)
-		return nil
+	s.client = redis.NewClient(&redis.Options{
+		Addr:     s.address,
+		Password: s.password,
+		DB:       s.db,
 	})
 
-	return server.Receive(a, quit)
+	_, err := s.client.Ping(context.Background()).Result()
+	if err != nil {
+		return fmt.Errorf("failed to connect to Redis: %w", err)
+	}
+
+	app.Events().Register(golly.EventShutdown, func(ctx *golly.Context, event *golly.Event) {
+		_ = s.Stop()
+	})
+
+	return nil
 }
 
-// This is the next thing we need to manage this doesnt quite work 100% and with golly's
-// concept of run modes to allow seperation of app and resources, we need a better way of handling
-// this
-func (s Redis) Receive(a golly.Application, quit <-chan struct{}) error {
-	var quitting = false
+// Start begins listening for pub/sub messages on Redis.
+func (s *RedisService) Start() error {
+	if s.running {
+		return nil
+	}
 
-	ctx, cancel := context.WithCancel(a.GoContext())
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancel = cancel
+	s.running = true
 
-	defer func() {
-		if r := recover(); r != nil {
-			a.Logger.Errorln("panic in redis receive: ", r)
+	go func() {
+		pubsub := s.client.PSubscribe(ctx, "*")
+		defer pubsub.Close()
+
+		for {
+			select {
+			case message := <-pubsub.Channel():
+				event := Event{
+					Channel:       message.Channel,
+					PayloadString: message.Payload,
+				}
+
+				if err := json.Unmarshal([]byte(message.Payload), &event.Payload); err == nil {
+					s.events.Dispatch(golly.NewContext(ctx), event)
+				}
+			case <-ctx.Done():
+				return
+			}
 		}
-		cancel()
 	}()
 
-	if s.Client == nil {
-		a.Logger.Error("redis client is nil check to see if the initializer has been ran.")
-		return errors.Wrap(errors.ErrorMissConfigured, fmt.Errorf("redis is not configured correct"))
+	return nil
+}
+
+// Stop stops the Redis service.
+func (s *RedisService) Stop() error {
+	if !s.running {
+		return nil
 	}
 
-	pubsub := s.Client.PSubscribe(ctx, "*")
+	if s.cancel != nil {
+		s.cancel()
+	}
 
-	for !quitting {
-		select {
-		case message := <-pubsub.Channel():
-			event := Event{Channel: message.Channel, PayloadString: message.Payload}
+	s.running = false
+	return nil
+}
 
-			if err := json.Unmarshal([]byte(message.Payload), &event.Payload); err == nil {
-				server.events.AsyncDispatch(a.NewContext(ctx), message.Channel, event)
-			}
-		case <-quit:
-			quitting = true
-		}
+// IsRunning returns whether the Redis service is running.
+func (s *RedisService) IsRunning() bool {
+	return s.running
+}
+
+// Client returns the underlying Redis client.
+func (s *RedisService) Client() *redis.Client {
+	return s.client
+}
+
+// Subscribe registers event handlers for the given channels.
+func (s *RedisService) Subscribe(handler golly.EventFunc, channels ...string) error {
+	for _, channel := range channels {
+		s.events.Register(channel, handler)
 	}
 	return nil
+}
+
+// Publish sends a message to a Redis channel.
+func (s *RedisService) Publish(ctx *golly.Context, channel string, payload interface{}) error {
+	if s.client == nil {
+		return fmt.Errorf("Redis client is not initialized")
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	return s.client.Publish(ctx, channel, data).Err()
 }

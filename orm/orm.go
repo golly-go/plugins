@@ -82,3 +82,16 @@ func FromContext(ctx context.Context) *gorm.DB {
 	}
 	return nil
 }
+
+func CreateTestContext(c context.Context, modelsToMigration ...interface{}) context.Context {
+	return ToContext(c, NewInMemoryConnection(modelsToMigration...))
+}
+
+func Close(c context.Context) error {
+	db, err := DB(c).DB()
+	if err != nil {
+		return err
+	}
+
+	return db.Close()
+}

@@ -14,10 +14,9 @@ use ./gql
 
 use ./workers
 
-use ./mongo
-
 use ./vectordb
 
-use ./neo4j
+// use ./mongo
+// use ./neo4j
 
 use ./eventsource/eventstores/gorm

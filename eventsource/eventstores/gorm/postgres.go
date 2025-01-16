@@ -1,9 +1,9 @@
 package gorm
 
 import (
+	"context"
 	"encoding/json"
 
-	"github.com/golly-go/golly"
 	"github.com/golly-go/plugins/eventsource"
 	"github.com/golly-go/plugins/orm"
 	"github.com/google/uuid"
@@ -28,12 +28,12 @@ func (e *Event) AfterFind(tx *gorm.DB) error {
 }
 
 // Load retrieves an object or aggregate by its primary key.
-func (GormEventStore) Load(ctx golly.Context, object interface{}) error {
+func (GormEventStore) Load(ctx context.Context, object interface{}) error {
 	return orm.DB(ctx).Model(object).First(object).Error
 }
 
 // LoadEvents retrieves all events across aggregates.
-func (GormEventStore) LoadEvents(ctx golly.Context, filters ...eventsource.EventFilter) ([]eventsource.Event, error) {
+func (GormEventStore) LoadEvents(ctx context.Context, filters ...eventsource.EventFilter) ([]eventsource.Event, error) {
 	var events []Event
 	query := orm.DB(ctx).Order("version ASC")
 
@@ -69,13 +69,16 @@ func (GormEventStore) LoadEvents(ctx golly.Context, filters ...eventsource.Event
 
 	err := query.Find(&events).Error
 
-	return golly.Map(events, func(e Event) eventsource.Event {
-		return e.Event
-	}), err
+	evts := make([]eventsource.Event, len(events))
+	for pos := range events {
+		evts[pos] = events[pos].Event
+	}
+
+	return evts, err
 }
 
 // Save persists one or more events to the database.
-func (GormEventStore) Save(ctx golly.Context, events ...*eventsource.Event) error {
+func (GormEventStore) Save(ctx context.Context, events ...*eventsource.Event) error {
 	batch, err := mapBatchToDB(events)
 	if err != nil {
 		return err
@@ -89,7 +92,7 @@ func (GormEventStore) IsNewEvent(event eventsource.Event) bool {
 }
 
 // Exists checks if an event exists by its ID.
-func (GormEventStore) Exists(ctx golly.Context, eventID uuid.UUID) (bool, error) {
+func (GormEventStore) Exists(ctx context.Context, eventID uuid.UUID) (bool, error) {
 	if eventID == uuid.Nil {
 		return false, nil
 	}
@@ -106,19 +109,19 @@ func (GormEventStore) Exists(ctx golly.Context, eventID uuid.UUID) (bool, error)
 }
 
 // DeleteEvent removes an event by ID.
-func (GormEventStore) DeleteEvent(ctx golly.Context, eventID uuid.UUID) error {
+func (GormEventStore) DeleteEvent(ctx context.Context, eventID uuid.UUID) error {
 	return orm.DB(ctx).Where("id = ?", eventID).Delete(&Event{}).Error
 }
 
 // SaveSnapshot persists an aggregate snapshot.
-func (store GormEventStore) SaveSnapshot(ctx golly.Context, aggregate eventsource.Aggregate) error {
+func (store GormEventStore) SaveSnapshot(ctx context.Context, aggregate eventsource.Aggregate) error {
 	snapshot := eventsource.NewSnapshot(aggregate)
 
 	return store.Save(ctx, &snapshot)
 }
 
 // LoadSnapshot retrieves the latest snapshot for an aggregate.
-func (GormEventStore) LoadSnapshot(ctx golly.Context, aggregateType, aggregateID string) (eventsource.Event, error) {
+func (GormEventStore) LoadSnapshot(ctx context.Context, aggregateType, aggregateID string) (eventsource.Event, error) {
 	var snapshot Event
 
 	err := orm.

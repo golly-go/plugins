@@ -1,9 +1,9 @@
 package eventsource
 
 import (
+	"context"
 	"time"
 
-	"github.com/golly-go/golly"
 	"github.com/google/uuid"
 )
 
@@ -23,24 +23,24 @@ type EventFilter struct {
 type EventStore interface {
 	// Save persists one or more events to the event store.
 	// Events are stored atomically to ensure consistency.
-	Save(ctx golly.Context, events ...*Event) error
+	Save(ctx context.Context, events ...*Event) error
 
 	// LoadEvents retrieves all events across different aggregates.
 	// This can be useful for projections or rebuilding read models.
-	LoadEvents(ctx golly.Context, filters ...EventFilter) ([]Event, error)
+	LoadEvents(ctx context.Context, filters ...EventFilter) ([]Event, error)
 
 	// IsNewEvent checks if an event is new by inspecting its metadata (e.g., ID, version).
 	IsNewEvent(event Event) bool
 
 	// Exists checks if an event exists by its ID or unique key.
-	Exists(ctx golly.Context, eventID uuid.UUID) (bool, error)
+	Exists(ctx context.Context, eventID uuid.UUID) (bool, error)
 
 	// DeleteEvent removes an event by ID. Useful for GDPR or soft deletes.
-	DeleteEvent(ctx golly.Context, eventID uuid.UUID) error
+	DeleteEvent(ctx context.Context, eventID uuid.UUID) error
 
 	// AggregateSnapshot persists a snapshot of an aggregate state.
-	SaveSnapshot(ctx golly.Context, snapshot Aggregate) error
+	SaveSnapshot(ctx context.Context, snapshot Aggregate) error
 
 	// LoadSnapshot retrieves the latest snapshot of an aggregate for faster loading.
-	LoadSnapshot(ctx golly.Context, aggregateType, aggregateID string) (Event, error)
+	LoadSnapshot(ctx context.Context, aggregateType, aggregateID string) (Event, error)
 }
