@@ -5,15 +5,18 @@ import (
 
 	"github.com/golly-go/golly"
 	"github.com/spf13/cobra"
+	"gorm.io/gorm"
 )
 
 type ConfigFunc[T any] func(a *golly.Application) T
+type AfterFunc func(db *gorm.DB) error
 
 // OrmConfig provides a generic configuration wrapper for the ORM plugin.
 type OrmPlugin[T any] struct {
 	UseGormMigrations bool
 
-	config func(a *golly.Application) T
+	config ConfigFunc[T]
+	after  []AfterFunc
 
 	Database T // Generic configuration, specific to the database driver
 }
@@ -21,6 +24,13 @@ type OrmPlugin[T any] struct {
 // NewOrmPlugin creates a new instance of OrmPlugin with default values.
 func NewOrmPlugin[T any](config ConfigFunc[T]) *OrmPlugin[T] {
 	return &OrmPlugin[T]{config: config}
+}
+
+// After allows you to hook on to after the connection is estabilished
+// to enable any gorm specific stuff you want like CTEs etc
+func (p *OrmPlugin[T]) After(handlers ...AfterFunc) *OrmPlugin[T] {
+	p.after = append(p.after, handlers...)
+	return p
 }
 
 // Initialize sets up the database connection and middleware.
@@ -47,6 +57,12 @@ func (p *OrmPlugin[T]) Initialize(app *golly.Application) error {
 		}
 	default:
 		return fmt.Errorf("unsupported configuration type: %T", p.Database)
+	}
+
+	for pos := range p.after {
+		if err := p.after[pos](db); err != nil {
+			return err
+		}
 	}
 
 	// Add middleware to attach the database connection to the context.
