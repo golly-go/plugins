@@ -21,6 +21,10 @@ type Applier interface {
 	Apply(Event)
 }
 
+type NewRecordChecker interface {
+	IsNewRecord() bool
+}
+
 type Aggregate interface {
 	EventStore() EventStore
 
@@ -47,8 +51,6 @@ type Aggregate interface {
 
 	Version() int64
 	SetVersion(int64)
-
-	IsNewRecord() bool
 }
 
 type AggregateBase struct {
@@ -186,8 +188,10 @@ func Load(ctx *golly.Context, agg Aggregate) error {
 		return err
 	}
 
-	if agg.IsNewRecord() {
-		return ErrorNoEventsFound
+	if a, ok := agg.(NewRecordChecker); ok {
+		if a.IsNewRecord() {
+			return ErrorNoEventsFound
+		}
 	}
 
 	return nil

@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/golly-go/golly"
-	"github.com/golly-go/plugins/passport"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
 )
@@ -25,7 +24,7 @@ type Options struct {
 type Params struct {
 	graphql.ResolveParams
 
-	Identity passport.Identity
+	Identity golly.Identity
 }
 
 func (p Params) Metadata() map[string]interface{} {
@@ -56,7 +55,7 @@ func NewHandler(options Options) graphql.FieldResolveFn {
 		}
 
 		// Retrieve identity from context
-		ident, _ := passport.FromContext(*wctx.Context)
+		ident := golly.IdentityFromContext[golly.Identity](wctx.Context)
 
 		// Prepare GraphQL parameters
 		params := Params{ResolveParams: p, Identity: ident}
@@ -64,7 +63,7 @@ func NewHandler(options Options) graphql.FieldResolveFn {
 		// Enrich logging with metadata
 		wctx.Context = golly.WithLoggerFields(wctx.Context, params.Metadata())
 
-		if !options.Public && (ident == nil || !ident.IsLoggedIn()) {
+		if !options.Public && (ident == nil || ident.IsValid() != nil) {
 			return nil, fmt.Errorf("authentication required for this action")
 		}
 

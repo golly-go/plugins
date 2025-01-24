@@ -1,22 +1,16 @@
 go 1.23.4
 
-use ./kafka
+// use ./kafka
 
-use ./eventsource
 
 use ./orm
-
 use ./redis
-
-use ./passport
-
 use ./gql
-
 use ./workers
-
 use ./vectordb
 
 // use ./mongo
 // use ./neo4j
 
+use ./eventsource
 use ./eventsource/eventstores/gorm

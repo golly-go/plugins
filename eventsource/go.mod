@@ -3,7 +3,7 @@ module github.com/golly-go/plugins/eventsource
 go 1.23.4
 
 require (
-	github.com/golly-go/golly v0.6.0-rc1.0.20250115232946-7d7ddfcaeb96
+	github.com/golly-go/golly v0.6.0-rc1.0.20250124072355-3247852872ad
 	github.com/google/uuid v1.6.0
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/stretchr/testify v1.10.0

@@ -57,8 +57,10 @@ func Execute(ctx *golly.Context, agg Aggregate, cmd Command) (err error) {
 	// Apply changes to the aggregate
 	agg.ProcessChanges(ctx, agg)
 
-	if agg.IsNewRecord() {
-		return handleExecutionError(ctx, agg, cmd, ErrorAggregateNotInitialized)
+	if n, ok := agg.(NewRecordChecker); ok {
+		if n.IsNewRecord() {
+			return handleExecutionError(ctx, agg, cmd, ErrorAggregateNotInitialized)
+		}
 	}
 
 	changes := agg.Changes().Uncommitted()
