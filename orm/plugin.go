@@ -7,16 +7,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type ConfigFunc[T any] func(a *golly.Application) T
+
 // OrmConfig provides a generic configuration wrapper for the ORM plugin.
 type OrmPlugin[T any] struct {
 	UseGormMigrations bool
+
+	config func(a *golly.Application) T
 
 	Database T // Generic configuration, specific to the database driver
 }
 
 // NewOrmPlugin creates a new instance of OrmPlugin with default values.
-func NewOrmPlugin[T any](config T) *OrmPlugin[T] {
-	return &OrmPlugin[T]{Database: config}
+func NewOrmPlugin[T any](config ConfigFunc[T]) *OrmPlugin[T] {
+	return &OrmPlugin[T]{config: config}
 }
 
 // Initialize sets up the database connection and middleware.
@@ -24,6 +28,10 @@ func (p *OrmPlugin[T]) Initialize(app *golly.Application) error {
 	var err error
 	lock.Lock()
 	defer lock.Unlock()
+
+	if p.config != nil {
+		p.Database = p.config(app)
+	}
 
 	switch cfg := any(p.Database).(type) {
 	case SQLiteConfig:
