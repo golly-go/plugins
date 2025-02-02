@@ -22,10 +22,9 @@ func (ta *TestAggregate) TestEventHandler(event Event) {
 	ta.LastAppliedEvent = &event
 }
 
-func (ta *TestAggregate) GetID() string          { return ta.ID }
-func (ta *TestAggregate) SetID(string)           {}
-func (ta *TestAggregate) EventStore() EventStore { return &TestEventStore{} }
-func (ta *TestAggregate) IsNewRecord() bool      { return false }
+func (ta *TestAggregate) GetID() string     { return ta.ID }
+func (ta *TestAggregate) SetID(string)      {}
+func (ta *TestAggregate) IsNewRecord() bool { return false }
 
 func TestReplay(t *testing.T) {
 	tests := []struct {

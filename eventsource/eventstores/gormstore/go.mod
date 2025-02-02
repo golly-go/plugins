@@ -1,9 +1,9 @@
-module github.com/golly-go/plugins/eventsource/eventstores/gorm
+module github.com/golly-go/plugins/eventsource/eventstores/gormstore
 
 go 1.23.4
 
 require (
-	github.com/golly-go/golly v0.6.0-rc1.0.20250124072355-3247852872ad
+	github.com/golly-go/golly v0.6.0-rc1.0.20250124104536-2541c03f26a8
 	github.com/golly-go/plugins/eventsource v0.0.0-20250116025601-68e319567989
 	github.com/golly-go/plugins/orm v0.0.0-20250116025601-68e319567989
 	github.com/google/uuid v1.6.0

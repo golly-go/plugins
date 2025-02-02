@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
-	"strings"
 
 	"github.com/golly-go/golly"
 	"github.com/google/uuid"
@@ -26,8 +25,6 @@ type NewRecordChecker interface {
 }
 
 type Aggregate interface {
-	EventStore() EventStore
-
 	// Record events to applied later with metadata
 	Record(...any)
 
@@ -39,6 +36,7 @@ type Aggregate interface {
 
 	// Replay events
 	Replay(Aggregate, []Event)
+	ReplayOne(Aggregate, Event)
 
 	// Get the ID of the aggregate it is a string so it supports
 	// both UUID and INT representations
@@ -46,6 +44,7 @@ type Aggregate interface {
 
 	AppendChanges(...Event)
 	SetChanges(Events)
+	ClearChanges()
 
 	Changes() Events
 
@@ -60,10 +59,17 @@ type AggregateBase struct {
 
 func (ab *AggregateBase) AppendChanges(changes ...Event) { ab.changes = append(ab.changes, changes...) }
 func (ab *AggregateBase) SetChanges(changes Events)      { ab.changes = changes }
-func (ab *AggregateBase) Changes() Events                { return ab.changes }
+func (ab *AggregateBase) ClearChanges()                  { ab.changes = Events{} }
+
+func (ab *AggregateBase) Changes() Events { return ab.changes }
 
 func (ab *AggregateBase) SetVersion(version int64) { ab.AggregateVersion = version }
 func (ab *AggregateBase) Version() int64           { return ab.AggregateVersion }
+
+func (ab *AggregateBase) ReplayOne(agg Aggregate, event Event) {
+	apply(agg, event)
+	agg.AppendChanges(event)
+}
 
 // Replay applies events in the correct order to rebuild aggregate state.
 func (a *AggregateBase) Replay(agg Aggregate, events []Event) {
@@ -148,84 +154,6 @@ func (ab *AggregateBase) ProcessChanges(ctx context.Context, ag Aggregate) {
 	}
 }
 
-// Replay reloads and applies all events for a given aggregate.
-func Replay(ctx *golly.Context, agg Aggregate) error {
-	id := agg.GetID()
-
-	if id == "" || id == uuid.Nil.String() || id == "0" {
-		return nil
-	}
-
-	if len(agg.Changes()) > 0 {
-		return nil
-	}
-
-	estore := agg.EventStore()
-
-	snapshot, _ := estore.LoadSnapshot(ctx, ObjectName(agg), agg.GetID())
-	if err := ApplySnapshot(agg, snapshot); err != nil {
-		return err
-	}
-
-	events, err := estore.
-		LoadEvents(ctx, EventFilter{
-			AggregateType: ObjectName(agg),
-			AggregateID:   agg.GetID(),
-			FromVersion:   int(agg.Version()) + 1,
-		})
-
-	if err != nil {
-		return err
-	}
-
-	agg.Replay(agg, events)
-
-	return nil
-}
-
-func Load(ctx *golly.Context, agg Aggregate) error {
-	if err := Replay(ctx, agg); err != nil {
-		return err
-	}
-
-	if a, ok := agg.(NewRecordChecker); ok {
-		if a.IsNewRecord() {
-			return ErrorNoEventsFound
-		}
-	}
-
-	return nil
-}
-
-func capitalizeFirstCharASCII(str string) string {
-	if str == "" {
-		return ""
-	}
-
-	b := []byte(str)
-	if b[0] >= 'a' && b[0] <= 'z' {
-		b[0] -= 32
-	}
-	return string(b)
-}
-
-func ObjectName(object any) string {
-	if legacy {
-		return golly.TypeNoPtr(object).String()
-	}
-
-	return ObjectPath(object)
-
-}
-
-func ObjectPath(object any) string {
-	val := golly.TypeNoPtr(object)
-
-	pieces := strings.Split(val.String(), ".")
-
-	return fmt.Sprintf("%s/%s", val.PkgPath(), pieces[len(pieces)-1])
-}
-
 func ApplySnapshot(ag Aggregate, event Event) error {
 	if event.ID == uuid.Nil {
 		return nil
@@ -243,7 +171,7 @@ func ApplySnapshot(ag Aggregate, event Event) error {
 	return nil
 }
 
-// Apply dynamically routes an event to the appropriate handler method on the aggregate.
+// apply dynamically routes an event to the appropriate handler method on the aggregate.
 //
 // This function uses reflection to identify and call a method named "Apply<EventName>",
 // where <EventName> is derived from the event's data type. If the appropriate method
@@ -268,8 +196,6 @@ func apply(ag Aggregate, event Event) {
 	}
 
 	if app, ok := ag.(Applier); ok {
-		fmt.Println("Applier")
-
 		app.Apply(event)
 		return
 	}
@@ -281,7 +207,7 @@ func apply(ag Aggregate, event Event) {
 
 	if !method.IsValid() {
 		if golly.Env().IsDevelopmentOrTest() {
-			fmt.Printf("No handler for %s#%s %s", golly.TypeNoPtr(ag).String(), methodName, method)
+			golly.Logger().Tracef("No handler for %s#%s %s", golly.TypeNoPtr(ag).String(), methodName, method)
 		}
 		return
 	}

@@ -13,8 +13,8 @@ github.com/fsnotify/fsnotify v1.8.0 h1:dAwr6QBTBZIkG8roQaJjGof0pp0EeF+tNV7YBP3F/
 github.com/fsnotify/fsnotify v1.8.0/go.mod h1:8jBTzvmWwFyi3Pb8djgCCO5IBqzKJ/Jwo8TRcHyHii0=
 github.com/go-sql-driver/mysql v1.5.0/go.mod h1:DCzpHaOWr8IXmIStZouvnhqoel9Qv2LBy8hT2VhHyBg=
 github.com/golang-sql/civil v0.0.0-20190719163853-cb61b32ac6fe/go.mod h1:8vg3r2VgvsThLBIFL93Qb5yWzgyZWhEmBwUJWevAkK0=
-github.com/golly-go/golly v0.6.0-rc1.0.20250124072355-3247852872ad h1:31feZLkJrNGgndNN8sC6mvMoTIJ4XMImRE4nYApQSCA=
-github.com/golly-go/golly v0.6.0-rc1.0.20250124072355-3247852872ad/go.mod h1:d5ZWWaeQGFu59ju4Jy7tdh7vQ4WNRFz5Pd1J5Jhq3vI=
+github.com/golly-go/golly v0.6.0-rc1.0.20250124104536-2541c03f26a8 h1:ep2ubIXPGsU/86NQp1EvqRVtQTTuGtptUOe+/q8ZA2Y=
+github.com/golly-go/golly v0.6.0-rc1.0.20250124104536-2541c03f26a8/go.mod h1:d5ZWWaeQGFu59ju4Jy7tdh7vQ4WNRFz5Pd1J5Jhq3vI=
 github.com/golly-go/plugins/eventsource v0.0.0-20250116025601-68e319567989 h1:G7c51NzFk3IfkxIa0h1tKhaly4QiUAkP+wpGLiG52fI=
 github.com/golly-go/plugins/eventsource v0.0.0-20250116025601-68e319567989/go.mod h1:naZooq37eTeNxjR722fd/dpi3mFcLgQgj3Iz1Nro9mw=
 github.com/golly-go/plugins/orm v0.0.0-20250116025601-68e319567989 h1:b9iSu7cpEMEPqovv/yp1GFQnqtPDLkR/TDJlIMw4gJg=

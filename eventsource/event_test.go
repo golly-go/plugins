@@ -6,10 +6,23 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 type testEvent struct {
 	Name string
+}
+
+type MockPersistedEvent struct {
+	mock.Mock
+}
+
+func (m *MockPersistedEvent) Hydrate(eng *Engine) (Event, error) {
+	args := m.Called(eng)
+	if evt, ok := args.Get(0).(Event); ok {
+		return evt, args.Error(1)
+	}
+	return Event{}, args.Error(1)
 }
 
 func TestEventBase_SetState(t *testing.T) {
@@ -53,9 +66,8 @@ func TestEvent_Hydrate(t *testing.T) {
 		Age  int    `json:"age"`
 	}
 
-	Aggregates().Register(&TestAggregate{}, []any{
-		TestEvent{},
-	})
+	engine := NewEngine(&InMemoryStore{})
+	engine.aggregates.Register(&TestAggregate{}, []any{TestEvent{}})
 
 	tests := []struct {
 		name         string
@@ -123,7 +135,8 @@ func TestEvent_Hydrate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.setupEvent.Hydrate(tt.inputData)
+			err := tt.setupEvent.Hydrate(engine, tt.inputData, nil)
+
 			if tt.shouldError {
 				assert.Error(t, err)
 			} else {

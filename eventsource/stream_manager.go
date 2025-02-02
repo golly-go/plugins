@@ -6,10 +6,6 @@ import (
 	"github.com/golly-go/golly"
 )
 
-var (
-	streamManager = NewStreamManager()
-)
-
 // StreamManager manages multiple streams and coordinates dispatch.
 type StreamManager struct {
 	mu      sync.RWMutex

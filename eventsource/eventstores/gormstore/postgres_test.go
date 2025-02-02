@@ -1,4 +1,4 @@
-package gorm
+package gormstore
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 	"github.com/golly-go/plugins/eventsource"
 	"github.com/golly-go/plugins/orm"
 	"github.com/google/uuid"
-	"github.com/jinzhu/gorm/dialects/postgres"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -31,12 +30,15 @@ type TestEvent struct {
 }
 
 func TestGormRepository_Save(t *testing.T) {
-	eventsource.Aggregates().Register(&TestAggregate{}, []any{&TestEvent{}})
+	store := Store{}
+
+	engine := eventsource.NewEngine(&store)
+	engine.
+		Aggregates().
+		Register(&TestAggregate{}, []any{&TestEvent{}})
 
 	ctx := orm.CreateTestContext(golly.NewContext(context.Background()), Event{})
 	defer orm.Close(ctx)
-
-	repo := GormEventStore{}
 
 	testEvent := eventsource.Event{
 		ID:            uuid.New(),
@@ -53,7 +55,7 @@ func TestGormRepository_Save(t *testing.T) {
 
 	db := orm.DB(ctx)
 
-	err := repo.Save(ctx, &testEvent)
+	err := store.Save(ctx, &testEvent)
 	assert.NoError(t, err)
 
 	var loaded Event
@@ -65,32 +67,4 @@ func TestGormRepository_Save(t *testing.T) {
 	var unmarshaledData map[string]interface{}
 	json.Unmarshal(loaded.RawData.RawMessage, &unmarshaledData)
 	assert.Equal(t, "value", unmarshaledData["key"])
-}
-
-func TestEvent_AfterFind(t *testing.T) {
-	eventsource.Aggregates().Register(&TestAggregate{}, []any{&TestEvent{}})
-
-	rawData := TestEvent{Key: "test"}
-	rawDataBytes, _ := json.Marshal(rawData)
-
-	event := Event{
-		Event: eventsource.Event{
-			ID:            uuid.New(),
-			CreatedAt:     time.Now(),
-			Type:          "gorm.TestEvent",
-			AggregateID:   uuid.New().String(),
-			AggregateType: "gorm.TestAggregate",
-			Version:       1,
-		},
-		RawData: postgres.Jsonb{RawMessage: rawDataBytes},
-	}
-
-	// Simulate Gorm AfterFind behavior
-	err := event.AfterFind(nil)
-	assert.NoError(t, err)
-
-	x, ok := event.Data.(TestEvent)
-	assert.True(t, ok)
-
-	assert.Equal(t, "test", x.Key)
 }

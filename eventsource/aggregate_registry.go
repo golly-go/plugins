@@ -7,14 +7,8 @@ import (
 )
 
 var (
-	aggregateRegistery = NewAggregateRegistry()
-
 	ErrorAggregateTypeNotRegistered = fmt.Errorf("Aggregate type not registered")
 )
-
-func Aggregates() *AggregateRegistry {
-	return aggregateRegistery
-}
 
 // RegistryItem represents an aggregate or projection type and its supported events.
 type AggregateRegistryItem struct {
@@ -32,7 +26,7 @@ func NewAggregateRegistry() *AggregateRegistry {
 	return &AggregateRegistry{}
 }
 
-func (r *AggregateRegistry) Register(item Aggregate, events []any) {
+func (r *AggregateRegistry) Register(item Aggregate, events []any) *AggregateRegistry {
 	var regItem *AggregateRegistryItem
 
 	itemType := reflect.TypeOf(item)
@@ -63,6 +57,8 @@ func (r *AggregateRegistry) Register(item Aggregate, events []any) {
 	}
 
 	r.items.Store(itemName, regItem)
+
+	return r
 }
 
 // Get retrieves a registered item by name.
@@ -114,8 +110,4 @@ func (r *AggregateRegistry) GetAggregate(tpe string) (Aggregate, bool) {
 	}
 
 	return ret, true
-}
-
-func (r *AggregateRegistry) Clear() {
-	r.items.Clear()
 }

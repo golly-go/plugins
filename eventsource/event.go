@@ -39,13 +39,18 @@ type Event struct {
 	AggregateID   string `json:"aggregateId"`
 	AggregateType string `json:"aggregateType"`
 
-	Version int64 `json:"version"`
+	Version       int64 `json:"version"`
+	GlobalVersion int64 `json:"globalVersion"`
 
 	State EventState `json:"state,omitempty" gorm:"-"`
 
 	Data     any      `json:"data" gorm:"-"`
 	Identity any      `json:"identity,omitempty" gorm:"-"`
 	Metadata Metadata `json:"metadata" gorm:"-"`
+}
+
+type PersistedEvent interface {
+	Hydrate(*Engine) (Event, error)
 }
 
 // SetID assigns a UUID to the event.
@@ -98,7 +103,7 @@ func (evts Events) ByState(state EventState) Events {
 	events := Events{}
 
 	for pos := range evts {
-		if evts[pos].InState(EventStateCompleted) {
+		if evts[pos].InState(state) { // Use the provided state parameter
 			events = append(events, evts[pos])
 		}
 	}
@@ -145,8 +150,48 @@ func (evts Events) MarkComplete() Events {
 	return evts
 }
 
+func (e *Event) hydrateMetadata(data any) error {
+	if data == nil {
+		return nil
+	}
+
+	switch v := data.(type) {
+	case json.RawMessage:
+		if err := json.Unmarshal(v, &e.Metadata); err != nil {
+			return err
+		}
+	case string:
+		if err := json.Unmarshal([]byte(v), &e.Metadata); err != nil {
+			return err
+		}
+	case []byte:
+		if err := json.Unmarshal(v, &e.Metadata); err != nil {
+			return err
+		}
+	case map[string]interface{}:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(b, &e.Metadata); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("do not know how to handle data %v", v)
+	}
+
+	return nil
+}
+
+func (e *Event) Hydrate(engine *Engine, data, metadata any) error {
+	// if err := e.HydrateMetadata(metadata); err != nil {
+	// 	return err
+	// }
+	return e.hydrateData(engine, data)
+}
+
 // Hydrate reconstructs the event from JSON data and matches the appropriate type from the global aggregate registry.
-func (e *Event) Hydrate(data any) error {
+func (e *Event) hydrateData(engine *Engine, data any) error {
 	if e.Type == "" || e.AggregateType == "" {
 		return fmt.Errorf("cannot unmarshal Type and Aggregate not defined for event (%s)", e.ID)
 	}
@@ -157,7 +202,7 @@ func (e *Event) Hydrate(data any) error {
 		instance = reflect.ValueOf(&AggregateSnapshottedEvent{})
 	} else {
 		// Use global aggregate registry
-		evtType, exists := Aggregates().GetEventType(e.AggregateType, e.Type)
+		evtType, exists := engine.aggregates.GetEventType(e.AggregateType, e.Type)
 		if !exists {
 			return fmt.Errorf("cannot unmarshal event type (%s) not registered for (%s)", e.Type, e.ID)
 		}
@@ -167,6 +212,10 @@ func (e *Event) Hydrate(data any) error {
 	switch v := data.(type) {
 	case json.RawMessage:
 		if err := json.Unmarshal(v, instance.Interface()); err != nil {
+			return err
+		}
+	case string:
+		if err := json.Unmarshal([]byte(v), instance.Interface()); err != nil {
 			return err
 		}
 	case []byte:

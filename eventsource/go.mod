@@ -3,9 +3,10 @@ module github.com/golly-go/plugins/eventsource
 go 1.23.4
 
 require (
-	github.com/golly-go/golly v0.6.0-rc1.0.20250124072355-3247852872ad
+	github.com/golly-go/golly v0.6.0-rc1.0.20250124104536-2541c03f26a8
 	github.com/google/uuid v1.6.0
 	github.com/mitchellh/mapstructure v1.5.0
+	github.com/spf13/cobra v1.8.1
 	github.com/stretchr/testify v1.10.0
 	gorm.io/gorm v1.25.10
 )
@@ -26,7 +27,6 @@ require (
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spf13/afero v1.12.0 // indirect
 	github.com/spf13/cast v1.7.1 // indirect
-	github.com/spf13/cobra v1.8.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/spf13/viper v1.19.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect

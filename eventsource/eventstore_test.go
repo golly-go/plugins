@@ -2,129 +2,91 @@ package eventsource
 
 import (
 	"context"
-	"sync"
 
 	"github.com/google/uuid"
-	"github.com/mitchellh/mapstructure"
-	"gorm.io/gorm"
+	"github.com/stretchr/testify/mock"
 )
 
-// TestEventStore is an in-memory implementation of EventStore for testing purposes.
-type TestEventStore struct {
-	data []Event
-	sync.RWMutex
-
-	SaveFail error
+type testPersistedEvent struct {
+	// Arbitrary fields you may want to track for the test
+	ID         string
+	Raw        []byte
+	HydrateErr error // To simulate an error during Hydrate
 }
 
-// Load retrieves an object or aggregate by its primary key.
-func (s *TestEventStore) Load(ctx context.Context, object interface{}) error {
-	s.RLock()
-	defer s.RUnlock()
-
-	if len(s.data) == 0 {
-		return gorm.ErrRecordNotFound
+// Hydrate implements PersistedEvent.
+// It either returns an error (if HydrateErr is non-nil)
+// or a basic Event with your chosen test fields.
+func (t *testPersistedEvent) Hydrate(eng *Engine) (Event, error) {
+	if t.HydrateErr != nil {
+		return Event{}, t.HydrateErr
 	}
-	return mapstructure.Decode(s.data[0], object)
+	// Construct a minimal Event for testing.
+	// In a real test, you might parse t.Raw or set fields from t.ID, etc.
+	evt := Event{
+		ID:   uuid.New(),      // For example, generate a new UUID or parse from t.ID
+		Type: "TestEventType", // Hard-coded or from your raw data
+		Data: t.Raw,           // Possibly store the raw bytes in Data
+	}
+	return evt, nil
 }
 
-// LoadEventsForAggregate fetches all events for a given aggregate.
-func (s *TestEventStore) LoadEventsForAggregate(ctx context.Context, aggregateType, aggregateID string) ([]Event, error) {
-	s.RLock()
-	defer s.RUnlock()
-
-	var results []Event
-	for _, event := range s.data {
-		if event.AggregateID == aggregateID && event.AggregateType == aggregateType {
-			results = append(results, event)
-		}
-	}
-	return results, nil
+// MockStore is a mock implementation of the EventStore interface.
+type MockStore struct {
+	mock.Mock
 }
 
-// LoadEvents retrieves all events.
-func (s *TestEventStore) LoadEvents(ctx context.Context, filters ...EventFilter) ([]Event, error) {
-	s.RLock()
-	defer s.RUnlock()
-
-	var results []Event
-	for _, event := range s.data {
-		results = append(results, event)
-	}
-	return results, nil
+func (m *MockStore) Save(ctx context.Context, events ...*Event) error {
+	args := m.Called(ctx, events)
+	return args.Error(0)
 }
 
-// Save persists one or more events in-memory.
-func (s *TestEventStore) Save(ctx context.Context, events ...*Event) error {
-	if s.SaveFail != nil {
-		return s.SaveFail
+func (m *MockStore) LoadEvents(ctx context.Context, filters ...EventFilter) ([]PersistedEvent, error) {
+	args := m.Called(ctx, filters)
+	if events, ok := args.Get(0).([]PersistedEvent); ok {
+		return events, args.Error(1)
 	}
-
-	s.Lock()
-	defer s.Unlock()
-
-	for _, evt := range events {
-		s.data = append(s.data, *evt)
-	}
-	return nil
+	return nil, args.Error(1)
 }
 
-// IsNewEvent checks if an event is new.
-func (s *TestEventStore) IsNewEvent(event Event) bool {
-	s.RLock()
-	defer s.RUnlock()
+func (m *MockStore) LoadEventsInBatches(ctx context.Context, batchSize int,
+	handler func([]PersistedEvent) error,
+	filters ...EventFilter) error {
 
-	for _, e := range s.data {
-		if e.AggregateID == event.AggregateID && e.Version == event.Version {
-			return false
-		}
-	}
-	return true
+	args := m.Called(ctx, batchSize, handler, filters)
+	return args.Error(0)
 }
 
-// Exists checks if an event exists by its ID.
-func (s *TestEventStore) Exists(ctx context.Context, eventID uuid.UUID) (bool, error) {
-	s.RLock()
-	defer s.RUnlock()
-
-	for _, event := range s.data {
-		if event.ID == eventID {
-			return true, nil
-		}
-	}
-	return false, nil
+// The rest of the methods are stubs or we can mock them similarly
+func (m *MockStore) GlobalVersion(ctx context.Context) (int64, error) {
+	args := m.Called(ctx)
+	return int64(args.Int(0)), args.Error(1)
 }
 
-// DeleteEvent removes an event by ID.
-func (s *TestEventStore) DeleteEvent(ctx context.Context, eventID uuid.UUID) error {
-	s.Lock()
-	defer s.Unlock()
-
-	for i, event := range s.data {
-		if event.ID == eventID {
-			s.data = append(s.data[:i], s.data[i+1:]...)
-			return nil
-		}
-	}
-	return gorm.ErrRecordNotFound
+func (m *MockStore) IsNewEvent(event Event) bool {
+	args := m.Called(event)
+	return args.Bool(0)
 }
 
-// SaveSnapshot persists an aggregate snapshot in-memory.
-func (s *TestEventStore) SaveSnapshot(ctx context.Context, aggregate Aggregate) error {
-	snapshot := NewSnapshot(aggregate)
-	return s.Save(ctx, &snapshot)
+func (m *MockStore) Exists(ctx context.Context, eventID uuid.UUID) (bool, error) {
+	args := m.Called(ctx, eventID)
+	return args.Bool(0), args.Error(1)
 }
 
-// LoadSnapshot retrieves the latest snapshot for an aggregate.
-func (s *TestEventStore) LoadSnapshot(ctx context.Context, aggregateType, aggregateID string) (Event, error) {
-	s.RLock()
-	defer s.RUnlock()
+func (m *MockStore) DeleteEvent(ctx context.Context, eventID uuid.UUID) error {
+	args := m.Called(ctx, eventID)
+	return args.Error(0)
+}
 
-	for _, event := range s.data {
+func (m *MockStore) SaveSnapshot(ctx context.Context, snapshot Aggregate) error {
+	args := m.Called(ctx, snapshot)
+	return args.Error(0)
+}
 
-		if event.AggregateID == aggregateID && event.Kind == EventKindSnapshot {
-			return event, nil
-		}
+func (m *MockStore) LoadSnapshot(ctx context.Context, aggregateType, aggregateID string) (PersistedEvent, error) {
+	args := m.Called(ctx, aggregateType, aggregateID)
+	if pe, ok := args.Get(0).(PersistedEvent); ok {
+		return pe, args.Error(1)
 	}
-	return Event{}, gorm.ErrRecordNotFound
+	return nil, args.Error(1)
 }

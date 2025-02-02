@@ -15,14 +15,6 @@ const (
 	DefaultStreamName = "default"
 )
 
-func DefaultStream() *Stream {
-	if s, ok := streamManager.Get(DefaultStreamName); ok {
-		return s
-	}
-
-	return streamManager.Register(DefaultStreamName)
-}
-
 type StreamHandler func(*golly.Context, Event)
 
 // Stream represents a single in-memory event stream with subscriptions.
@@ -79,19 +71,29 @@ func (s *Stream) Send(gctx *golly.Context, events ...Event) {
 	}
 }
 
-func (s *Stream) Aggregate(aggregateType string, handler StreamHandler) {
+func (s *Stream) Aggregate(aggregate any, handler StreamHandler) *Stream {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	var aggregateType string
+	switch ag := aggregate.(type) {
+	case string:
+		aggregateType = ag
+	default:
+		aggregateType = ObjectName(aggregate)
+	}
+
 	s.aggregations[aggregateType] = append(s.aggregations[aggregateType], handler)
+	return s
 }
 
 // Subscribe registers a handler for a specific event type (or AllEvents).
-func (s *Stream) Subscribe(eventType string, handler StreamHandler) {
+func (s *Stream) Subscribe(eventType string, handler StreamHandler) *Stream {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.handlers[eventType] = append(s.handlers[eventType], handler)
+	return s
 }
 
 // Unsubscribe removes a handler for a specific event type (or AllEvents).

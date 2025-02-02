@@ -53,9 +53,11 @@ func TestExecute(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			aggregateRegistery.Register(&TestAggregate{}, []any{})
+			repo := NewEngine(&InMemoryStore{})
 
-			err := Execute(ctx, tt.agg, tt.cmd)
+			repo.aggregates.Register(&TestAggregate{}, []any{})
+
+			err := repo.Execute(ctx, tt.agg, tt.cmd)
 			if tt.expectErr != nil {
 				assert.Error(t, err)
 				assert.Equal(t, tt.expectErr.Error(), err.Error())
@@ -64,8 +66,6 @@ func TestExecute(t *testing.T) {
 			}
 
 			assert.Equal(t, tt.expectExecuted, tt.cmd.executed)
-
-			aggregateRegistery.Clear()
 		})
 	}
 }
