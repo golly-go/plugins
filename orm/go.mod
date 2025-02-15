@@ -4,6 +4,7 @@ go 1.23.4
 
 require (
 	github.com/golly-go/golly v0.6.0-rc1.0.20250124072355-3247852872ad
+	github.com/google/uuid v1.6.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.8.1
 	gorm.io/driver/postgres v1.5.11

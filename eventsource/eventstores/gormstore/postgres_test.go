@@ -22,6 +22,7 @@ type TestAggregate struct {
 
 func (ta *TestAggregate) ApplytestEvent(event Event)         { ta.AppliedEvent = &event }
 func (ta *TestAggregate) GetID() string                      { return ta.ID }
+func (ta *TestAggregate) SetID(id string)                    { ta.ID = id }
 func (ta *TestAggregate) EventStore() eventsource.EventStore { return nil }
 func (ta *TestAggregate) IsNewRecord() bool                  { return false }
 

@@ -4,110 +4,136 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+
+	"github.com/segmentio/encoding/json"
 )
 
-var (
-	ErrorAggregateTypeNotRegistered = fmt.Errorf("Aggregate type not registered")
-)
+// EventCodec holds closures for marshalling/unmarshalling a particular event type.
+type EventCodec struct {
+	UnmarshalFn func(any) (any, error)
+	MarshalFn   func(any) ([]byte, error)
+}
 
-// RegistryItem represents an aggregate or projection type and its supported events.
+// AggregateRegistryItem represents a single aggregate type (e.g., *Order)
+// and its associated event codecs (e.g., "OrderCreated" -> {marshal/unmarshal}).
 type AggregateRegistryItem struct {
-	Type   reflect.Type // Type of the aggregate or projection
-	Events sync.Map
+	AggregateType reflect.Type
+	Events        map[string]*EventCodec
 }
 
-// Registry manages mappings of types and their associated events using sync.Map.
+// AggregateRegistry manages mappings of aggregate names to registry items.
+// Internally, it uses a standard map guarded by a sync.RWMutex.
 type AggregateRegistry struct {
-	items sync.Map
+	mu    sync.RWMutex
+	items map[string]*AggregateRegistryItem
 }
 
-// NewRegistry initializes a new event registry.
+// NewAggregateRegistry initializes an empty registry with a normal map.
 func NewAggregateRegistry() *AggregateRegistry {
-	return &AggregateRegistry{}
+	return &AggregateRegistry{
+		items: make(map[string]*AggregateRegistryItem),
+	}
 }
 
-func (r *AggregateRegistry) Register(item Aggregate, events []any) *AggregateRegistry {
-	var regItem *AggregateRegistryItem
-
-	itemType := reflect.TypeOf(item)
-
-	if itemType.Kind() != reflect.Ptr {
-		itemType = reflect.PointerTo(itemType)
+// Register takes an aggregate (e.g., &MyAggregate{}) and a slice of event “samples”.
+// For each event sample, it precomputes an EventCodec and stores it in the registry.
+func (r *AggregateRegistry) Register(agg Aggregate, eventSamples []any) *AggregateRegistry {
+	aggType := reflect.TypeOf(agg)
+	if aggType.Kind() != reflect.Ptr {
+		// Force pointer type so we can instantiate it later
+		aggType = reflect.PointerTo(aggType)
 	}
 
-	itemName := ObjectName(item)
+	aggName := ObjectName(agg)
 
-	if value, ok := r.items.Load(itemName); ok {
-		regItem = value.(*AggregateRegistryItem)
-	} else {
-		regItem = &AggregateRegistryItem{Type: itemType}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Fetch or create the registry item for this aggregate
+	regItem, found := r.items[aggName]
+	if !found {
+		regItem = &AggregateRegistryItem{
+			AggregateType: aggType,
+			Events:        make(map[string]*EventCodec),
+		}
+		r.items[aggName] = regItem
 	}
 
-	// Register events
-	for _, evt := range events {
-
-		evtType := reflect.TypeOf(evt)
-
+	// Build codecs for each event sample
+	for _, evtSample := range eventSamples {
+		evtType := reflect.TypeOf(evtSample)
 		if evtType.Kind() != reflect.Ptr {
 			evtType = reflect.PointerTo(evtType)
 		}
 
-		eventName := ObjectName(evt)
-		regItem.Events.Store(eventName, evtType)
-	}
+		eventName := ObjectName(evtSample)
 
-	r.items.Store(itemName, regItem)
+		unmarshalFn := func(raw any) (any, error) {
+			newVal := reflect.New(evtType.Elem()).Interface()
+			if err := unmarshal(newVal, raw); err != nil {
+				return nil, err
+			}
+
+			return newVal, nil
+		}
+
+		marshalFn := func(obj any) ([]byte, error) {
+			// Optional: type-check to ensure correct type
+			if reflect.TypeOf(obj) != evtType {
+				return nil, fmt.Errorf("expected type %v, got %v", evtType, reflect.TypeOf(obj))
+			}
+			return json.Marshal(obj)
+		}
+
+		regItem.Events[eventName] = &EventCodec{
+			UnmarshalFn: unmarshalFn,
+			MarshalFn:   marshalFn,
+		}
+	}
 
 	return r
 }
 
-// Get retrieves a registered item by name.
-func (r *AggregateRegistry) Get(name string) (*AggregateRegistryItem, bool) {
-	value, exists := r.items.Load(name)
-	if !exists {
-		return nil, false
-	}
-	return value.(*AggregateRegistryItem), true
-}
+// GetAggregate instantiates a new aggregate for the given name (e.g., "MyAggregate").
+func (r *AggregateRegistry) GetAggregate(aggName string) (Aggregate, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 
-// GetEventType retrieves an event type by aggregate/projection and event name.
-func (r *AggregateRegistry) GetEventType(itemName, eventName string) (reflect.Type, bool) {
-	value, exists := r.items.Load(itemName)
-	if !exists {
-		return nil, false
-	}
-
-	regItem := value.(*AggregateRegistryItem)
-
-	evtValue, exists := regItem.Events.Load(eventName)
-	if !exists {
-		return nil, false
-	}
-
-	return evtValue.(reflect.Type), true
-}
-
-// GetAggregate retrieves the top-level aggregate type from the registry.
-func (r *AggregateRegistry) GetAggregate(tpe string) (Aggregate, bool) {
-	value, exists := r.items.Load(tpe)
-	if !exists {
-		return nil, false
-	}
-
-	regType := value.(*AggregateRegistryItem).Type
-
-	var inf interface{}
-
-	if regType.Kind() == reflect.Ptr {
-		inf = reflect.New(regType.Elem()).Interface()
-	} else {
-		inf = reflect.New(regType).Interface()
-	}
-
-	ret, ok := inf.(Aggregate)
+	regItem, ok := r.items[aggName]
 	if !ok {
 		return nil, false
 	}
 
-	return ret, true
+	aggType := regItem.AggregateType
+	var inf interface{}
+	if aggType.Kind() == reflect.Ptr {
+		inf = reflect.New(aggType.Elem()).Interface()
+	} else {
+		inf = reflect.New(aggType).Interface()
+	}
+
+	agg, ok := inf.(Aggregate)
+	return agg, ok
+}
+
+// GetEventCodec retrieves the EventCodec for (aggregateName, eventName).
+func (r *AggregateRegistry) GetEventCodec(aggName, evtName string) *EventCodec {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	regItem, ok := r.items[aggName]
+	if !ok {
+		return nil
+	}
+	codec, ok := regItem.Events[evtName]
+	return codec
+}
+
+// Clear removes all aggregates and event codecs from the registry (helpful in tests).
+func (r *AggregateRegistry) Clear() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Reset the top-level map
+	r.items = make(map[string]*AggregateRegistryItem)
 }

@@ -2,6 +2,7 @@ package eventsource
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/golly-go/golly"
@@ -21,6 +22,15 @@ type Engine struct {
 
 	mu            sync.RWMutex
 	globalVersion int64
+	running       bool
+
+	config EngineConfig
+}
+
+type EngineConfig struct {
+	SnapshotFrequency int
+	BatchSize         int
+	// Other config options...
 }
 
 // NewEngine initializes everything
@@ -76,15 +86,48 @@ func (eng *Engine) currentGlobalVersion() int64 {
 }
 
 func (eng *Engine) Aggregates() *AggregateRegistry { return eng.aggregates }
-func (eng *Engine) RegisterAggregate(item Aggregate, events []any) {
-	eng.aggregates.Register(item, events)
+func (eng *Engine) RegisterAggregate(agg Aggregate, events []any) {
+	eng.aggregates.Register(agg, events)
+}
+
+// RegisterProjection registers a projection with the engine
+func (eng *Engine) RegisterProjection(proj Projection, opts ...Option) error {
+	options := &Options{}
+	for _, opt := range opts {
+		opt(options)
+	}
+
+	if options.Stream == nil {
+		return fmt.Errorf("stream options required")
+	}
+
+	// Create or get stream with proper configuration
+
+	stream, err := eng.streams.GetOrCreateStream(*options.Stream)
+	if err != nil {
+		return fmt.Errorf("failed to register stream: %w", err)
+	}
+
+	eng.projections.Register(proj)
+
+	// Register projection with stream
+	stream.Project(proj)
+
+	// Start stream if engine is running
+	eng.mu.RLock()
+	if eng.running {
+		stream.Start()
+	}
+	eng.mu.RUnlock()
+
+	return nil
 }
 
 // CommitAggregateChanges applies a series of new events from an aggregate:
 //  1. Optionally increments a global version (if you track that in memory or in store).
 //  2. Saves the events to the event store.
 //  3. Publishes them to the stream manageeng.
-//  4. Marks the aggregate’s changes as complete.
+//  4. Marks the aggregate's changes as complete.
 func (eng *Engine) CommitAggregateChanges(ctx *golly.Context, agg Aggregate) error {
 	changes := agg.Changes().Uncommitted()
 
@@ -179,7 +222,6 @@ func (eng *Engine) LoadEvents(
 	handle func(events []Event) error,
 	filter ...EventFilter,
 ) error {
-
 	return eng.store.LoadEventsInBatches(ctx, batchSize, func(rawBatch []PersistedEvent) error {
 		if len(rawBatch) == 0 {
 			return nil
@@ -224,4 +266,76 @@ func handleExecutionError(ctx *golly.Context, agg Aggregate, cmd Command, err er
 	}
 
 	return err
+}
+
+// Add method to rebuild specific projections
+func (eng *Engine) RebuildProjection(ctx *golly.Context, projID string) error {
+	return eng.projections.Rebuild(ctx, eng, projID)
+}
+
+// Subscribe with stream configuration
+func (eng *Engine) Subscribe(streamName string, eventType string, handler StreamHandler, opts ...Option) error {
+	cfg := &Options{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	stream, err := eng.streams.GetOrCreateStream(*cfg.Stream)
+	if err != nil {
+		return err
+	}
+
+	stream.Subscribe(eventType, handler)
+	return nil
+}
+
+func (eng *Engine) SubscribeAggregate(streamName string, aggregateType string, handler StreamHandler, opts ...Option) error {
+	cfg := &Options{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	stream, err := eng.streams.GetOrCreateStream(*cfg.Stream)
+	if err != nil {
+		return err
+	}
+
+	stream.Aggregate(aggregateType, handler)
+	return nil
+}
+
+// Send dispatches events to the appropriate stream
+func (eng *Engine) Send(ctx *golly.Context, streamName string, events ...Event) error {
+	stream, ok := eng.streams.Get(streamName)
+	if !ok {
+		return fmt.Errorf("stream %s not found", streamName)
+	}
+
+	// Then dispatch to stream
+	return stream.Send(ctx, events...)
+}
+
+// Start starts all streams and begins processing events
+func (eng *Engine) Start() {
+	eng.mu.Lock()
+	eng.running = true
+	eng.mu.Unlock()
+
+	// Start all registered streams
+	streams := eng.streams.getStreams()
+	for _, stream := range streams {
+		stream.Start()
+	}
+}
+
+// Stop gracefully shuts down all streams
+func (eng *Engine) Stop() {
+	eng.mu.Lock()
+	eng.running = false
+	eng.mu.Unlock()
+
+	streams := eng.streams.getStreams()
+	for _, stream := range streams {
+		stream.Stop()
+	}
 }

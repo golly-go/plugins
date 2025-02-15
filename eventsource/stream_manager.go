@@ -1,6 +1,7 @@
 package eventsource
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/golly-go/golly"
@@ -28,15 +29,16 @@ func (sm *StreamManager) Get(name string) (*Stream, bool) {
 	return s, ok
 }
 
-func (sm *StreamManager) Register(name string) *Stream {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
+func (sm *StreamManager) RegisterStream(s *Stream) *Stream {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 
-	stream := NewStream(name)
+	if _, exists := sm.streams[s.name]; exists {
+		return s
+	}
 
-	sm.streams[name] = stream
-
-	return stream
+	sm.streams[s.name] = s
+	return s
 }
 
 // SendTo sends an event to a specific named stream.
@@ -53,9 +55,8 @@ func (sm *StreamManager) SendTo(gctx *golly.Context, streamName string, event Ev
 // Send sends an event to all streams.
 func (sm *StreamManager) Send(gctx *golly.Context, events ...Event) {
 	streams := sm.getStreams()
-
 	for _, s := range streams {
-		go s.Send(gctx, events...)
+		s.Send(gctx, events...)
 	}
 }
 
@@ -68,4 +69,49 @@ func (sm *StreamManager) getStreams() []*Stream {
 	}
 	sm.mu.RUnlock()
 	return copyOfStreams
+}
+
+func (sm *StreamManager) GetOrCreateStream(opts StreamOptions) (*Stream, error) {
+	sm.mu.RLock()
+
+	if opts.Name == "" {
+		sm.mu.RUnlock()
+		return nil, errors.New("stream name cannot be empty")
+	}
+
+	if stream, exists := sm.Get(opts.Name); exists {
+		sm.mu.RUnlock()
+		return stream, nil
+	}
+	sm.mu.RUnlock()
+
+	if !opts.Create {
+		return nil, errors.New("stream does not exist and create=false")
+	}
+
+	if opts.NumPartitions == 0 {
+		opts.NumPartitions = defaultPartitions
+	}
+
+	if opts.BufferSize == 0 {
+		opts.BufferSize = defaultQueueSize
+	}
+
+	stream := sm.RegisterStream(NewStream(opts))
+	return stream, nil
+}
+
+func (sm *StreamManager) RegisterProjection(streamName string, autoCreate bool, proj Projection) error {
+
+	if streamName == "" {
+		return errors.New("stream name cannot be empty")
+	}
+
+	stream, err := sm.GetOrCreateStream(StreamOptions{Name: streamName, Create: autoCreate})
+	if err != nil {
+		return err
+	}
+
+	stream.Project(proj)
+	return nil
 }

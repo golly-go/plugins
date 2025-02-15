@@ -3,7 +3,6 @@ package eventsource
 import (
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,23 +29,19 @@ const (
 
 // Event represents a single event in the system.
 type Event struct {
-	ID        uuid.UUID `json:"id"`
-	Kind      EventKind `json:"kind"`
-	CreatedAt time.Time `json:"createdAt"`
-
-	Type string `json:"eventType"`
-
-	AggregateID   string `json:"aggregateId"`
-	AggregateType string `json:"aggregateType"`
-
-	Version       int64 `json:"version"`
-	GlobalVersion int64 `json:"globalVersion"`
-
-	State EventState `json:"state,omitempty" gorm:"-"`
-
-	Data     any      `json:"data" gorm:"-"`
-	Identity any      `json:"identity,omitempty" gorm:"-"`
-	Metadata Metadata `json:"metadata" gorm:"-"`
+	ID            uuid.UUID   `json:"id"`
+	Kind          EventKind   `json:"kind"`
+	CreatedAt     time.Time   `json:"createdAt"`
+	Type          string      `json:"eventType"`
+	AggregateID   string      `json:"aggregateId"`
+	AggregateType string      `json:"aggregateType"`
+	Version       int64       `json:"version"`
+	GlobalVersion int64       `json:"globalVersion"`
+	State         EventState  `json:"state,omitempty" gorm:"-"`
+	Data          interface{} `json:"data" gorm:"-"`
+	Identity      interface{} `json:"identity,omitempty" gorm:"-"`
+	Metadata      Metadata    `json:"metadata" gorm:"-"`
+	partitionID   uint32      // internal tracking
 }
 
 type PersistedEvent interface {
@@ -150,90 +145,56 @@ func (evts Events) MarkComplete() Events {
 	return evts
 }
 
-func (e *Event) hydrateMetadata(data any) error {
-	if data == nil {
+func (e *Event) Hydrate(engine *Engine, data, metadata any) error {
+
+	// Example: If you do special handling for snapshots, you can branch here:
+	if e.Kind == "snapshot" {
+		// Just an example approach:
+		snap := &AggregateSnapshottedEvent{}
+		if err := unmarshal(snap, data); err != nil {
+			return err
+		}
+
+		e.Data = snap
 		return nil
 	}
 
-	switch v := data.(type) {
-	case json.RawMessage:
-		if err := json.Unmarshal(v, &e.Metadata); err != nil {
-			return err
-		}
-	case string:
-		if err := json.Unmarshal([]byte(v), &e.Metadata); err != nil {
-			return err
-		}
-	case []byte:
-		if err := json.Unmarshal(v, &e.Metadata); err != nil {
-			return err
-		}
-	case map[string]interface{}:
-		b, err := json.Marshal(v)
-		if err != nil {
-			return err
-		}
-		if err := json.Unmarshal(b, &e.Metadata); err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("do not know how to handle data %v", v)
+	// Otherwise, it's a normal event
+	if e.Type == "" || e.AggregateType == "" {
+		return fmt.Errorf("missing event type or aggregate type on event ID=%s", e.ID)
 	}
 
+	codec := engine.aggregates.GetEventCodec(e.AggregateType, e.Type)
+	if codec == nil {
+		return fmt.Errorf("no codec found for aggregate=%s, event=%s", e.AggregateType, e.Type)
+	}
+
+	val, err := codec.UnmarshalFn(data)
+	if err != nil {
+		return err
+	}
+
+	e.Data = val
 	return nil
 }
 
-func (e *Event) Hydrate(engine *Engine, data, metadata any) error {
-	// if err := e.HydrateMetadata(metadata); err != nil {
-	// 	return err
-	// }
-	return e.hydrateData(engine, data)
-}
-
-// Hydrate reconstructs the event from JSON data and matches the appropriate type from the global aggregate registry.
-func (e *Event) hydrateData(engine *Engine, data any) error {
-	if e.Type == "" || e.AggregateType == "" {
-		return fmt.Errorf("cannot unmarshal Type and Aggregate not defined for event (%s)", e.ID)
-	}
-
-	var instance reflect.Value
-
-	if e.Kind == EventKindSnapshot {
-		instance = reflect.ValueOf(&AggregateSnapshottedEvent{})
-	} else {
-		// Use global aggregate registry
-		evtType, exists := engine.aggregates.GetEventType(e.AggregateType, e.Type)
-		if !exists {
-			return fmt.Errorf("cannot unmarshal event type (%s) not registered for (%s)", e.Type, e.ID)
-		}
-		instance = reflect.New(evtType.Elem())
-	}
-
-	switch v := data.(type) {
+func unmarshal(instance, raw any) error {
+	switch v := raw.(type) {
 	case json.RawMessage:
-		if err := json.Unmarshal(v, instance.Interface()); err != nil {
+		if err := json.Unmarshal(v, instance); err != nil {
 			return err
 		}
 	case string:
-		if err := json.Unmarshal([]byte(v), instance.Interface()); err != nil {
+		if err := json.Unmarshal([]byte(v), instance); err != nil {
 			return err
 		}
 	case []byte:
-		if err := json.Unmarshal(v, instance.Interface()); err != nil {
-			return err
-		}
-	case map[string]interface{}:
-		b, err := json.Marshal(v)
-		if err != nil {
-			return err
-		}
-		if err := json.Unmarshal(b, instance.Interface()); err != nil {
+		if err := json.Unmarshal(v, instance); err != nil {
 			return err
 		}
 	default:
 		return fmt.Errorf("do not know how to handle data %v", v)
 	}
 
-	e.Data = instance.Elem().Interface()
 	return nil
 }

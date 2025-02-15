@@ -1,22 +1,39 @@
 package eventsource
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"sync/atomic"
+
+	"github.com/golly-go/golly"
 )
 
 const (
 	projectionBatchSize = 100
 )
 
+// Add these interfaces to better define projection types
+type BaseProjection interface {
+	HandleEvent(*golly.Context, Event) error
+	Position() int64
+	SetPosition(pos int64) error
+	Reset() error
+}
+
 type AggregateProjection interface {
+	BaseProjection
 	AggregateTypes() []string
 }
 
 type EventProjection interface {
+	BaseProjection
 	EventTypes() []string
+}
+
+// Optional combined interface for projections that handle both
+type CombinedProjection interface {
+	AggregateProjection
+	EventProjection
 }
 
 type IDdProjection interface {
@@ -24,7 +41,7 @@ type IDdProjection interface {
 }
 
 type Projection interface {
-	HandleEvent(ctx context.Context, evt Event) error
+	HandleEvent(*golly.Context, Event) error
 	// Position returns the last known position in the global event stream.
 	Position() int64
 	SetPosition(pos int64) error
@@ -60,7 +77,7 @@ func (p *ProjectionBase) Reset() error {
 
 // ProjectionManager manages multiple projections, each identified by a key.
 type ProjectionManager struct {
-	mu          sync.Mutex
+	mu          sync.RWMutex
 	projections map[string]Projection
 }
 
@@ -82,7 +99,7 @@ func (pm *ProjectionManager) Register(projs ...Projection) {
 }
 
 // Rebuild resets a single projection, then processes all events from version 0 upward.
-func (pm *ProjectionManager) Rebuild(ctx context.Context, eng *Engine, projID string) error {
+func (pm *ProjectionManager) Rebuild(ctx *golly.Context, eng *Engine, projID string) error {
 	pm.mu.Lock()
 	proj, ok := pm.projections[projID]
 	pm.mu.Unlock()
@@ -90,7 +107,6 @@ func (pm *ProjectionManager) Rebuild(ctx context.Context, eng *Engine, projID st
 		return fmt.Errorf("projection %s not found", projID)
 	}
 
-	// 1) Reset projection state
 	if err := proj.Reset(); err != nil {
 		return err
 	}
@@ -99,15 +115,15 @@ func (pm *ProjectionManager) Rebuild(ctx context.Context, eng *Engine, projID st
 		return err
 	}
 
-	// 2) Catch up from the beginning
 	return pm.processProjection(ctx, eng, proj, 0, projectionBatchSize)
 }
 
 // RunOnce catches up a single projection from its current position to the end.
-func (pm *ProjectionManager) RunOnce(ctx context.Context, eng *Engine, projID string) error {
+func (pm *ProjectionManager) RunOnce(ctx *golly.Context, eng *Engine, projID string) error {
 	pm.mu.Lock()
 	proj, ok := pm.projections[projID]
 	pm.mu.Unlock()
+
 	if !ok {
 		return fmt.Errorf("projection not found: %s", projID)
 	}
@@ -116,27 +132,55 @@ func (pm *ProjectionManager) RunOnce(ctx context.Context, eng *Engine, projID st
 }
 
 // RunToEnd catches up all registered projections from their current positions.
-func (pm *ProjectionManager) RunToEnd(ctx context.Context, eng *Engine) error {
+func (pm *ProjectionManager) RunToEnd(ctx *golly.Context, eng *Engine, projID string) error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	for _, p := range pm.projections {
-		if err := pm.processProjection(ctx, eng, p, int(p.Position()+1), projectionBatchSize); err != nil {
-			return err
-		}
+	proj, ok := pm.projections[projID]
+	if !ok {
+		return fmt.Errorf("projection not found: %s", projID)
 	}
-	return nil
+
+	// Reset projection state before running
+	if err := proj.Reset(); err != nil {
+		return fmt.Errorf("failed to reset projection: %w", err)
+	}
+
+	var lastError error
+	err := eng.LoadEvents(ctx, 100, func(events []Event) error {
+		for _, evt := range events {
+			if err := proj.HandleEvent(ctx, evt); err != nil {
+				lastError = err
+				proj.SetPosition(-1) // Mark as failed
+				return nil           // Stop processing but don't fail other projections
+			}
+			proj.SetPosition(evt.GlobalVersion) // Use GlobalVersion instead of Version
+		}
+		return nil
+	})
+
+	if err != nil {
+		return err
+	}
+	return lastError
 }
 
 // processProjection loads events from 'fromGlobalVersion' in batches, calling p.HandleEvent,
 // then does ONE p.SetPosition() per batch.
 func (pm *ProjectionManager) processProjection(
-	ctx context.Context,
+	ctx *golly.Context,
 	eng *Engine,
 	p Projection,
 	fromGlobalVersion int,
 	batchSize int,
 ) error {
+	// Add context cancellation checks
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		// Continue processing
+	}
 
 	var aggregateTypes []string
 	var eventTypes []string
@@ -177,4 +221,16 @@ func projectionKey(p Projection) string {
 		return pi.ID()
 	}
 	return ObjectPath(p)
+}
+
+func projectionSteamConfig(p Projection) (aggs []string, evts []string) {
+	if at, ok := p.(AggregateProjection); ok {
+		aggs = at.AggregateTypes()
+	}
+
+	if et, ok := p.(EventProjection); ok {
+		evts = et.EventTypes()
+	}
+
+	return
 }

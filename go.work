@@ -13,4 +13,4 @@ use ./vectordb
 // use ./neo4j
 
 use ./eventsource
-use ./eventsource/eventstores/gorm
+use ./eventsource/eventstores/gormstore

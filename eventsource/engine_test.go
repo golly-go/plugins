@@ -5,13 +5,14 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/golly-go/golly"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
-func createMockEvents(t *testing.T, types ...string) []PersistedEvent {
+func createMockEvents(types ...string) []PersistedEvent {
 	events := make([]PersistedEvent, 0, len(types))
 	for _, typ := range types {
 		pe := &MockPersistedEvent{}
@@ -23,7 +24,7 @@ func createMockEvents(t *testing.T, types ...string) []PersistedEvent {
 	return events
 }
 
-func createMockEventsWithHydrateErr(t *testing.T, err error) []PersistedEvent {
+func createMockEventsWithHydrateErr(err error) []PersistedEvent {
 	pe := &MockPersistedEvent{}
 	pe.On("Hydrate", mock.Anything).Return(Event{}, err)
 	return []PersistedEvent{pe}
@@ -44,7 +45,7 @@ func TestEngine_LoadEvents(t *testing.T) {
 		{
 			name:          "Success - two events hydrated",
 			batchSize:     10,
-			events:        createMockEvents(t, "TestEvent1", "TestEvent2"),
+			events:        createMockEvents("TestEvent1", "TestEvent2"),
 			expectedTypes: []string{"TestEvent1", "TestEvent2"},
 		},
 		{
@@ -56,13 +57,13 @@ func TestEngine_LoadEvents(t *testing.T) {
 		{
 			name:        "Hydrate error on single event",
 			batchSize:   1,
-			events:      createMockEventsWithHydrateErr(t, errors.New("hydrate fail")),
+			events:      createMockEventsWithHydrateErr(errors.New("hydrate fail")),
 			errContains: "hydrate fail",
 		},
 		{
 			name:        "Handle function fails",
 			batchSize:   2,
-			events:      createMockEvents(t, "TestEvent"),
+			events:      createMockEvents("TestEvent"),
 			err:         errors.New("handle function failed"),
 			errContains: "handle function failed",
 		},
@@ -118,8 +119,94 @@ func TestEngine_LoadEvents(t *testing.T) {
 	}
 }
 
+func TestEngine_RegisterProjection(t *testing.T) {
+	tests := []struct {
+		name    string
+		setup   func(*Engine) (Projection, []Option)
+		wantErr bool
+	}{
+		{
+			name: "NoStreamConfig",
+			setup: func(e *Engine) (Projection, []Option) {
+				return &testProjection{}, []Option{}
+			},
+			wantErr: true, // Now we expect an error when no stream config is provided
+		},
+		{
+			name: "StreamNotExist_CreateFalse",
+			setup: func(e *Engine) (Projection, []Option) {
+				return &testProjection{}, []Option{
+					WithStream("nonexistent", false, 1),
+				}
+			},
+			wantErr: true, // Should error when stream doesn't exist and create=false
+		},
+		{
+			name: "StreamNotExist_CreateTrue",
+			setup: func(e *Engine) (Projection, []Option) {
+				return &testProjection{}, []Option{
+					WithStream("newStream", true, 1),
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name: "ExistingStream",
+			setup: func(e *Engine) (Projection, []Option) {
+				// Pre-create the stream
+				e.streams.RegisterStream(NewStream(StreamOptions{
+					Name:   "existing",
+					Create: true,
+				}))
+				return &testProjection{}, []Option{
+					WithStream("existing", false, 1),
+				}
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			engine := NewEngine(&InMemoryStore{})
+
+			proj, opts := tt.setup(engine)
+
+			err := engine.RegisterProjection(proj, opts...)
+
+			cfg := Options{}
+
+			for _, opt := range opts {
+				opt(&cfg)
+			}
+
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+
+				// Verify stream was created and projection registered
+				stream := engine.Stream(cfg.Stream.Name)
+				assert.NotNil(t, stream)
+			}
+		})
+	}
+}
+
+type testProjection struct {
+	ProjectionBase
+}
+
+func (p *testProjection) HandleEvent(*golly.Context, Event) error { return nil }
+func (p *testProjection) Reset() error                            { return nil }
+
+// ************************************************
+// * Benchmarks
+// ************************************************
+
 func BenchmarkEngine_LoadEvents(b *testing.B) {
 	ctx := context.Background()
+
 	mockStore := &MockStore{}
 	eng := NewEngine(mockStore)
 

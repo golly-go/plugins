@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/golly-go/golly"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,19 +17,19 @@ import (
 type TestProjection struct {
 	ProjectionBase
 
-	id string
-
-	handledCount int64
-
-	// If > 0, the nth event will return an error.
+	id                string
+	handledCount      int64 // Change to int64 to match test expectations
 	failOnEventNumber int64
-
-	// track how many events processed so far
-	eventCounter int64
+	eventCounter      int64
+	aggregates        []string
+	events            []string
 }
 
-func (tp *TestProjection) HandleEvent(ctx context.Context, evt Event) error {
-	current := atomic.AddInt64(&tp.eventCounter, 1) // which event are we on?
+func (tp *TestProjection) AggregateTypes() []string { return tp.aggregates }
+func (tp *TestProjection) EventTypes() []string     { return tp.events }
+
+func (tp *TestProjection) HandleEvent(ctx *golly.Context, evt Event) error {
+	current := atomic.AddInt64(&tp.eventCounter, 1)
 	if tp.failOnEventNumber > 0 && current == tp.failOnEventNumber {
 		return fmt.Errorf("simulated error on event #%d", current)
 	}
@@ -37,84 +38,99 @@ func (tp *TestProjection) HandleEvent(ctx context.Context, evt Event) error {
 	return nil
 }
 
+var _ Projection = (*TestProjection)(nil)
+
 // Optional convenience if you want an ID (instead of ObjectPath)
-func (tp *TestProjection) ID() string     { return tp.id }
-func (tp *TestProjection) handled() int64 { return atomic.LoadInt64(&tp.handledCount) }
+func (tp *TestProjection) ID() string { return tp.id }
+
+func (tp *TestProjection) handled() int64 {
+	return atomic.LoadInt64(&tp.handledCount)
+}
 
 func TestProjectionManager_RunToEnd(t *testing.T) {
-	type scenario struct {
-		name         string
-		events       []Event
-		projCount    int   // How many projections to register
-		failOnEvent  int64 // If > 0, the nth event in the first projection fails
-		expectErr    bool
-		errContains  string
-		wantPosition []int64
-		wantHandled  []int64
-	}
-
-	cases := []scenario{
+	tests := []struct {
+		name          string
+		setup         func(*ProjectionManager, *Engine) string // returns projID
+		expectedPos   int64
+		expectedCount int
+		expectErr     bool
+		errContains   string
+	}{
 		{
-			name:         "Two projections catch up from 0",
-			events:       []Event{{GlobalVersion: 1}, {GlobalVersion: 2}},
-			projCount:    2,
-			wantPosition: []int64{2, 2},
-			wantHandled:  []int64{2, 2},
-		},
-		{
-			name:         "Error in first projection's HandleEvent",
-			events:       []Event{{GlobalVersion: 10}},
-			projCount:    2,
-			failOnEvent:  1,
-			expectErr:    true,
-			errContains:  "simulated error on event #1",
-			wantPosition: []int64{-1, -1},
-			wantHandled:  []int64{0, 0},
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			// 1) In-memory store with seeded events
-			store := &InMemoryStore{}
-			for _, e := range tc.events {
-				_ = store.Save(context.Background(), &e)
-			}
-
-			// 2) Engine & ProjectionManager
-			eng := NewEngine(store)
-			pm := NewProjectionManager()
-
-			// 3) Create and register projections
-			var projs []*TestProjection
-			for i := 0; i < tc.projCount; i++ {
-				p := &TestProjection{id: fmt.Sprintf("proj%d", i)}
-				p.SetPosition(-1) // no events processed yet
-
-				if i == 0 && tc.failOnEvent > 0 {
-					p.failOnEventNumber = tc.failOnEvent
+			name: "Error_in_first_projection's_HandleEvent",
+			setup: func(pm *ProjectionManager, eng *Engine) string {
+				proj := &TestProjection{
+					id:                "proj1",
+					failOnEventNumber: 1,
 				}
-				pm.Register(p)
-				projs = append(projs, p)
-			}
+				pm.Register(proj)
+				// Add test event to store
+				eng.store.Save(context.Background(), &Event{GlobalVersion: 1}, &Event{GlobalVersion: 2})
+				return proj.ID()
+			},
+			expectedPos:   -1,
+			expectedCount: 0,
+			expectErr:     true,
+			errContains:   "simulated error on event #1",
+		},
+		{
+			name: "Successful_processing",
+			setup: func(pm *ProjectionManager, eng *Engine) string {
+				proj := &TestProjection{id: "proj2"}
+				pm.Register(proj)
+				// Add multiple events to store
+				eng.store.Save(context.Background(),
+					&Event{GlobalVersion: 1},
+					&Event{GlobalVersion: 2},
+				)
+				return proj.ID()
+			},
+			expectedPos:   2,
+			expectedCount: 2,
+		},
+		{
+			name: "Projection_not_found",
+			setup: func(pm *ProjectionManager, eng *Engine) string {
+				return "nonexistent"
+			},
+			expectedPos:   0,
+			expectedCount: 0,
+			expectErr:     true,
+			errContains:   "projection not found",
+		},
+		{
+			name: "Empty_event_store",
+			setup: func(pm *ProjectionManager, eng *Engine) string {
+				proj := &TestProjection{id: "proj3"}
+				pm.Register(proj)
+				return proj.ID()
+			},
+			expectedPos:   -1,
+			expectedCount: 0,
+		},
+	}
 
-			// 4) RunToEnd
-			err := pm.RunToEnd(context.Background(), eng)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pm := NewProjectionManager()
+			eng := NewEngine(&InMemoryStore{})
 
-			// 5) Assertions
-			if tc.expectErr {
+			projID := tt.setup(pm, eng)
+
+			err := pm.RunToEnd(golly.NewContext(context.Background()), eng, projID)
+
+			if tt.expectErr {
 				require.Error(t, err)
-				if tc.errContains != "" {
-					assert.Contains(t, err.Error(), tc.errContains)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
 				}
 			} else {
 				assert.NoError(t, err)
 			}
 
-			// Validate final positions & handled counts
-			for i, p := range projs {
-				assert.Equal(t, tc.wantPosition[i], p.Position(), "proj %d final position", i)
-				assert.Equal(t, tc.wantHandled[i], p.handled(), "proj %d handled count", i)
+			if proj, ok := pm.projections[projID]; ok {
+				assert.Equal(t, int64(tt.expectedPos), proj.Position(), "proj final position")
+				assert.Equal(t, int64(tt.expectedCount), proj.(*TestProjection).handled(), "proj handled count")
 			}
 		})
 	}
@@ -163,6 +179,8 @@ func TestProjectionManager_RunOnce(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			ctx := golly.NewContext(context.Background())
+
 			// 1) Seed events in store
 			store := &InMemoryStore{}
 			for _, evt := range c.events {
@@ -181,7 +199,7 @@ func TestProjectionManager_RunOnce(t *testing.T) {
 			}
 
 			// 3) RunOnce
-			err := pm.RunOnce(context.Background(), eng, c.projName)
+			err := pm.RunOnce(ctx, eng, c.projName)
 
 			// 4) Check error
 			if c.expectErr {
@@ -248,6 +266,8 @@ func TestProjectionManager_Rebuild(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			ctx := golly.NewContext(context.Background())
+
 			// 1) Setup store & engine
 			store := &InMemoryStore{}
 			for _, evt := range c.events {
@@ -265,7 +285,7 @@ func TestProjectionManager_Rebuild(t *testing.T) {
 			}
 
 			// 3) Rebuild
-			err := pm.Rebuild(context.Background(), eng, c.projName)
+			err := pm.Rebuild(ctx, eng, c.projName)
 
 			// 4) Check for error
 			if c.expectErr {

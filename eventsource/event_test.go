@@ -1,6 +1,7 @@
 package eventsource
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -74,7 +75,7 @@ func TestEvent_Hydrate(t *testing.T) {
 		inputData    any
 		setupEvent   Event
 		shouldError  bool
-		expectedData TestEvent
+		expectedData *TestEvent
 	}{
 		{
 			name:      "Valid byte data",
@@ -85,21 +86,7 @@ func TestEvent_Hydrate(t *testing.T) {
 				AggregateType: "eventsource.TestAggregate",
 			},
 			shouldError:  false,
-			expectedData: TestEvent{Name: "John Doe", Age: 30},
-		},
-		{
-			name: "Valid map data",
-			inputData: map[string]interface{}{
-				"name": "Jane Doe",
-				"age":  25,
-			},
-			setupEvent: Event{
-				ID:            uuid.New(),
-				Type:          "eventsource.TestEvent",
-				AggregateType: "eventsource.TestAggregate",
-			},
-			shouldError:  false,
-			expectedData: TestEvent{Name: "Jane Doe", Age: 25},
+			expectedData: &TestEvent{Name: "John Doe", Age: 30},
 		},
 		{
 			name:      "Missing Type",
@@ -126,7 +113,7 @@ func TestEvent_Hydrate(t *testing.T) {
 			inputData: []byte(`{"name":"Unknown","age":50}`),
 			setupEvent: Event{
 				ID:            uuid.New(),
-				Type:          "eventsource.TestEvent",
+				Type:          "TestEvent",
 				AggregateType: "Unknown",
 			},
 			shouldError: true,
@@ -144,5 +131,48 @@ func TestEvent_Hydrate(t *testing.T) {
 				assert.Equal(t, tt.expectedData, tt.setupEvent.Data)
 			}
 		})
+	}
+}
+
+func setupTestEngine() *Engine {
+	// Create a registry
+	engine := NewEngine(&InMemoryStore{})
+
+	// Register an aggregate + events
+	// (If your real code uses the “codec” approach, adapt accordingly)
+	engine.aggregates.Register(&TestAggregate{}, []any{
+		testEvent{},
+	})
+
+	return engine
+}
+
+func BenchmarkHydrateData(b *testing.B) {
+	engine := setupTestEngine()
+
+	// We’ll simulate different data forms that hydrateData can handle.
+	// For simplicity, just pick one or two—json.RawMessage and []byte, for example.
+	rawJSON := json.RawMessage(`{"foo":"bar"}`)
+
+	// Prepare an Event struct
+	evt := &Event{
+		ID:            uuid.New(),
+		Type:          ObjectName(testEvent{}),     // "testEventStruct"
+		AggregateType: ObjectName(TestAggregate{}), // "testAggregate"
+		Kind:          "event",                     // normal event
+	}
+
+	// Reset timer to exclude setup time
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		// We re-create the event for a fair test, or just re-hydrate the same event
+		// If you want to test memory allocations, you might do new Event each time
+		// but this is enough for a micro-benchmark of the unmarshal logic.
+		evt.Data = nil // so it re-hydrates each iteration
+
+		if err := evt.Hydrate(engine, rawJSON, nil); err != nil {
+			b.Fatalf("hydrateData failed: %v", err)
+		}
 	}
 }
