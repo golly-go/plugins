@@ -1,27 +1,29 @@
 # Event Sourcing with Golang
 
-This project implements a robust event-sourcing pattern in Golang, providing a comprehensive framework for building event-driven applications. It enables the use of aggregates, streams, and event handlers to manage state changes in a consistent and traceable manner.
+This project provides a robust event-sourcing framework for Golang, designed for building scalable, event-driven applications. It enables the use of aggregates, streams, and event handlers to ensure consistent and traceable state changes.
 
 ## Overview
 
-Event sourcing is a pattern where changes to an application's state are stored as a sequence of immutable events. This approach offers several benefits:
+Event sourcing is a pattern that records changes in application state as immutable events. This approach provides several advantages:
 
-- **Auditability**: Every state change is recorded as an immutable event.
-- **Reconstruction**: System state can be rebuilt by replaying past events.
+- **Auditability**: Every state change is stored as an immutable event.
+- **Reconstruction**: System state can be rebuilt by replaying historical events.
 - **Flexibility**: The same event stream can power multiple projections or views.
-- **Concurrency**: Built-in support for concurrent event processing.
-- **Scalability**: Partitioned streams for high-throughput event handling.
+- **Concurrency**: Supports concurrent event processing.
+- **Scalability**: Uses partitioned streams for high-throughput event handling.
 
 ## Features
 
 - **Aggregate Management**: Type-safe aggregates with automatic event application.
 - **Stream Processing**: Configurable event streams with partitioning support.
-- **Projections**: Real-time and rebuild-capable read models.
-- **Event Store**: Pluggable storage backends (includes PostgreSQL and in-memory).
+- **Projections**: Supports real-time and rebuildable read models.
+- **Event Store**: Pluggable storage backends (including PostgreSQL and in-memory storage).
 - **Command Handling**: Structured command processing with validation.
-- **Snapshots**: Automatic aggregate state snapshots for faster loading.
+- **Snapshots**: Automatic aggregate state snapshots for improved performance.
 
 ## Installation
+
+Install the package using:
 
 ```bash
 go get github.com/golly-go/plugins/eventsource
@@ -30,6 +32,8 @@ go get github.com/golly-go/plugins/eventsource
 ## Quick Start
 
 ### 1. Define Your Domain Events
+
+Define the domain events representing state changes:
 
 ```go
 type OrderCreated struct {
@@ -46,6 +50,8 @@ type OrderStatusChanged struct {
 
 ### 2. Create an Aggregate
 
+Define an aggregate that maintains state and applies events:
+
 ```go
 type Order struct {
     eventsource.AggregateBase
@@ -58,7 +64,7 @@ func (o *Order) GetID() string {
     return o.ID
 }
 
-// Event handlers are automatically discovered
+// Automatically applies event handlers
 func (o *Order) ApplyOrderCreated(event OrderCreated) {
     o.ID = event.ID
     o.Amount = event.Amount
@@ -71,11 +77,13 @@ func (o *Order) ApplyOrderStatusChanged(event OrderStatusChanged) {
 
 ### 3. Set Up the Engine
 
+Initialize the event-sourcing engine and register aggregates:
+
 ```go
-// Initialize with your preferred store
+// Initialize with a preferred store
 engine := eventsource.NewEngine(&eventsource.InMemoryStore{})
 
-// Register aggregate and its events
+// Register aggregates and their events
 engine.RegisterAggregate(&Order{}, []any{
     OrderCreated{},
     OrderStatusChanged{},
@@ -87,6 +95,8 @@ defer engine.Stop()
 ```
 
 ### 4. Create a Projection
+
+Projections allow building read models from events:
 
 ```go
 type OrderSummary struct {
@@ -110,11 +120,13 @@ func (o *OrderSummary) HandleEvent(ctx *golly.Context, evt eventsource.Event) er
 
 // Register projection
 summary := &OrderSummary{}
-engine.RegisterProjection(summary, 
+engine.RegisterProjection(summary,
     eventsource.WithStream("orders", true, 4))
 ```
 
 ### 5. Execute Commands
+
+Commands trigger state changes within aggregates:
 
 ```go
 type CreateOrder struct {
@@ -123,7 +135,8 @@ type CreateOrder struct {
 }
 
 func (c CreateOrder) Perform(ctx *golly.Context, agg eventsource.Aggregate) error {
-    agg.Record(OrderCreated{
+    order := agg.(*Order)
+    order.Record(OrderCreated{
         ID:     c.ID,
         Amount: c.Amount,
     })
@@ -147,10 +160,10 @@ The library supports multiple event store implementations:
 ```go
 // PostgreSQL Store
 store := &gormstore.Store{
-    DB: db, // your GORM DB instance
+    DB: db, // Your GORM DB instance
 }
 
-// In-Memory Store (great for testing)
+// In-Memory Store (ideal for testing)
 store := &eventsource.InMemoryStore{}
 
 engine := eventsource.NewEngine(store)
@@ -158,7 +171,7 @@ engine := eventsource.NewEngine(store)
 
 ### Stream Partitioning
 
-Configure streams with custom partitioning for better throughput:
+Configure streams with custom partitioning for improved scalability:
 
 ```go
 engine.RegisterProjection(projection,
@@ -168,19 +181,19 @@ engine.RegisterProjection(projection,
 
 ### Snapshots
 
-Automatic snapshot support for faster aggregate loading:
+Enable automatic snapshots to speed up aggregate loading:
 
 ```go
-// Configure snapshot frequency
+// Set snapshot frequency
 engine.SetSnapshotFrequency(100) // Every 100 events
 
-// Load aggregate with latest snapshot
-agg, err := engine.LoadAggregate(ctx, "Order", "order_123")
+// Load aggregate using latest snapshot
+agg, err := engine.Load(ctx, "Order", "order_123")
 ```
 
 ## Testing
 
-The library includes an in-memory store perfect for testing:
+The library includes an in-memory store ideal for testing:
 
 ```go
 func TestOrderCreation(t *testing.T) {
@@ -199,9 +212,9 @@ func TestOrderCreation(t *testing.T) {
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Please submit a Pull Request.
 
 ## License
 
-This project is licensed under the [MIT License](./LICENSE).  
-See the `LICENSE` file for details.
+This project is licensed under the [MIT License](./LICENSE). See the `LICENSE` file for details.
+
