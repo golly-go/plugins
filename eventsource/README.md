@@ -1,22 +1,25 @@
 # Event Sourcing with Golang
 
-This project implements a simple event-sourcing pattern in Golang. It enables the use of aggregates, streams, and event handlers to manage state changes in a consistent and traceable manner.
+This project implements a robust event-sourcing pattern in Golang, providing a comprehensive framework for building event-driven applications. It enables the use of aggregates, streams, and event handlers to manage state changes in a consistent and traceable manner.
 
 ## Overview
 
-Event sourcing is a pattern where changes to an application's state are stored as a series of events. This allows for:
+Event sourcing is a pattern where changes to an application's state are stored as a sequence of immutable events. This approach offers several benefits:
 
-- **Auditability**: Every change is recorded as an immutable event.
-- **Reconstruction**: System state can be reconstructed by replaying past events.
-- **Flexibility**: The same event stream can drive multiple projections or views.
+- **Auditability**: Every state change is recorded as an immutable event.
+- **Reconstruction**: System state can be rebuilt by replaying past events.
+- **Flexibility**: The same event stream can power multiple projections or views.
+- **Concurrency**: Built-in support for concurrent event processing.
+- **Scalability**: Partitioned streams for high-throughput event handling.
 
-This implementation includes:
+## Features
 
-- **Aggregate Management**: Aggregates represent domain objects that emit events.
-- **Streams**: Streams handle event distribution and aggregation.
-- **Commands and Events**: Commands trigger state changes which are recorded as events.
-
----
+- **Aggregate Management**: Type-safe aggregates with automatic event application.
+- **Stream Processing**: Configurable event streams with partitioning support.
+- **Projections**: Real-time and rebuild-capable read models.
+- **Event Store**: Pluggable storage backends (includes PostgreSQL and in-memory).
+- **Command Handling**: Structured command processing with validation.
+- **Snapshots**: Automatic aggregate state snapshots for faster loading.
 
 ## Installation
 
@@ -24,158 +27,181 @@ This implementation includes:
 go get github.com/golly-go/plugins/eventsource
 ```
 
----
+## Quick Start
 
-## Usage
-
-### 1. Register Aggregates and Events
-
-First, define aggregates and register the events they will handle:
+### 1. Define Your Domain Events
 
 ```go
-package main
+type OrderCreated struct {
+    ID         string
+    CustomerID string
+    Amount     float64
+}
 
-import (
-	"fmt"
-	"github.com/golly-go/plugins/eventsource"
-)
-
-func main() {
-	eventsource.Aggregates().Register(&MyAggregate{}, []any{
-		Created{},
-		Updated{},
-		SomeRelationAdded{},
-	})
+type OrderStatusChanged struct {
+    ID     string
+    Status string
 }
 ```
 
-- `MyAggregate` is the aggregate representing your domain object.
-- `Created`, `Updated`, and `SomeRelationAdded` are events that the aggregate can handle.
-
-### 2. Update Handlers for Events
-
-Define event handlers in the aggregate by creating methods that follow the pattern `<EventName>Handler`:
+### 2. Create an Aggregate
 
 ```go
-func (ma *MyAggregate) CreatedHandler(event eventsource.Event) {
-	evt := event.Data.(Created)
-	ma.ID = evt.ID
-	ma.Name = evt.Name
+type Order struct {
+    eventsource.AggregateBase
+    ID      string
+    Status  string
+    Amount  float64
 }
 
-func (ma *MyAggregate) UpdatedHandler(event eventsource.Event) {
-	evt := event.Data.(Updated)
-	ma.Name = evt.Name
+func (o *Order) GetID() string {
+    return o.ID
 }
 
-func (ma *MyAggregate) SomeRelationAddedHandler(event eventsource.Event) {
-	evt := event.Data.(SomeRelationAdded)
-	ma.SomeRelation = golly.Unique(append(ma.SomeRelation, evt.Relation))
+// Event handlers are automatically discovered
+func (o *Order) ApplyOrderCreated(event OrderCreated) {
+    o.ID = event.ID
+    o.Amount = event.Amount
+}
+
+func (o *Order) ApplyOrderStatusChanged(event OrderStatusChanged) {
+    o.Status = event.Status
 }
 ```
 
-These handlers allow aggregates to apply state changes when events are replayed.
-
-### 3. Stream Event Handling
-
-Attach handlers to process events for specific aggregates:
+### 3. Set Up the Engine
 
 ```go
-eventsource.DefaultStream().Aggregate(eventsource.ObjectName(MyAggregate{}), func(e eventsource.Event) {
-	fmt.Printf("Event: %#v\n", e)
+// Initialize with your preferred store
+engine := eventsource.NewEngine(&eventsource.InMemoryStore{})
+
+// Register aggregate and its events
+engine.RegisterAggregate(&Order{}, []any{
+    OrderCreated{},
+    OrderStatusChanged{},
+})
+
+// Start processing
+engine.Start()
+defer engine.Stop()
+```
+
+### 4. Create a Projection
+
+```go
+type OrderSummary struct {
+    eventsource.ProjectionBase
+    mu          sync.RWMutex
+    TotalOrders int
+    TotalAmount float64
+}
+
+func (o *OrderSummary) HandleEvent(ctx *golly.Context, evt eventsource.Event) error {
+    o.mu.Lock()
+    defer o.mu.Unlock()
+
+    switch e := evt.Data.(type) {
+    case OrderCreated:
+        o.TotalOrders++
+        o.TotalAmount += e.Amount
+    }
+    return nil
+}
+
+// Register projection
+summary := &OrderSummary{}
+engine.RegisterProjection(summary, 
+    eventsource.WithStream("orders", true, 4))
+```
+
+### 5. Execute Commands
+
+```go
+type CreateOrder struct {
+    ID     string
+    Amount float64
+}
+
+func (c CreateOrder) Perform(ctx *golly.Context, agg eventsource.Aggregate) error {
+    agg.Record(OrderCreated{
+        ID:     c.ID,
+        Amount: c.Amount,
+    })
+    return nil
+}
+
+// Execute the command
+order := &Order{}
+err := engine.Execute(ctx, order, CreateOrder{
+    ID:     "order_1",
+    Amount: 99.99,
 })
 ```
 
-This will print each event processed by the `MyAggregate` to the console.
+## Advanced Features
 
-### 4. Execute Commands
+### Event Store Configuration
 
-Commands represent user actions or requests that trigger state changes:
+The library supports multiple event store implementations:
 
 ```go
-err := eventsource.Execute(gctx, &agg, UpdateMyAggregate{
-	Name: args[1],
-})
-if err != nil {
-	return err
+// PostgreSQL Store
+store := &gormstore.Store{
+    DB: db, // your GORM DB instance
 }
+
+// In-Memory Store (great for testing)
+store := &eventsource.InMemoryStore{}
+
+engine := eventsource.NewEngine(store)
 ```
 
-- `UpdateMyAggregate` is a command that updates the aggregate.
-- The command performs validation and emits an `Updated` event.
+### Stream Partitioning
 
----
+Configure streams with custom partitioning for better throughput:
 
-## Command Example
-
-### Define a Command
 ```go
-type UpdateMyAggregate struct {
-	Name string
-}
-
-func (cmd UpdateMyAggregate) Validate(gctx golly.Context, agg eventsource.Aggregate) error {
-	if cmd.Name == "" {
-		return fmt.Errorf("name should be present")
-	}
-	return nil
-}
-
-func (cmd UpdateMyAggregate) Perform(gctx golly.Context, agg eventsource.Aggregate) error {
-	agg.Record(agg, Updated{Name: cmd.Name})
-	return nil
-}
+engine.RegisterProjection(projection,
+    eventsource.WithStream("orders", true, 8),  // 8 partitions
+    eventsource.WithStreamBufferSize(1000))
 ```
-- `Validate` ensures the command's data is correct before proceeding.
-- `Perform` applies the event to the aggregate.
 
----
+### Snapshots
 
-## Key Concepts
+Automatic snapshot support for faster aggregate loading:
 
-### Aggregates
-Aggregates represent the core business entities that emit events. They ensure consistency and encapsulate state changes.
+```go
+// Configure snapshot frequency
+engine.SetSnapshotFrequency(100) // Every 100 events
 
-### Events
-Events are immutable records of state changes. They represent facts that have occurred in the system.
-
-### Streams
-Streams manage event distribution. They allow handlers to listen to and react to specific events or aggregates.
-
-### Commands
-Commands trigger actions that may result in new events. They represent user intent.
-
----
+// Load aggregate with latest snapshot
+agg, err := engine.LoadAggregate(ctx, "Order", "order_123")
+```
 
 ## Testing
 
-To test commands and aggregate behavior, simulate command execution and verify that the correct events are emitted:
+The library includes an in-memory store perfect for testing:
 
 ```go
-func TestUpdateMyAggregate(t *testing.T) {
-	agg := MyAggregate{}
-	cmd := UpdateMyAggregate{Name: "NewName"}
-	err := eventsource.Execute(gctx, &agg, cmd)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
+func TestOrderCreation(t *testing.T) {
+    engine := eventsource.NewEngine(&eventsource.InMemoryStore{})
+    order := &Order{}
+    
+    err := engine.Execute(ctx, order, CreateOrder{
+        ID:     "test_1",
+        Amount: 100,
+    })
+    
+    assert.NoError(t, err)
+    assert.Equal(t, 100.0, order.Amount)
 }
 ```
 
----
+## Contributing
 
-## Event Stores
-Prebuilt event stores can be found at:
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-```bash
-github.com/golly-go/plugins/eventsource/eventstore/<name>
-```
+## License
 
-These event stores can be used to persist and manage events across different backends.
-
----
-
-## Conclusion
-
-This event sourcing pattern in Golang provides a scalable way to manage state through immutable events. By structuring your application around aggregates, events, and streams, you ensure traceability, consistency, and flexibility in handling complex state transitions.
-
+This project is licensed under the [MIT License](./LICENSE).  
+See the `LICENSE` file for details.
