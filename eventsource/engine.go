@@ -35,12 +35,15 @@ type EngineConfig struct {
 
 // NewEngine initializes everything
 func NewEngine(store EventStore) *Engine {
-	return &Engine{
+	eng := &Engine{
 		store:       store,
 		streams:     NewStreamManager(),
 		projections: NewProjectionManager(),
 		aggregates:  NewAggregateRegistry(),
 	}
+	// Register the default stream
+	eng.streams.RegisterStream(NewStream(StreamOptions{Name: DefaultStreamName}))
+	return eng
 }
 
 // Stream returns the named stream or nil if not found
@@ -274,17 +277,25 @@ func (eng *Engine) RebuildProjection(ctx *golly.Context, projID string) error {
 }
 
 // Subscribe with stream configuration
-func (eng *Engine) Subscribe(streamName string, eventType string, handler StreamHandler, opts ...Option) error {
-	cfg := &Options{}
+func (eng *Engine) Subscribe(eventType string, handler func(ctx *golly.Context, evt Event), opts ...Option) error {
+	options := &Options{}
 	for _, opt := range opts {
-		opt(cfg)
+		opt(options)
 	}
 
-	stream, err := eng.streams.GetOrCreateStream(*cfg.Stream)
-	if err != nil {
-		return err
+	streamName := DefaultStreamName
+	if options.Stream != nil && options.Stream.Name != "" {
+		streamName = options.Stream.Name
 	}
 
+	return eng.SubscribeToStream(streamName, eventType, handler)
+}
+
+func (eng *Engine) SubscribeToStream(streamName, eventType string, handler func(ctx *golly.Context, evt Event)) error {
+	stream, ok := eng.streams.Get(streamName)
+	if !ok {
+		return fmt.Errorf("stream %s not found", streamName)
+	}
 	stream.Subscribe(eventType, handler)
 	return nil
 }

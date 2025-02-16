@@ -11,7 +11,7 @@ import (
 )
 
 type testEvent struct {
-	Name string
+	name string
 }
 
 type MockPersistedEvent struct {

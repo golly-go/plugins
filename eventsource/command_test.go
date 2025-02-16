@@ -10,6 +10,7 @@ import (
 )
 
 type TestCommand struct {
+	name          string
 	shouldSucceed bool
 	executed      bool
 	performErr    error
@@ -19,6 +20,9 @@ func (m *TestCommand) Perform(ctx *golly.Context, agg Aggregate) error {
 	if m.performErr != nil {
 		return m.performErr
 	}
+
+	agg.Record(testEvent{name: m.name})
+
 	m.executed = true
 	return nil
 }

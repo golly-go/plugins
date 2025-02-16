@@ -13,8 +13,8 @@ func main() {
 	// Create engine with store
 	engine := eventsource.NewEngine(&eventsource.InMemoryStore{})
 
-	// Add error handling middleware using AllEvents
-	engine.Subscribe("audit", eventsource.AllEvents, func(ctx *golly.Context, evt eventsource.Event) {
+	// Add error handling middleware using the default stream
+	engine.Subscribe("UserAction", func(ctx *golly.Context, evt eventsource.Event) {
 		defer func() {
 			if r := recover(); r != nil {
 				log.Printf("Recovered from panic: %v", r)
@@ -29,7 +29,7 @@ func main() {
 	})
 
 	ctx := golly.NewContext(context.Background())
-	engine.Send(ctx, "audit", eventsource.Event{
+	engine.Send(ctx, eventsource.DefaultStreamName, eventsource.Event{
 		Type: "UserAction",
 		Data: map[string]interface{}{
 			"action": "login",

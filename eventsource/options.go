@@ -15,14 +15,30 @@ type Options struct {
 	Stream *StreamOptions
 }
 
-// WithStream specifies a stream name for the projection/event registration.
-func WithStream(name string, create bool, partitions uint) Option {
+func WithStreamPartiions(partitions uint32) Option {
 	return func(o *Options) {
 		if o.Stream == nil {
 			o.Stream = &StreamOptions{}
 		}
-		o.Stream.NumPartitions = uint32(partitions)
+		o.Stream.NumPartitions = partitions
+	}
+}
+
+// WithStreamName specifies a stream name for the projection/event registration.
+func WithStreamName(name string) Option {
+	return func(o *Options) {
+		if o.Stream == nil {
+			o.Stream = &StreamOptions{}
+		}
 		o.Stream.Name = name
+	}
+}
+
+func WithStreamCreate(create bool) Option {
+	return func(o *Options) {
+		if o.Stream == nil {
+			o.Stream = &StreamOptions{}
+		}
 		o.Stream.Create = create
 	}
 }

@@ -2,6 +2,7 @@ package eventsource
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/golly-go/golly"
@@ -13,13 +14,21 @@ type TestAggregate struct {
 	AggregateBase
 
 	ID               string
+	Name             string
 	LastAppliedEvent *Event
 
 	es EventStore
 }
 
-func (ta *TestAggregate) TestEventHandler(event Event) {
-	ta.LastAppliedEvent = &event
+func (ta *TestAggregate) TestEventHandler(evt Event) {
+
+	fmt.Printf("evt: %#v\n", evt)
+
+	switch event := evt.Data.(type) {
+	case testEvent:
+		ta.Name = event.name
+	}
+	ta.LastAppliedEvent = &evt
 }
 
 func (ta *TestAggregate) GetID() string     { return ta.ID }
@@ -127,8 +136,8 @@ func TestRecord(t *testing.T) {
 	}
 
 	mockData := []any{
-		testEvent{Name: "FirstEvent"},
-		testEvent{Name: "SecondEvent"},
+		testEvent{name: "FirstEvent"},
+		testEvent{name: "SecondEvent"},
 	}
 
 	mockAggregate.Record(mockData...)

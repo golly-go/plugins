@@ -128,24 +128,26 @@ func TestEngine_RegisterProjection(t *testing.T) {
 		{
 			name: "NoStreamConfig",
 			setup: func(e *Engine) (Projection, []Option) {
-				return &testProjection{}, []Option{}
+				return &testProjection{}, nil
 			},
-			wantErr: true, // Now we expect an error when no stream config is provided
+			wantErr: true, // Expect error when no stream config is provided
 		},
 		{
 			name: "StreamNotExist_CreateFalse",
 			setup: func(e *Engine) (Projection, []Option) {
 				return &testProjection{}, []Option{
-					WithStream("nonexistent", false, 1),
+					WithStreamName("nonexistent"),
+					WithStreamCreate(false),
 				}
 			},
-			wantErr: true, // Should error when stream doesn't exist and create=false
+			wantErr: true, // Error when stream doesn't exist and create=false
 		},
 		{
 			name: "StreamNotExist_CreateTrue",
 			setup: func(e *Engine) (Projection, []Option) {
 				return &testProjection{}, []Option{
-					WithStream("newStream", true, 1),
+					WithStreamName("newStream"),
+					WithStreamCreate(true),
 				}
 			},
 			wantErr: false,
@@ -153,13 +155,12 @@ func TestEngine_RegisterProjection(t *testing.T) {
 		{
 			name: "ExistingStream",
 			setup: func(e *Engine) (Projection, []Option) {
-				// Pre-create the stream
 				e.streams.RegisterStream(NewStream(StreamOptions{
 					Name:   "existing",
 					Create: true,
 				}))
 				return &testProjection{}, []Option{
-					WithStream("existing", false, 1),
+					WithStreamName("existing"),
 				}
 			},
 			wantErr: false,
@@ -169,13 +170,10 @@ func TestEngine_RegisterProjection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			engine := NewEngine(&InMemoryStore{})
-
 			proj, opts := tt.setup(engine)
 
 			err := engine.RegisterProjection(proj, opts...)
-
 			cfg := Options{}
-
 			for _, opt := range opts {
 				opt(&cfg)
 			}
@@ -184,8 +182,6 @@ func TestEngine_RegisterProjection(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
-
-				// Verify stream was created and projection registered
 				stream := engine.Stream(cfg.Stream.Name)
 				assert.NotNil(t, stream)
 			}
@@ -199,6 +195,40 @@ type testProjection struct {
 
 func (p *testProjection) HandleEvent(*golly.Context, Event) error { return nil }
 func (p *testProjection) Reset() error                            { return nil }
+
+func TestEngine_Subscribe(t *testing.T) {
+	engine := NewEngine(&InMemoryStore{})
+
+	tests := []struct {
+		name      string
+		eventType string
+	}{
+		{"SubscribeToOrderCreated", "OrderCreated"},
+		{"SubscribeToOrderUpdated", "OrderUpdated"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := engine.Subscribe(tt.eventType, func(ctx *golly.Context, evt Event) {})
+			assert.NoError(t, err)
+		})
+	}
+}
+
+func TestEngine_ExecuteCommand(t *testing.T) {
+	engine := NewEngine(&InMemoryStore{})
+	ctx := golly.NewContext(context.Background())
+
+	agg := &TestAggregate{ID: "123"}
+	engine.RegisterAggregate(&TestAggregate{}, []any{&testEvent{}})
+
+	cmd := TestCommand{name: "test"}
+	err := engine.Execute(ctx, agg, &cmd)
+
+	assert.NoError(t, err)
+	assert.True(t, cmd.executed)
+	assert.Equal(t, "test", agg.Name)
+}
 
 // ************************************************
 // * Benchmarks
