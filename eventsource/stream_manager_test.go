@@ -31,36 +31,18 @@ func TestStreamManager_GetOrCreateStream(t *testing.T) {
 		expectExists   bool // whether the stream should exist after the call
 	}{
 		{
-			name:           "StreamAlreadyExists_NoAutoCreate",
+			name:           "StreamAlreadyExists",
 			initialStreams: []string{"myStream"},
 			lookupName:     "myStream",
-			autoCreate:     false,
 			expectOk:       true, // it exists
 			expectExists:   true, // remains in the manager
 		},
 		{
-			name:           "StreamNotExist_AutoCreateFalse",
+			name:           "StreamNotExist",
 			initialStreams: []string{"otherStream"},
 			lookupName:     "nonExistent",
-			autoCreate:     false,
-			expectOk:       false, // won't create, so returns ok==false
-			expectExists:   false, // still doesn't exist after call
-		},
-		{
-			name:           "StreamNotExist_AutoCreateTrue",
-			initialStreams: []string{"default"},
-			lookupName:     "newStream",
-			autoCreate:     true,
-			expectOk:       true, // auto-creates => ok==true
-			expectExists:   true, // newStream should exist after call
-		},
-		{
-			name:           "AlreadyExists_AutoCreateTrue",
-			initialStreams: []string{"myStream"},
-			lookupName:     "myStream",
-			autoCreate:     true,
-			expectOk:       true, // already exists => ok==true
-			expectExists:   true, // still exists, no duplication
+			expectOk:       true, // won't create, so returns ok==false
+			expectExists:   true, // still doesn't exist after call
 		},
 	}
 
@@ -69,10 +51,10 @@ func TestStreamManager_GetOrCreateStream(t *testing.T) {
 			sm := NewStreamManager()
 
 			for _, sName := range tc.initialStreams {
-				sm.RegisterStream(NewStream(StreamOptions{Name: sName, NumPartitions: 1, Create: true}))
+				sm.RegisterStream(NewStream(StreamOptions{Name: sName, NumPartitions: 1}))
 			}
 
-			s, err := sm.GetOrCreateStream(StreamOptions{Name: tc.lookupName, Create: tc.autoCreate})
+			s, err := sm.GetOrCreateStream(StreamOptions{Name: tc.lookupName, NumPartitions: 1})
 
 			if tc.expectOk {
 				require.NoError(t, err, "expected no error in test %s", tc.name)

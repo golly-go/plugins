@@ -5,7 +5,6 @@ type Option func(*Options)
 
 type StreamOptions struct {
 	Name          string
-	Create        bool
 	NumPartitions uint32
 	BufferSize    int
 }
@@ -15,31 +14,12 @@ type Options struct {
 	Stream *StreamOptions
 }
 
-func WithStreamPartiions(partitions uint32) Option {
-	return func(o *Options) {
-		if o.Stream == nil {
-			o.Stream = &StreamOptions{}
-		}
-		o.Stream.NumPartitions = partitions
-	}
-}
-
-// WithStreamName specifies a stream name for the projection/event registration.
 func WithStreamName(name string) Option {
 	return func(o *Options) {
 		if o.Stream == nil {
 			o.Stream = &StreamOptions{}
 		}
 		o.Stream.Name = name
-	}
-}
-
-func WithStreamCreate(create bool) Option {
-	return func(o *Options) {
-		if o.Stream == nil {
-			o.Stream = &StreamOptions{}
-		}
-		o.Stream.Create = create
 	}
 }
 

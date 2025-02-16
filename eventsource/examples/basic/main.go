@@ -8,32 +8,64 @@ import (
 	"github.com/golly-go/plugins/eventsource"
 )
 
-// Domain Events
-type OrderCreated struct {
-	ID         string
-	CustomerID string
-	Amount     float64
+// UserCreated event
+type UserCreated struct {
+	ID   string
+	Name string
+}
+
+// User aggregate
+type User struct {
+	eventsource.AggregateBase
+	ID   string
+	Name string
+}
+
+func (u *User) GetID() string {
+	return u.ID
+}
+
+func (u *User) ApplyUserCreated(event UserCreated) {
+	u.ID = event.ID
+	u.Name = event.Name
+}
+
+// CreateUser command
+type CreateUser struct {
+	ID   string
+	Name string
+}
+
+func (c *CreateUser) Perform(ctx *golly.Context, agg eventsource.Aggregate) error {
+	user := agg.(*User)
+	user.Record(eventsource.Event{
+		Type: "UserCreated",
+		Data: UserCreated{
+			ID:   c.ID,
+			Name: c.Name,
+		},
+	})
+	return nil
 }
 
 func main() {
-	// Create engine with an event store
+	// Create engine with in-memory store
 	engine := eventsource.NewEngine(&eventsource.InMemoryStore{})
 
-	// Register event handler
-	engine.Subscribe("orders", "OrderCreated", func(ctx *golly.Context, evt eventsource.Event) {
-		order := evt.Data.(OrderCreated)
-		log.Printf("Order created: %s for customer %s", order.ID, order.CustomerID)
-	})
+	// Register the User aggregate
+	engine.RegisterAggregate(&User{}, []any{UserCreated{}})
 
-	// Send events through the engine
+	// Create a new user
+	user := &User{ID: "user_1"}
+
+	// Execute the CreateUser command
 	ctx := golly.NewContext(context.Background())
+	cmd := &CreateUser{ID: "user_1", Name: "Alice"}
+	if err := engine.Execute(ctx, user, cmd); err != nil {
+		log.Fatalf("Failed to execute command: %v", err)
+	}
 
-	engine.Send(ctx, "orders", eventsource.Event{
-		Type: "OrderCreated",
-		Data: OrderCreated{
-			ID:         "order_123",
-			CustomerID: "cust_456",
-			Amount:     99.99,
-		},
-	})
+	// Print the user state
+	log.Printf("User ID: %s", user.ID)
+	log.Printf("User Name: %s", user.Name)
 }

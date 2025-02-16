@@ -29,7 +29,7 @@ func main() {
 	})
 
 	ctx := golly.NewContext(context.Background())
-	engine.Send(ctx, eventsource.DefaultStreamName, eventsource.Event{
+	engine.Send(ctx, eventsource.Event{
 		Type: "UserAction",
 		Data: map[string]interface{}{
 			"action": "login",

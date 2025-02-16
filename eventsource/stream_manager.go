@@ -24,21 +24,15 @@ func NewStreamManager() *StreamManager {
 func (sm *StreamManager) Get(name string) (*Stream, bool) {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
-
-	s, ok := sm.streams[name]
-	return s, ok
+	stream, exists := sm.streams[name]
+	return stream, exists
 }
 
-func (sm *StreamManager) RegisterStream(s *Stream) *Stream {
+func (sm *StreamManager) RegisterStream(stream *Stream) *Stream {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-
-	if _, exists := sm.streams[s.name]; exists {
-		return s
-	}
-
-	sm.streams[s.name] = s
-	return s
+	sm.streams[stream.Name()] = stream
+	return stream
 }
 
 // SendTo sends an event to a specific named stream.
@@ -73,7 +67,6 @@ func (sm *StreamManager) getStreams() []*Stream {
 
 func (sm *StreamManager) GetOrCreateStream(opts StreamOptions) (*Stream, error) {
 	sm.mu.RLock()
-
 	if opts.Name == "" {
 		sm.mu.RUnlock()
 		return nil, errors.New("stream name cannot be empty")
@@ -85,10 +78,6 @@ func (sm *StreamManager) GetOrCreateStream(opts StreamOptions) (*Stream, error) 
 	}
 	sm.mu.RUnlock()
 
-	if !opts.Create {
-		return nil, errors.New("stream does not exist and create=false")
-	}
-
 	if opts.NumPartitions == 0 {
 		opts.NumPartitions = defaultPartitions
 	}
@@ -97,17 +86,15 @@ func (sm *StreamManager) GetOrCreateStream(opts StreamOptions) (*Stream, error) 
 		opts.BufferSize = defaultQueueSize
 	}
 
-	stream := sm.RegisterStream(NewStream(opts))
-	return stream, nil
+	return sm.RegisterStream(NewStream(opts)), nil
 }
 
-func (sm *StreamManager) RegisterProjection(streamName string, autoCreate bool, proj Projection) error {
-
+func (sm *StreamManager) RegisterProjection(streamName string, proj Projection) error {
 	if streamName == "" {
 		return errors.New("stream name cannot be empty")
 	}
 
-	stream, err := sm.GetOrCreateStream(StreamOptions{Name: streamName, Create: autoCreate})
+	stream, err := sm.GetOrCreateStream(StreamOptions{Name: streamName})
 	if err != nil {
 		return err
 	}

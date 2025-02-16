@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
-	"sync"
 	"time"
 
 	"github.com/golly-go/golly"
@@ -13,90 +11,61 @@ import (
 	"github.com/google/uuid"
 )
 
-// OrderCreated represents a new order event
+// OrderCreated event
 type OrderCreated struct {
 	ID         string
 	CustomerID string
 	Amount     float64
 }
 
-// OrderSummary is a projection that maintains order statistics
+// OrderSummary projection
 type OrderSummary struct {
 	eventsource.ProjectionBase
-	mu sync.RWMutex
-
+	CustomerCounts map[string]int
 	TotalOrders    int
 	TotalAmount    float64
-	CustomerCounts map[string]int
 }
 
-func (*OrderSummary) EventTypes() []string {
-	return []string{"OrderCreated"}
-}
-
-func (o *OrderSummary) HandleEvent(ctx *golly.Context, evt eventsource.Event) error {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-
-	switch event := evt.Data.(type) {
+func (os *OrderSummary) HandleEvent(ctx *golly.Context, evt eventsource.Event) error {
+	switch e := evt.Data.(type) {
 	case OrderCreated:
-		o.TotalOrders++
-		o.TotalAmount += event.Amount
-		o.CustomerCounts[event.CustomerID]++
+		os.TotalOrders++
+		os.TotalAmount += e.Amount
+		os.CustomerCounts[e.CustomerID]++
 	}
-	return nil
-}
-
-func (o *OrderSummary) Reset() error {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-
-	o.TotalOrders = 0
-	o.TotalAmount = 0
-	o.CustomerCounts = make(map[string]int)
 	return nil
 }
 
 func main() {
-	// Create engine with store
+	// Create engine with in-memory store
 	engine := eventsource.NewEngine(&eventsource.InMemoryStore{})
 
-	engine.Start()
-	defer engine.Stop()
-
-	// Create and register projection
+	// Create and register the OrderSummary projection
 	summary := &OrderSummary{
 		CustomerCounts: make(map[string]int),
 	}
+	engine.RegisterProjection(summary, eventsource.WithStreamName("orders"))
 
-	// Register projection with stream option
-	err := engine.RegisterProjection(summary, eventsource.WithStream("orders", true, 1))
-	if err != nil {
-		log.Fatalf("Failed to register projection: %v", err)
-	}
-
-	for i := 1; i < 123; i++ {
-		// Send events through engine
-		err = engine.Send(golly.NewContext(context.Background()), "orders", eventsource.Event{
-			AggregateID:   uuid.New().String(),
-			GlobalVersion: int64(i),
-			Type:          "OrderCreated",
-			Data:          OrderCreated{ID: fmt.Sprintf("order_%d", i), CustomerID: fmt.Sprintf("cust_%d", i%20), Amount: float64(i) * 1.13},
-		})
-
-		if err != nil {
-			log.Fatalf("Failed to send event: %v", err)
-			os.Exit(1)
+	// Send some events
+	for i := 1; i <= 10; i++ {
+		evt := eventsource.Event{
+			ID:          uuid.New(),
+			Type:        "OrderCreated",
+			AggregateID: uuid.New().String(),
+			Data: OrderCreated{
+				ID:         uuid.New().String(),
+				CustomerID: fmt.Sprintf("cust_%d", i%3),
+				Amount:     float64(i) * 10.0,
+			},
 		}
+		engine.Send(golly.NewContext(context.Background()), evt)
 	}
 
-	// Add a small delay to allow processing
+	// Allow time for processing
 	time.Sleep(100 * time.Millisecond)
 
-	// Print current state (in production you'd want proper synchronization here)
-	summary.mu.RLock()
+	// Print the projection state
 	log.Printf("Total Orders: %d", summary.TotalOrders)
 	log.Printf("Total Amount: %.2f", summary.TotalAmount)
 	log.Printf("Customer Counts: %v", summary.CustomerCounts)
-	summary.mu.RUnlock()
 }

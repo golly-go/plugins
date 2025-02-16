@@ -130,34 +130,22 @@ func TestEngine_RegisterProjection(t *testing.T) {
 			setup: func(e *Engine) (Projection, []Option) {
 				return &testProjection{}, nil
 			},
-			wantErr: true, // Expect error when no stream config is provided
+			wantErr: false, // No error should use the default stream
 		},
 		{
-			name: "StreamNotExist_CreateFalse",
+			name: "StreamNotExist",
 			setup: func(e *Engine) (Projection, []Option) {
 				return &testProjection{}, []Option{
 					WithStreamName("nonexistent"),
-					WithStreamCreate(false),
 				}
 			},
-			wantErr: true, // Error when stream doesn't exist and create=false
-		},
-		{
-			name: "StreamNotExist_CreateTrue",
-			setup: func(e *Engine) (Projection, []Option) {
-				return &testProjection{}, []Option{
-					WithStreamName("newStream"),
-					WithStreamCreate(true),
-				}
-			},
-			wantErr: false,
+			wantErr: false, // Stream will be auto-created
 		},
 		{
 			name: "ExistingStream",
 			setup: func(e *Engine) (Projection, []Option) {
 				e.streams.RegisterStream(NewStream(StreamOptions{
-					Name:   "existing",
-					Create: true,
+					Name: "existing",
 				}))
 				return &testProjection{}, []Option{
 					WithStreamName("existing"),
@@ -182,7 +170,9 @@ func TestEngine_RegisterProjection(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
-				stream := engine.Stream(cfg.Stream.Name)
+
+				stream := engine.Stream(streamName(cfg.Stream))
+
 				assert.NotNil(t, stream)
 			}
 		})
@@ -200,17 +190,24 @@ func TestEngine_Subscribe(t *testing.T) {
 	engine := NewEngine(&InMemoryStore{})
 
 	tests := []struct {
-		name      string
-		eventType string
+		name       string
+		eventType  string
+		streamName string
+		wantErr    bool
 	}{
-		{"SubscribeToOrderCreated", "OrderCreated"},
-		{"SubscribeToOrderUpdated", "OrderUpdated"},
+		{"SubscribeToOrderCreated", "OrderCreated", DefaultStreamName, false},
+		{"SubscribeToOrderUpdated", "OrderUpdated", DefaultStreamName, false},
+		{"SubscribeToOrderUpdated", "OrderUpdated", "orders", true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := engine.Subscribe(tt.eventType, func(ctx *golly.Context, evt Event) {})
-			assert.NoError(t, err)
+			err := engine.Subscribe(tt.eventType, func(ctx *golly.Context, evt Event) {}, WithStreamName(tt.streamName))
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
 		})
 	}
 }
@@ -219,11 +216,11 @@ func TestEngine_ExecuteCommand(t *testing.T) {
 	engine := NewEngine(&InMemoryStore{})
 	ctx := golly.NewContext(context.Background())
 
-	agg := &TestAggregate{ID: "123"}
-	engine.RegisterAggregate(&TestAggregate{}, []any{&testEvent{}})
+	agg := TestAggregate{ID: "123"}
+	engine.RegisterAggregate(&TestAggregate{}, []any{testEvent{}})
 
 	cmd := TestCommand{name: "test"}
-	err := engine.Execute(ctx, agg, &cmd)
+	err := engine.Execute(ctx, &agg, &cmd)
 
 	assert.NoError(t, err)
 	assert.True(t, cmd.executed)

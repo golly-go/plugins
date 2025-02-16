@@ -182,3 +182,10 @@ func resolveName(obj any) (name string) {
 	}
 	return
 }
+
+func streamName(cfg *StreamOptions) string {
+	if cfg == nil {
+		return DefaultStreamName
+	}
+	return cfg.Name
+}

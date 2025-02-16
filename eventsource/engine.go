@@ -9,6 +9,12 @@ import (
 	"github.com/google/uuid"
 )
 
+var (
+	defaultStreamOptions = StreamOptions{
+		Name: DefaultStreamName,
+	}
+)
+
 // Engine is the main entry point for your event-sourced system.
 // It contains:
 //   - An EventStore for persistence
@@ -42,7 +48,7 @@ func NewEngine(store EventStore) *Engine {
 		aggregates:  NewAggregateRegistry(),
 	}
 	// Register the default stream
-	eng.streams.RegisterStream(NewStream(StreamOptions{Name: DefaultStreamName}))
+	eng.streams.RegisterStream(NewStream(defaultStreamOptions))
 	return eng
 }
 
@@ -101,10 +107,8 @@ func (eng *Engine) RegisterProjection(proj Projection, opts ...Option) error {
 	}
 
 	if options.Stream == nil {
-		return fmt.Errorf("stream options required")
+		options.Stream = &defaultStreamOptions
 	}
-
-	// Create or get stream with proper configuration
 
 	stream, err := eng.streams.GetOrCreateStream(*options.Stream)
 	if err != nil {
@@ -112,11 +116,8 @@ func (eng *Engine) RegisterProjection(proj Projection, opts ...Option) error {
 	}
 
 	eng.projections.Register(proj)
-
-	// Register projection with stream
 	stream.Project(proj)
 
-	// Start stream if engine is running
 	eng.mu.RLock()
 	if eng.running {
 		stream.Start()
@@ -134,8 +135,6 @@ func (eng *Engine) RegisterProjection(proj Projection, opts ...Option) error {
 func (eng *Engine) CommitAggregateChanges(ctx *golly.Context, agg Aggregate) error {
 	changes := agg.Changes().Uncommitted()
 
-	//    If you store the global version in memory, you can track it in the repository.
-	//    Or you can get the max from eng.store.GlobalVersion(ctx) if needed.
 	for i := range changes {
 		changes[i].GlobalVersion = eng.incrementGlobalVersion()
 	}
@@ -145,7 +144,6 @@ func (eng *Engine) CommitAggregateChanges(ctx *golly.Context, agg Aggregate) err
 	}
 
 	eng.streams.Send(ctx, changes...)
-
 	agg.Changes().MarkComplete()
 
 	return nil
@@ -163,7 +161,6 @@ func (eng *Engine) Execute(ctx *golly.Context, agg Aggregate, cmd Command) (err 
 		}
 	}
 
-	// Perform the given command on the aggregate
 	if err = cmd.Perform(ctx, agg); err != nil {
 		return handleExecutionError(ctx, agg, cmd, err)
 	}
@@ -296,6 +293,7 @@ func (eng *Engine) SubscribeToStream(streamName, eventType string, handler func(
 	if !ok {
 		return fmt.Errorf("stream %s not found", streamName)
 	}
+
 	stream.Subscribe(eventType, handler)
 	return nil
 }
@@ -316,14 +314,8 @@ func (eng *Engine) SubscribeAggregate(streamName string, aggregateType string, h
 }
 
 // Send dispatches events to the appropriate stream
-func (eng *Engine) Send(ctx *golly.Context, streamName string, events ...Event) error {
-	stream, ok := eng.streams.Get(streamName)
-	if !ok {
-		return fmt.Errorf("stream %s not found", streamName)
-	}
-
-	// Then dispatch to stream
-	return stream.Send(ctx, events...)
+func (eng *Engine) Send(ctx *golly.Context, events ...Event) {
+	eng.streams.Send(ctx, events...)
 }
 
 // Start starts all streams and begins processing events
