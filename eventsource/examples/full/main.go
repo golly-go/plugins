@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
-	"log"
+	"fmt"
+	"os"
+	"time"
 
 	"github.com/golly-go/golly"
 	"github.com/golly-go/plugins/eventsource"
@@ -25,19 +27,37 @@ func (o *Order) GetID() string {
 	return o.ID
 }
 
-func (o *Order) ApplyOrderCreated(event OrderCreated) {
+func (o *Order) OrderCreatedHandler(evt eventsource.Event) {
+	event := evt.Data.(OrderCreated)
+
+	fmt.Printf("OrderCreatedHandler: %#v\n", event)
+
 	o.ID = event.ID
 	o.Amount = event.Amount
 }
 
+// or  conversly
+// func (o *Order) Apply(evt eventsource.Event) {
+// 	switch event := evt.Data.(type) {
+// 	case OrderCreated:
+// 		o.ID = event.ID
+// 		o.Amount = event.Amount
+// 	}
+// }
+
 // OrderSummary projection
 type OrderSummary struct {
 	eventsource.ProjectionBase
+
 	TotalOrders int
 	TotalAmount float64
 }
 
-func (os *OrderSummary) HandleEvent(ctx *golly.Context, evt eventsource.Event) error {
+func (*OrderSummary) AggregateTypes() []any {
+	return []any{&Order{}}
+}
+
+func (os *OrderSummary) HandleEvent(evt eventsource.Event) error {
 	switch e := evt.Data.(type) {
 	case OrderCreated:
 		os.TotalOrders++
@@ -52,15 +72,12 @@ type CreateOrder struct {
 	Amount float64
 }
 
-func (c *CreateOrder) Perform(ctx *golly.Context, agg eventsource.Aggregate) error {
-	order := agg.(*Order)
-	order.Record(eventsource.Event{
-		Type: "OrderCreated",
-		Data: OrderCreated{
-			ID:     c.ID,
-			Amount: c.Amount,
-		},
+func (c CreateOrder) Perform(ctx *golly.Context, agg eventsource.Aggregate) error {
+	agg.Record(OrderCreated{
+		ID:     c.ID,
+		Amount: c.Amount,
 	})
+
 	return nil
 }
 
@@ -68,24 +85,37 @@ func main() {
 	// Create engine with in-memory store
 	engine := eventsource.NewEngine(&eventsource.InMemoryStore{})
 
+	engine.Start()
+	defer engine.Stop()
+
 	// Register the Order aggregate
 	engine.RegisterAggregate(&Order{}, []any{OrderCreated{}})
 
 	// Create and register the OrderSummary projection
 	summary := &OrderSummary{}
-	engine.RegisterProjection(summary, eventsource.WithStreamName("orders"))
+	engine.RegisterProjection(summary)
 
 	// Create a new order
 	order := &Order{ID: "order_1"}
 
 	// Execute the CreateOrder command
 	ctx := golly.NewContext(context.Background())
-	cmd := &CreateOrder{ID: "order_1", Amount: 100.0}
+
+	cmd := CreateOrder{ID: "order_1", Amount: 100.0}
+
 	if err := engine.Execute(ctx, order, cmd); err != nil {
-		log.Fatalf("Failed to execute command: %v", err)
+		fmt.Printf("Failed to execute command: %v", err)
+		os.Exit(1)
 	}
 
+	time.Sleep(time.Millisecond * 100)
+
+	fmt.Println("Aggregate")
+	fmt.Printf("OrderID: %#v\n", order.ID)
+	fmt.Printf("Amount: %#v\n", order.Amount)
+
+	fmt.Println("Projection")
 	// Print the projection state
-	log.Printf("Total Orders: %d", summary.TotalOrders)
-	log.Printf("Total Amount: %.2f", summary.TotalAmount)
+	fmt.Printf("Total Orders: %d\n", summary.TotalOrders)
+	fmt.Printf("Total Amount: %.2f\n", summary.TotalAmount)
 }

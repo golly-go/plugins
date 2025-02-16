@@ -21,19 +21,11 @@ type BaseProjection interface {
 }
 
 type AggregateProjection interface {
-	BaseProjection
-	AggregateTypes() []string
+	AggregateTypes() []any
 }
 
 type EventProjection interface {
-	BaseProjection
-	EventTypes() []string
-}
-
-// Optional combined interface for projections that handle both
-type CombinedProjection interface {
-	AggregateProjection
-	EventProjection
+	EventTypes() []any
 }
 
 type IDdProjection interface {
@@ -41,7 +33,7 @@ type IDdProjection interface {
 }
 
 type Projection interface {
-	HandleEvent(*golly.Context, Event) error
+	HandleEvent(Event) error
 	// Position returns the last known position in the global event stream.
 	Position() int64
 	SetPosition(pos int64) error
@@ -54,10 +46,6 @@ type Projection interface {
 type ProjectionBase struct {
 	position int64 // concurrency-safe via atomic
 }
-
-// Defaults: no filtering
-func (p *ProjectionBase) AggregateTypes() []string { return nil }
-func (p *ProjectionBase) EventTypes() []string     { return nil }
 
 // Position/SetPosition with atomic
 func (p *ProjectionBase) Position() int64 {
@@ -149,7 +137,7 @@ func (pm *ProjectionManager) RunToEnd(ctx *golly.Context, eng *Engine, projID st
 	var lastError error
 	err := eng.LoadEvents(ctx, 100, func(events []Event) error {
 		for _, evt := range events {
-			if err := proj.HandleEvent(ctx, evt); err != nil {
+			if err := proj.HandleEvent(evt); err != nil {
 				lastError = err
 				proj.SetPosition(-1) // Mark as failed
 				return nil           // Stop processing but don't fail other projections
@@ -182,16 +170,7 @@ func (pm *ProjectionManager) processProjection(
 		// Continue processing
 	}
 
-	var aggregateTypes []string
-	var eventTypes []string
-
-	if et, ok := p.(EventProjection); ok {
-		eventTypes = et.EventTypes()
-	}
-
-	if at, ok := p.(AggregateProjection); ok {
-		aggregateTypes = at.AggregateTypes()
-	}
+	aggregateTypes, eventTypes := projectionSteamConfig(p)
 
 	// Build the filter from projection
 	filter := EventFilter{
@@ -207,7 +186,7 @@ func (pm *ProjectionManager) processProjection(
 
 		for i := range events {
 			e := events[i]
-			if err := p.HandleEvent(ctx, e); err != nil {
+			if err := p.HandleEvent(e); err != nil {
 				return err
 			}
 		}
@@ -225,12 +204,21 @@ func projectionKey(p Projection) string {
 
 func projectionSteamConfig(p Projection) (aggs []string, evts []string) {
 	if at, ok := p.(AggregateProjection); ok {
-		aggs = at.AggregateTypes()
+		aggs = golly.Map(at.AggregateTypes(), resolveInterfaceName)
 	}
 
 	if et, ok := p.(EventProjection); ok {
-		evts = et.EventTypes()
+		evts = golly.Map(et.EventTypes(), resolveInterfaceName)
 	}
 
 	return
+}
+
+func resolveInterfaceName(obj any) string {
+	switch o := obj.(type) {
+	case string:
+		return o
+	default:
+		return ObjectName(o)
+	}
 }

@@ -2,7 +2,6 @@ package eventsource
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/golly-go/golly"
@@ -21,8 +20,6 @@ type TestAggregate struct {
 }
 
 func (ta *TestAggregate) TestEventHandler(evt Event) {
-
-	fmt.Printf("evt: %#v\n", evt)
 
 	switch event := evt.Data.(type) {
 	case testEvent:

@@ -18,7 +18,6 @@ func TestGetStreams(t *testing.T) {
 	if len(result) != 2 {
 		t.Errorf("expected 2 streams, got %d", len(result))
 	}
-
 }
 
 func TestStreamManager_GetOrCreateStream(t *testing.T) {
@@ -69,11 +68,20 @@ func TestStreamManager_GetOrCreateStream(t *testing.T) {
 				// We expected ok==true, so we should have a non-nil stream
 				require.NotNil(t, s, "stream should not be nil when ok=true")
 				// optional: confirm the name matches
-				assert.Equal(t, tc.lookupName, s.name, "stream name mismatch")
+				assert.Equal(t, tc.lookupName, s.Name(), "stream name mismatch")
 			}
 
 			_, existsInMap := sm.Get(tc.lookupName)
 			assert.Equal(t, tc.expectExists, existsInMap, "stream existence mismatch")
 		})
+	}
+}
+
+func BenchmarkStreamManager_GetOrCreateStream(b *testing.B) {
+	sm := NewStreamManager()
+	sm.RegisterStream(NewStream(StreamOptions{Name: "existingStream", NumPartitions: 1}))
+
+	for i := 0; i < b.N; i++ {
+		_, _ = sm.GetOrCreateStream(StreamOptions{Name: "existingStream", NumPartitions: 1})
 	}
 }

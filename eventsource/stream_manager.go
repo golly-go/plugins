@@ -2,9 +2,8 @@ package eventsource
 
 import (
 	"errors"
+	"fmt"
 	"sync"
-
-	"github.com/golly-go/golly"
 )
 
 // StreamManager manages multiple streams and coordinates dispatch.
@@ -36,21 +35,21 @@ func (sm *StreamManager) RegisterStream(stream *Stream) *Stream {
 }
 
 // SendTo sends an event to a specific named stream.
-func (sm *StreamManager) SendTo(gctx *golly.Context, streamName string, event Event) {
+func (sm *StreamManager) SendTo(streamName string, event Event) {
 	sm.mu.RLock()
 	stream, ok := sm.streams[streamName]
 	sm.mu.RUnlock()
 
 	if ok {
-		stream.Send(gctx, event)
+		stream.Send(event)
 	}
 }
 
 // Send sends an event to all streams.
-func (sm *StreamManager) Send(gctx *golly.Context, events ...Event) {
+func (sm *StreamManager) Send(events ...Event) {
 	streams := sm.getStreams()
-	for _, s := range streams {
-		s.Send(gctx, events...)
+	for pos := range streams {
+		streams[pos].Send(events...)
 	}
 }
 
@@ -66,12 +65,11 @@ func (sm *StreamManager) getStreams() []*Stream {
 }
 
 func (sm *StreamManager) GetOrCreateStream(opts StreamOptions) (*Stream, error) {
-	sm.mu.RLock()
 	if opts.Name == "" {
-		sm.mu.RUnlock()
 		return nil, errors.New("stream name cannot be empty")
 	}
 
+	sm.mu.RLock()
 	if stream, exists := sm.Get(opts.Name); exists {
 		sm.mu.RUnlock()
 		return stream, nil
@@ -89,16 +87,36 @@ func (sm *StreamManager) GetOrCreateStream(opts StreamOptions) (*Stream, error) 
 	return sm.RegisterStream(NewStream(opts)), nil
 }
 
-func (sm *StreamManager) RegisterProjection(streamName string, proj Projection) error {
-	if streamName == "" {
-		return errors.New("stream name cannot be empty")
+func (sm *StreamManager) RegisterProjection(proj Projection, opts ...Option) error {
+
+	options := &Options{}
+	for _, opt := range opts {
+		opt(options)
 	}
 
-	stream, err := sm.GetOrCreateStream(StreamOptions{Name: streamName})
+	if options.Stream == nil {
+		options.Stream = &defaultStreamOptions
+	}
+
+	fmt.Printf("Registering projection for stream: %s\n", options.Stream.Name)
+
+	stream, err := sm.GetOrCreateStream(*options.Stream)
 	if err != nil {
 		return err
 	}
 
 	stream.Project(proj)
 	return nil
+}
+
+func (sm *StreamManager) Start() {
+	for _, s := range sm.streams {
+		s.Start()
+	}
+}
+
+func (sm *StreamManager) Stop() {
+	for _, s := range sm.streams {
+		s.Stop()
+	}
 }

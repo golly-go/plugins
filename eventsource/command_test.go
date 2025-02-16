@@ -3,7 +3,6 @@ package eventsource
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/golly-go/golly"
@@ -21,8 +20,6 @@ func (m *TestCommand) Perform(ctx *golly.Context, agg Aggregate) error {
 	if m.performErr != nil {
 		return m.performErr
 	}
-
-	fmt.Printf("Perform: %s\n", m.name)
 
 	agg.Record(testEvent{name: m.name})
 

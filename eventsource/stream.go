@@ -16,7 +16,7 @@ const (
 	DefaultStreamName = "default"
 )
 
-type StreamHandler func(*golly.Context, Event)
+type StreamHandler func(Event)
 
 // Stream represents a single in-memory event stream with subscriptions.
 type Stream struct {
@@ -25,7 +25,7 @@ type Stream struct {
 
 	handlers     map[string][]StreamHandler // eventType -> list of handler funcs
 	aggregations map[string][]StreamHandler // Aggregations
-	queue        *streamQueue               // Per-stream queue
+	queue        *StreamQueue               // Per-stream queue
 	started      bool
 }
 
@@ -37,7 +37,7 @@ func NewStream(opts StreamOptions) *Stream {
 		aggregations: make(map[string][]StreamHandler),
 	}
 
-	s.queue = newStreamQueue(StreamQueueConfig{
+	s.queue = NewStreamQueue(StreamQueueConfig{
 		NumPartitions: opts.NumPartitions,
 		BufferSize:    opts.BufferSize,
 		Handler:       s.handleStreamEvent,
@@ -52,13 +52,13 @@ func (s *Stream) Name() string {
 }
 
 // Send dispatches events to the stream's queue
-func (s *Stream) Send(gctx *golly.Context, events ...Event) error {
+func (s *Stream) Send(events ...Event) error {
 	if len(events) == 0 {
 		return nil
 	}
 
 	for _, evt := range events {
-		if err := s.queue.enqueue(gctx, evt); err != nil {
+		if err := s.queue.Enqueue(evt); err != nil {
 			return fmt.Errorf("failed to enqueue event: %w", err)
 		}
 	}
@@ -75,16 +75,16 @@ func (s *Stream) Start() {
 	s.started = true
 	s.mu.Unlock()
 
-	s.queue.start()
+	s.queue.Start()
 }
 
 // Stop gracefully shuts down event processing
 func (s *Stream) Stop() {
-	s.queue.stop()
+	s.queue.Stop()
 }
 
 // handleStreamEvent processes events for this stream
-func (s *Stream) handleStreamEvent(ctx *golly.Context, event Event) {
+func (s *Stream) handleStreamEvent(event Event) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -94,7 +94,7 @@ func (s *Stream) handleStreamEvent(ctx *golly.Context, event Event) {
 	}
 
 	// Collect all relevant handlers
-	var handlers []StreamHandler
+	var handlers = make([]StreamHandler, 0, 5) // default to 5
 
 	// Event type specific handlers
 	if h, ok := s.handlers[eventType]; ok {
@@ -112,8 +112,8 @@ func (s *Stream) handleStreamEvent(ctx *golly.Context, event Event) {
 	}
 
 	// Process handlers
-	for _, handler := range handlers {
-		handler(ctx, event)
+	for pos := range handlers {
+		handlers[pos](event)
 	}
 }
 
@@ -154,22 +154,30 @@ func (s *Stream) Unsubscribe(eventType string, handler StreamHandler) {
 
 // Project subscribes the projection's aggregates/events to this stream.
 func (s *Stream) Project(proj Projection) {
-	aggs, events := projectionSteamConfig(proj)
+	logger := golly.NewLogger().WithField("stream", s.name)
 
-	for _, agg := range aggs {
-		s.Aggregate(agg, func(ctx *golly.Context, evt Event) {
-			if err := proj.HandleEvent(ctx, evt); err != nil {
-				ctx.Logger().Errorf("cannot process projection %s (%s)", projectionKey(proj), err)
+	handler := func(evt Event) {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Dup().Errorf("Recovered from panic in projection %s: %v", projectionKey(proj), r)
 			}
-		})
+		}()
+
+		if err := proj.HandleEvent(evt); err != nil {
+			logger.Dup().Errorf("cannot process projection %s (%s)", projectionKey(proj), err)
+		}
 	}
 
-	for _, evtType := range events {
-		s.Subscribe(evtType, func(ctx *golly.Context, evt Event) {
-			if err := proj.HandleEvent(ctx, evt); err != nil {
-				ctx.Logger().Errorf("cannot process projection %s (%s)", projectionKey(proj), err)
-			}
-		})
+	aggs, events := projectionSteamConfig(proj)
+
+	logger.Tracef("registering projection %s stream=%s aggs=%d events=%d", projectionKey(proj), s.name, len(aggs), len(events))
+
+	for pos := range aggs {
+		s.Aggregate(aggs[pos], handler)
+	}
+
+	for pos := range events {
+		s.Subscribe(events[pos], handler)
 	}
 }
 

@@ -1,7 +1,6 @@
 package eventsource
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -29,13 +28,15 @@ func TestStreamQueue_Ordering(t *testing.T) {
 				Name:          "test",
 				NumPartitions: 4,
 				BufferSize:    1000,
+				// Possibly set a larger blockedTimeout if you're skipping in the main code
+				// BlockedTimeout: 5 * time.Second,
 			})
-			ctx := golly.NewContext(context.Background())
 
 			var mu sync.Mutex
 			processed := make(map[string][]Event)
 
-			stream.Subscribe("TestEvent", func(ctx *golly.Context, evt Event) {
+			// Subscribe to "TestEvent" and collect them
+			stream.Subscribe("TestEvent", func(evt Event) {
 				mu.Lock()
 				processed[evt.AggregateID] = append(processed[evt.AggregateID], evt)
 				mu.Unlock()
@@ -44,16 +45,19 @@ func TestStreamQueue_Ordering(t *testing.T) {
 			stream.Start()
 			defer stream.Stop()
 
+			// Create aggregate IDs
 			aggregates := make([]string, tt.numAggregates)
 			for i := 0; i < tt.numAggregates; i++ {
 				aggregates[i] = fmt.Sprintf("agg%d", i)
 			}
 
 			var wg sync.WaitGroup
+			// Enqueue events concurrently
 			for _, aggID := range aggregates {
-				for i := 0; i < tt.eventsPerAggregate; i++ {
+				for i := 1; i <= tt.eventsPerAggregate; i++ {
 					wg.Add(1)
 					go func(aggID string, version int) {
+
 						defer wg.Done()
 						evt := Event{
 							ID:          uuid.New(),
@@ -61,31 +65,38 @@ func TestStreamQueue_Ordering(t *testing.T) {
 							AggregateID: aggID,
 							Version:     int64(version),
 						}
-						err := stream.Send(ctx, evt)
+						err := stream.Send(evt) // or Enqueue
 						assert.NoError(t, err)
 					}(aggID, i)
 				}
 			}
 
+			// Wait for all sends to finish
 			wg.Wait()
-			time.Sleep(100 * time.Millisecond)
+
+			// Give the stream time to reorder/process everything
+			time.Sleep(1 * time.Second)
 
 			mu.Lock()
 			defer mu.Unlock()
 
+			// Check that each aggregate received all events in ascending GlobalVersion
 			for _, aggID := range aggregates {
 				events := processed[aggID]
-				assert.Len(t, events, tt.eventsPerAggregate)
+				assert.Len(t, events, tt.eventsPerAggregate,
+					"Should have exactly %d events for %s", tt.eventsPerAggregate, aggID)
 
 				for i := 0; i < len(events)-1; i++ {
-					assert.Less(t, events[i].Version, events[i+1].Version,
-						"Events for aggregate %s are out of order at position %d", aggID, i)
+					if events[i].Version >= events[i+1].Version {
+						t.Errorf("Events for aggregate %s are out of order at position %d", aggID, i)
+					}
 				}
 
+				// Also verify all events for that aggregate stayed on the same partition
 				firstPartition := events[0].partitionID
 				for _, evt := range events {
 					assert.Equal(t, firstPartition, evt.partitionID,
-						"Events for same aggregate should go to same partition")
+						"Events for aggregate %s must stay on the same partition", aggID)
 				}
 			}
 		})
@@ -109,38 +120,62 @@ func TestStreamQueue_Draining(t *testing.T) {
 				NumPartitions: 4,
 				BufferSize:    100,
 			})
-			ctx := golly.NewContext(context.Background())
 
 			var processed sync.Map
 			var count int32
 
-			stream.Subscribe("TestEvent", func(ctx *golly.Context, evt Event) {
+			stream.Subscribe("TestEvent", func(evt Event) {
 				processed.Store(evt.Data.(int), true)
 				atomic.AddInt32(&count, 1)
 			})
 
 			stream.Start()
 
-			for i := 0; i < tt.numEvents; i++ {
-				err := stream.Send(ctx, Event{
-					Type: "TestEvent",
-					Data: i,
+			id, _ := uuid.NewV7()
+			for i := 1; i <= tt.numEvents; i++ {
+				err := stream.Send(Event{
+					AggregateID: id.String(),
+					Type:        "TestEvent",
+					Version:     int64(i),
+					Data:        i,
 				})
 				assert.NoError(t, err)
 			}
 
-			time.Sleep(10 * time.Millisecond)
-
+			time.Sleep(100 * time.Millisecond)
 			stream.Stop()
 
 			assert.Equal(t, tt.expectedCount, atomic.LoadInt32(&count),
 				"All events should be processed during drain")
 
-			err := stream.Send(ctx, Event{
+			err := stream.Send(Event{
 				Type: "TestEvent",
 				Data: tt.numEvents + 1,
 			})
 			assert.ErrorIs(t, err, ErrQueueDraining)
 		})
 	}
+}
+
+func BenchmarkStreamQueue_StartStop(b *testing.B) {
+
+	cfg := StreamQueueConfig{
+		NumPartitions:  4,
+		BufferSize:     1000,
+		BlockedTimeout: 3 * time.Second,
+		Handler:        func(evt Event) {},
+		Logger:         golly.NewLogger(),
+	}
+
+	b.Run("StartStop", func(b *testing.B) {
+
+		b.ResetTimer()
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			stream := NewStreamQueue(cfg)
+
+			stream.Start()
+			stream.Stop()
+		}
+	})
 }

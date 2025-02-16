@@ -128,14 +128,14 @@ func TestEngine_RegisterProjection(t *testing.T) {
 		{
 			name: "NoStreamConfig",
 			setup: func(e *Engine) (Projection, []Option) {
-				return &testProjection{}, nil
+				return &noOpProjection{}, nil
 			},
 			wantErr: false, // No error should use the default stream
 		},
 		{
 			name: "StreamNotExist",
 			setup: func(e *Engine) (Projection, []Option) {
-				return &testProjection{}, []Option{
+				return &noOpProjection{}, []Option{
 					WithStreamName("nonexistent"),
 				}
 			},
@@ -147,7 +147,7 @@ func TestEngine_RegisterProjection(t *testing.T) {
 				e.streams.RegisterStream(NewStream(StreamOptions{
 					Name: "existing",
 				}))
-				return &testProjection{}, []Option{
+				return &noOpProjection{}, []Option{
 					WithStreamName("existing"),
 				}
 			},
@@ -179,13 +179,6 @@ func TestEngine_RegisterProjection(t *testing.T) {
 	}
 }
 
-type testProjection struct {
-	ProjectionBase
-}
-
-func (p *testProjection) HandleEvent(*golly.Context, Event) error { return nil }
-func (p *testProjection) Reset() error                            { return nil }
-
 func TestEngine_Subscribe(t *testing.T) {
 	engine := NewEngine(&InMemoryStore{})
 
@@ -202,7 +195,7 @@ func TestEngine_Subscribe(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := engine.Subscribe(tt.eventType, func(ctx *golly.Context, evt Event) {}, WithStreamName(tt.streamName))
+			err := engine.Subscribe(tt.eventType, func(evt Event) {}, WithStreamName(tt.streamName))
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {

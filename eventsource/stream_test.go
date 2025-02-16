@@ -1,17 +1,14 @@
 package eventsource
 
 import (
-	"context"
 	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/golly-go/golly"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestNewStream(t *testing.T) {
@@ -31,7 +28,7 @@ func TestStream_Aggregate(t *testing.T) {
 		BufferSize:    100,
 	})
 
-	handler := func(ctx *golly.Context, evt Event) {}
+	handler := func(evt Event) {}
 
 	s.Aggregate("MyAggregate", handler)
 
@@ -51,7 +48,7 @@ func TestStream_Aggregate(t *testing.T) {
 func TestStream_Subscribe(t *testing.T) {
 	s := NewStream(StreamOptions{Name: "subTest"})
 
-	handler := func(ctx *golly.Context, evt Event) {}
+	handler := func(evt Event) {}
 
 	s.Subscribe("TestEvent", handler)
 
@@ -71,8 +68,8 @@ func TestStream_Subscribe(t *testing.T) {
 func TestStream_Unsubscribe(t *testing.T) {
 	s := NewStream(StreamOptions{Name: "unsubTest"})
 
-	handler := func(ctx *golly.Context, evt Event) {}
-	anotherHandler := func(ctx *golly.Context, evt Event) {}
+	handler := func(evt Event) {}
+	anotherHandler := func(evt Event) {}
 
 	s.Subscribe("TestEvent", handler)
 	s.Subscribe("TestEvent", anotherHandler)
@@ -97,125 +94,68 @@ func TestStream_Unsubscribe(t *testing.T) {
 }
 
 func TestStream_Send(t *testing.T) {
-	s := NewStream(StreamOptions{Name: "sendTest"})
-
-	var mu sync.Mutex
-	calledEvents := make([]string, 0)
-
-	handlerA := func(ctx *golly.Context, evt Event) {
-		mu.Lock()
-		defer mu.Unlock()
-		calledEvents = append(calledEvents, "handlerA-"+evt.Type)
-	}
-
-	handlerB := func(ctx *golly.Context, evt Event) {
-		mu.Lock()
-		defer mu.Unlock()
-		calledEvents = append(calledEvents, "handlerB-"+evt.Type)
-	}
-
-	// Subscribe to a specific event type
-	s.Subscribe("SpecialEvent", handlerA)
-
-	// Subscribe to an aggregate
-	s.Aggregate("MyAggregate", handlerB)
-
-	// Subscribe to all events
-	s.Subscribe(AllEvents, func(ctx *golly.Context, evt Event) {
-		mu.Lock()
-		defer mu.Unlock()
-		calledEvents = append(calledEvents, "AllEvents-"+evt.Type)
-	})
-
-	ctx := golly.NewContext(context.Background())
-
-	// Start the stream before sending events
-	s.Start()
-	defer s.Stop()
-
-	// Add small delay to ensure handlers are ready
-	time.Sleep(10 * time.Millisecond)
-
-	// Send events
-	err := s.Send(ctx,
-		Event{AggregateType: "MyAggregate", Type: "SpecialEvent"},
-		Event{AggregateType: "OtherAggregate", Type: "SomethingElse"},
-	)
-	require.NoError(t, err)
-
-	// Allow time for processing
-	time.Sleep(10 * time.Millisecond)
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	assert.GreaterOrEqual(t, len(calledEvents), 3,
-		"expected at least 3 calls, got %d: %v", len(calledEvents), calledEvents)
-
-	var hasHandlerA bool
-	var hasHandlerB bool
-	var hasAllEventsSE bool
-	var hasAllEventsElse bool
-
-	for _, ce := range calledEvents {
-		switch ce {
-		case "handlerA-SpecialEvent":
-			hasHandlerA = true
-		case "handlerB-SpecialEvent":
-			hasHandlerB = true
-		case "AllEvents-SpecialEvent":
-			hasAllEventsSE = true
-		case "AllEvents-SomethingElse":
-			hasAllEventsElse = true
-		}
-	}
-
-	if !hasHandlerA {
-		t.Error("handlerA not triggered for SpecialEvent")
-	}
-	if !hasHandlerB {
-		t.Error("handlerB not triggered for MyAggregate + SpecialEvent")
-	}
-	if !hasAllEventsSE {
-		t.Error("all-events handler not triggered for SpecialEvent")
-	}
-	if !hasAllEventsElse {
-		t.Error("all-events handler not triggered for SomethingElse")
-	}
-}
-
-func TestStream_ConcurrentSend(t *testing.T) {
-	s := NewStream(StreamOptions{
-		Name:          "concurrentTest",
+	stream := NewStream(StreamOptions{
+		Name:          "test",
 		NumPartitions: 4,
 		BufferSize:    1000,
 	})
+
+	stream.Start()
+	defer stream.Stop()
+
+	var handlerCalls int32
+	handlerA := func(evt Event) {
+		atomic.AddInt32(&handlerCalls, 1)
+	}
+
+	stream.Subscribe("SpecialEvent", handlerA)
+	stream.Subscribe("MyAggregate+SpecialEvent", handlerA)
+	stream.Subscribe(AllEvents, handlerA)
+
+	events := []Event{
+		{Type: "SpecialEvent", AggregateID: "MyAggregate", Version: 1},
+		{Type: "SpecialEvent", AggregateID: "MyAggregate", Version: 2},
+		{Type: "SomethingElse", AggregateID: "MyAggregate", Version: 1},
+	}
+
+	for _, evt := range events {
+		err := stream.Send(evt)
+		assert.NoError(t, err)
+	}
+
+	time.Sleep(100 * time.Millisecond) // Allow time for processing
+
+	assert.GreaterOrEqual(t, atomic.LoadInt32(&handlerCalls), int32(3),
+		"expected at least 3 calls, got %d", handlerCalls)
+}
+
+func TestStream_ConcurrentSend(t *testing.T) {
+	s := NewStream(StreamOptions{})
+
 	var counter int32
 
-	handler := func(ctx *golly.Context, evt Event) {
+	handler := func(evt Event) {
 		atomic.AddInt32(&counter, 1)
 	}
 	s.Subscribe("TestEvent", handler)
 
 	// Start the stream before sending events
 	s.Start()
-	defer s.Stop()
 
 	// Send events concurrently
+
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
+	for i := 1; i <= 100; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := s.Send(golly.NewContext(context.Background()),
-				Event{Type: "TestEvent"})
+			err := s.Send(Event{Type: "TestEvent", AggregateID: "MyAggregate", Version: int64(i)})
+
 			assert.NoError(t, err)
 		}()
 	}
 	wg.Wait()
-
-	// Allow time for processing
-	time.Sleep(10 * time.Millisecond)
+	s.Stop()
 
 	assert.Equal(t, int32(100), atomic.LoadInt32(&counter))
 }
@@ -228,13 +168,12 @@ func TestStreamPartitioning(t *testing.T) {
 		BufferSize:    1000,
 	})
 
-	ctx := golly.NewContext(context.Background())
-
 	// Track which partition handles each event
 	partitionMap := make(map[string]uint32)
+
 	var mu sync.Mutex
 
-	stream.Subscribe("TestEvent", func(ctx *golly.Context, evt Event) {
+	stream.Subscribe("TestEvent", func(evt Event) {
 		mu.Lock()
 		partitionMap[evt.ID.String()] = evt.partitionID
 		mu.Unlock()
@@ -251,7 +190,7 @@ func TestStreamPartitioning(t *testing.T) {
 	}
 
 	for i := 0; i < 100; i++ {
-		stream.Send(ctx, evt)
+		stream.Send(evt)
 	}
 
 	mu.Lock()

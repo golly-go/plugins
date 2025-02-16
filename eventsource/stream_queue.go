@@ -2,251 +2,316 @@ package eventsource
 
 import (
 	"errors"
-	"sort"
+	"hash/fnv"
 	"sync"
+	"sync/atomic"
+	"time"
 
-	"github.com/cespare/xxhash/v2" // Fast hash algorithm, good for UUIDs
 	"github.com/golly-go/golly"
+	"github.com/sirupsen/logrus"
 )
 
+// --------------------------------------------------
+// ERRORS & CONSTANTS
+// --------------------------------------------------
+
+var ErrQueueDraining = errors.New("queue is draining and not accepting new events")
+
 const (
-	defaultPartitions = 8
+	defaultPartitions = 4
 	defaultQueueSize  = 1000
 )
 
-// aggregatorState tracks the processing state for a single aggregate
+// --------------------------------------------------
+// AGGREGATOR STATE + POOL
+// --------------------------------------------------
+
+// aggregatorState tracks ordering & out-of-order buffering for one aggregate.
 type aggregatorState struct {
-	nextVersion int64               // Next expected version
-	buffer      map[int64]queueItem // Buffered events by version
-	mu          sync.Mutex          // Protects buffer and nextVersion
+	nextVersion  int64
+	blockedSince time.Time
+	buffered     map[int64]Event
 }
 
-func newAggregatorState() *aggregatorState {
-	return &aggregatorState{
-		nextVersion: 0,
-		buffer:      make(map[int64]queueItem),
+// aggregatorStatePool reuses aggregatorState objects to reduce allocations.
+var aggregatorStatePool = sync.Pool{
+	New: func() interface{} {
+		// Pre-initialize a small map to reduce expansions:
+		return &aggregatorState{
+			nextVersion: 1,
+			buffered:    make(map[int64]Event, 8),
+		}
+	},
+}
+
+func acquireAggregatorState() *aggregatorState {
+	agg := aggregatorStatePool.Get().(*aggregatorState)
+	// Reset fields:
+	agg.nextVersion = 1
+	agg.blockedSince = time.Time{}
+	// Clear the map without reallocating:
+	for k := range agg.buffered {
+		delete(agg.buffered, k)
+	}
+	return agg
+}
+
+func releaseAggregatorState(agg *aggregatorState) {
+	aggregatorStatePool.Put(agg)
+}
+
+// --------------------------------------------------
+// PARTITION WORKER
+// --------------------------------------------------
+
+type partitionWorker struct {
+	// Single channel for events; closed on Stop().
+	events chan Event
+
+	// aggregatorMap is only accessed by this partition goroutine => no lock needed
+	aggregatorMap map[string]*aggregatorState
+
+	// user callback
+	handler StreamHandler
+
+	// time-based skipping
+	blockedTimeout time.Duration
+
+	logger *logrus.Logger
+	wg     *sync.WaitGroup
+
+	// drained ensures we only do final draining once
+	drained int32
+}
+
+func newPartitionWorker(
+	bufferSize int,
+	blockedTimeout time.Duration,
+	handler StreamHandler,
+	wg *sync.WaitGroup,
+	logger *logrus.Logger,
+) *partitionWorker {
+	return &partitionWorker{
+		events:         make(chan Event, bufferSize),
+		aggregatorMap:  make(map[string]*aggregatorState, 64),
+		handler:        handler,
+		blockedTimeout: blockedTimeout,
+		logger:         logger,
+		wg:             wg,
 	}
 }
 
-type streamQueue struct {
-	numParts   uint32
-	partitions []chan queueItem
-	handler    StreamHandler
-	done       chan struct{}
-	wg         sync.WaitGroup
-	mu         sync.RWMutex
-	running    bool
+// start spawns the partition worker goroutine
+func (pw *partitionWorker) start() {
+	pw.wg.Add(1)
+	go pw.run()
 }
 
-type queueItem struct {
-	ctx         *golly.Context
-	event       Event
-	partitionID uint32
-}
+// run processes incoming events + a ticker for blocked aggregator checks.
+// This is the ONLY goroutine that touches aggregatorMap => no lock needed.
+func (pw *partitionWorker) run() {
+	defer pw.wg.Done()
 
-// getPartition determines partition using AggregateID for consistent ordering
-func (q *streamQueue) getPartition(evt Event) uint32 {
-	// If no AggregateID, fallback to Type to maintain consistency
-	id := evt.AggregateID
-	if id == "" {
-		id = evt.Type
-	}
-
-	h := xxhash.New()
-	h.WriteString(id)
-	return uint32(h.Sum64() % uint64(q.numParts))
-}
-
-// Allow users to configure number of partitions
-type StreamQueueConfig struct {
-	NumPartitions uint32
-	BufferSize    int
-	Handler       StreamHandler
-}
-
-func newStreamQueue(opts StreamQueueConfig) *streamQueue {
-	if opts.NumPartitions == 0 {
-		opts.NumPartitions = defaultPartitions
-	}
-	if opts.BufferSize == 0 {
-		opts.BufferSize = defaultQueueSize
-	}
-
-	q := &streamQueue{
-		numParts:   opts.NumPartitions,
-		partitions: make([]chan queueItem, opts.NumPartitions),
-		done:       make(chan struct{}),
-		handler:    opts.Handler,
-	}
-
-	// Initialize partition channels
-	for i := range q.partitions {
-		q.partitions[i] = make(chan queueItem, opts.BufferSize)
-	}
-
-	return q
-}
-
-func (q *streamQueue) start() {
-	q.mu.Lock()
-	if q.running {
-		q.mu.Unlock()
-		return
-	}
-	q.running = true
-	q.mu.Unlock()
-
-	for i := range q.partitions {
-		q.wg.Add(1)
-		go func(partID int) {
-			defer q.wg.Done()
-			q.runPartition(partID)
-		}(i)
-	}
-}
-
-func (q *streamQueue) runPartition(partID int) {
-	// Track state for each aggregate in this partition
-	aggregators := make(map[string]*aggregatorState)
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 
 	for {
 		select {
-		case <-q.done:
-			q.drainPartition(partID, aggregators)
-			return
-		case item, ok := <-q.partitions[partID]:
+		case evt, ok := <-pw.events:
 			if !ok {
+				// channel closed -> final drain
+				pw.drain()
 				return
 			}
-			if q.handler == nil {
-				continue
-			}
-			q.processItem(partID, item, aggregators)
+			pw.processEvent(evt)
+
+		case <-ticker.C:
+			pw.checkBlockedAggregators()
 		}
 	}
 }
 
-// processItem handles a single event, managing ordering within its aggregate
-func (q *streamQueue) processItem(partID int, item queueItem, aggregators map[string]*aggregatorState) {
-	aggID := item.event.AggregateID
-	if aggID == "" {
-		// For non-aggregate events, process immediately
-		item.event.partitionID = uint32(partID)
-		q.handler(item.ctx, item.event)
-		return
-	}
-
-	agg, exists := aggregators[aggID]
+// processEvent buffers an event in aggregatorMap, ensures ordering by flush.
+func (pw *partitionWorker) processEvent(evt Event) {
+	agg, exists := pw.aggregatorMap[evt.AggregateID]
 	if !exists {
-		agg = newAggregatorState()
-		aggregators[aggID] = agg
+		agg = acquireAggregatorState()
+		pw.aggregatorMap[evt.AggregateID] = agg
 	}
 
-	agg.mu.Lock()
-	defer agg.mu.Unlock()
-
-	// Buffer the event
-	agg.buffer[item.event.Version] = item
-	q.processBufferedEvents(partID, agg)
+	agg.buffered[evt.Version] = evt
+	pw.flushAggregator(agg)
 }
 
-// processBufferedEvents processes any events that are ready in version order
-func (q *streamQueue) processBufferedEvents(partID int, agg *aggregatorState) {
+// flushAggregator processes consecutive versions from nextVersion upward.
+func (pw *partitionWorker) flushAggregator(agg *aggregatorState) {
 	for {
-		if next, ok := agg.buffer[agg.nextVersion]; ok {
-			next.event.partitionID = uint32(partID)
-			q.handler(next.ctx, next.event)
-			delete(agg.buffer, agg.nextVersion)
-			agg.nextVersion++
-		} else {
-			break
-		}
-	}
-}
-
-// drainPartition processes remaining events in the partition
-func (q *streamQueue) drainPartition(partID int, aggregators map[string]*aggregatorState) {
-	// First drain the channel
-	for {
-		select {
-		case item, ok := <-q.partitions[partID]:
-			if !ok {
-				break
+		e, found := agg.buffered[agg.nextVersion]
+		if !found {
+			// missing => aggregator is blocked
+			if agg.blockedSince.IsZero() {
+				agg.blockedSince = time.Now()
 			}
-			if q.handler != nil {
-				q.processItem(partID, item, aggregators)
+			return
+		}
+		delete(agg.buffered, agg.nextVersion)
+		agg.blockedSince = time.Time{}
+
+		// user-defined handling
+		pw.handler(e)
+		agg.nextVersion++
+	}
+}
+
+// checkBlockedAggregators times out missing versions & calls flush if skipping.
+func (pw *partitionWorker) checkBlockedAggregators() {
+	now := time.Now()
+
+	for _, agg := range pw.aggregatorMap {
+		if agg.blockedSince.IsZero() {
+			continue
+		}
+
+		elapsed := now.Sub(agg.blockedSince)
+		if elapsed > pw.blockedTimeout {
+			// skip missing versions
+			for {
+				_, found := agg.buffered[agg.nextVersion]
+				if found {
+					break
+				}
+				agg.nextVersion++
 			}
-		default:
-			goto drainBuffers
+			agg.blockedSince = time.Time{}
+			pw.flushAggregator(agg)
 		}
-	}
 
-drainBuffers:
-	// Then drain all buffered events
-	for _, agg := range aggregators {
-		agg.mu.Lock()
-		// Process all remaining events in version order
-		versions := make([]int64, 0, len(agg.buffer))
-		for version := range agg.buffer {
-			versions = append(versions, version)
-		}
-		// Sort versions to process in order
-		sort.Slice(versions, func(i, j int) bool {
-			return versions[i] < versions[j]
-		})
-
-		// Process all buffered events
-		for _, version := range versions {
-			item := agg.buffer[version]
-			item.event.partitionID = uint32(partID)
-			q.handler(item.ctx, item.event)
-			delete(agg.buffer, version)
-		}
-		agg.mu.Unlock()
+		// Optionally remove aggregator if empty & flush done... domain choice
+		// if len(agg.buffered) == 0 { ... }
 	}
 }
 
-func (q *streamQueue) enqueue(ctx *golly.Context, evt Event) error {
-	select {
-	case <-q.done:
-		return ErrQueueDraining
-	default:
-		partID := q.getPartition(evt)
-		select {
-		case q.partitions[partID] <- queueItem{
-			ctx:         ctx,
-			event:       evt,
-			partitionID: partID,
-		}:
-			return nil
-		case <-q.done:
-			return ErrQueueDraining
-		}
-	}
-}
-
-func (q *streamQueue) stop() {
-	q.mu.Lock()
-	if !q.running {
-		q.mu.Unlock()
+// drain empties the channel + aggregator states (once).
+func (pw *partitionWorker) drain() {
+	if !atomic.CompareAndSwapInt32(&pw.drained, 0, 1) {
 		return
 	}
-	q.running = false
-	close(q.done)
-	q.mu.Unlock()
 
-	q.wg.Wait()
+	// read leftover events
+	for evt := range pw.events {
+		pw.processEvent(evt)
+	}
 
-	// Close all partition channels
-	for i := range q.partitions {
-		close(q.partitions[i])
+	// final aggregator flush
+	for aggID, agg := range pw.aggregatorMap {
+		pw.flushAggregator(agg)
+		// aggregator is now done - release to pool
+		releaseAggregatorState(agg)
+
+		delete(pw.aggregatorMap, aggID)
 	}
 }
 
-// Errors
-var ErrQueueDraining = errors.New("queue is draining and not accepting new events")
+// --------------------------------------------------
+// STREAM QUEUE
+// --------------------------------------------------
 
-// SetHandler sets the event handler
-func (q *streamQueue) SetHandler(h StreamHandler) {
-	q.handler = h
+type StreamQueue struct {
+	partitions []*partitionWorker
+	numParts   uint32
+	wg         sync.WaitGroup
+	running    int32
+
+	logger *logrus.Logger
+}
+
+type StreamQueueConfig struct {
+	NumPartitions  uint32
+	BufferSize     int
+	BlockedTimeout time.Duration
+	Handler        StreamHandler
+	Logger         *logrus.Logger
+}
+
+// NewStreamQueue constructs the queue with config defaults & spawns partition workers.
+func NewStreamQueue(cfg StreamQueueConfig) *StreamQueue {
+	if cfg.NumPartitions == 0 {
+		cfg.NumPartitions = defaultPartitions
+	}
+	if cfg.BufferSize == 0 {
+		cfg.BufferSize = defaultQueueSize
+	}
+	if cfg.BlockedTimeout == 0 {
+		cfg.BlockedTimeout = 3 * time.Second
+	}
+	if cfg.Logger == nil {
+		cfg.Logger = golly.NewLogger()
+	}
+
+	sq := &StreamQueue{
+		partitions: make([]*partitionWorker, cfg.NumPartitions),
+		numParts:   cfg.NumPartitions,
+		logger:     cfg.Logger,
+	}
+
+	for i := 0; i < int(cfg.NumPartitions); i++ {
+		pw := newPartitionWorker(
+			cfg.BufferSize,
+			cfg.BlockedTimeout,
+			cfg.Handler,
+			&sq.wg,
+			cfg.Logger,
+		)
+		sq.partitions[i] = pw
+	}
+
+	return sq
+}
+
+// Start runs each partition worker goroutine
+func (sq *StreamQueue) Start() {
+	if !atomic.CompareAndSwapInt32(&sq.running, 0, 1) {
+		return
+	}
+
+	for i := range sq.partitions {
+		sq.partitions[i].start()
+	}
+}
+
+// Stop closes each partition's events channel & waits for them to drain.
+func (sq *StreamQueue) Stop() {
+	if !atomic.CompareAndSwapInt32(&sq.running, 1, 0) {
+		return
+	}
+
+	// Close channels => each worker sees EOF, drains, flushes, returns
+	for i := range sq.partitions {
+		close(sq.partitions[i].events)
+	}
+
+	// Wait for all partition goroutines to finish
+	sq.wg.Wait()
+	sq.logger.Trace("All partitions stopped and drained")
+}
+
+// Enqueue inserts an event into the correct partition channel.
+func (sq *StreamQueue) Enqueue(evt Event) error {
+	if atomic.LoadInt32(&sq.running) != 1 {
+		return ErrQueueDraining
+	}
+
+	part := sq.getPartition(evt.AggregateID)
+	sq.partitions[part].events <- evt
+	return nil
+}
+
+// getPartition picks a partition by hashing the AggregateID
+func (sq *StreamQueue) getPartition(aggID string) uint32 {
+	if aggID == "" {
+		aggID = "no-agg-id"
+	}
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(aggID))
+	return h.Sum32() % sq.numParts
 }

@@ -118,10 +118,12 @@ func (eng *Engine) RegisterProjection(proj Projection, opts ...Option) error {
 	eng.projections.Register(proj)
 	stream.Project(proj)
 
-	eng.mu.RLock()
 	if eng.running {
 		stream.Start()
 	}
+
+	eng.mu.RLock()
+
 	eng.mu.RUnlock()
 
 	return nil
@@ -143,7 +145,7 @@ func (eng *Engine) CommitAggregateChanges(ctx *golly.Context, agg Aggregate) err
 		return err
 	}
 
-	eng.streams.Send(ctx, changes...)
+	eng.Send(changes...)
 	agg.Changes().MarkComplete()
 
 	return nil
@@ -274,7 +276,7 @@ func (eng *Engine) RebuildProjection(ctx *golly.Context, projID string) error {
 }
 
 // Subscribe with stream configuration
-func (eng *Engine) Subscribe(eventType string, handler func(ctx *golly.Context, evt Event), opts ...Option) error {
+func (eng *Engine) Subscribe(eventType string, handler StreamHandler, opts ...Option) error {
 	options := &Options{}
 	for _, opt := range opts {
 		opt(options)
@@ -288,7 +290,7 @@ func (eng *Engine) Subscribe(eventType string, handler func(ctx *golly.Context, 
 	return eng.SubscribeToStream(streamName, eventType, handler)
 }
 
-func (eng *Engine) SubscribeToStream(streamName, eventType string, handler func(ctx *golly.Context, evt Event)) error {
+func (eng *Engine) SubscribeToStream(streamName, eventType string, handler StreamHandler) error {
 	stream, ok := eng.streams.Get(streamName)
 	if !ok {
 		return fmt.Errorf("stream %s not found", streamName)
@@ -314,8 +316,8 @@ func (eng *Engine) SubscribeAggregate(streamName string, aggregateType string, h
 }
 
 // Send dispatches events to the appropriate stream
-func (eng *Engine) Send(ctx *golly.Context, events ...Event) {
-	eng.streams.Send(ctx, events...)
+func (eng *Engine) Send(events ...Event) {
+	eng.streams.Send(events...)
 }
 
 // Start starts all streams and begins processing events
@@ -324,11 +326,6 @@ func (eng *Engine) Start() {
 	eng.running = true
 	eng.mu.Unlock()
 
-	// Start all registered streams
-	streams := eng.streams.getStreams()
-	for _, stream := range streams {
-		stream.Start()
-	}
 }
 
 // Stop gracefully shuts down all streams
@@ -337,8 +334,5 @@ func (eng *Engine) Stop() {
 	eng.running = false
 	eng.mu.Unlock()
 
-	streams := eng.streams.getStreams()
-	for _, stream := range streams {
-		stream.Stop()
-	}
+	eng.streams.Stop()
 }
