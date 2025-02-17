@@ -84,6 +84,7 @@ func (pm *ProjectionManager) Rebuild(ctx *golly.Context, eng *Engine, projID str
 	pm.mu.Lock()
 	proj, ok := pm.projections[projID]
 	pm.mu.Unlock()
+
 	if !ok {
 		return fmt.Errorf("projection %s not found", projID)
 	}
@@ -91,6 +92,7 @@ func (pm *ProjectionManager) Rebuild(ctx *golly.Context, eng *Engine, projID str
 	if err := proj.Reset(); err != nil {
 		return err
 	}
+
 	// -1 means no events processed
 	if err := proj.SetPosition(-1); err != nil {
 		return err
@@ -163,6 +165,7 @@ func (pm *ProjectionManager) processProjection(
 		// Continue processing
 	}
 
+	golly.Logger().Tracef("Processing projection %s", resolveInterfaceName(p))
 	aggregateTypes, eventTypes := projectionSteamConfig(p)
 
 	// Build the filter from projection

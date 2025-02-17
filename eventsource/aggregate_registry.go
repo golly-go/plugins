@@ -69,12 +69,13 @@ func (r *AggregateRegistry) Register(agg Aggregate, eventSamples []any) *Aggrega
 		eventName := ObjectName(evtSample)
 
 		unmarshalFn := func(raw any) (any, error) {
-			newVal := reflect.New(evtType.Elem()).Interface()
-			if err := unmarshal(newVal, raw); err != nil {
+			newVal := reflect.New(evtType.Elem())
+
+			if err := unmarshal(newVal.Interface(), raw); err != nil {
 				return nil, err
 			}
 
-			return newVal, nil
+			return newVal.Elem().Interface(), nil
 		}
 
 		marshalFn := func(obj any) ([]byte, error) {
