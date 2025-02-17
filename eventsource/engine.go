@@ -79,8 +79,8 @@ func (eng *Engine) RegisterAggregate(agg Aggregate, events []any) {
 	eng.aggregates.Register(agg, events)
 }
 
-// RebuildProjections rebuilds the projections for the given projection
-func (eng *Engine) RebuildProjections(ctx *golly.Context, projection any) error {
+// RebuildProjection rebuilds a single projection
+func (eng *Engine) RebuildProjection(ctx *golly.Context, projection any) error {
 	return eng.projections.Rebuild(ctx, eng, resolveInterfaceName(projection))
 }
 
@@ -268,11 +268,6 @@ func handleExecutionError(ctx *golly.Context, agg Aggregate, cmd Command, err er
 	}
 
 	return err
-}
-
-// Add method to rebuild specific projections
-func (eng *Engine) RebuildProjection(ctx *golly.Context, projID string) error {
-	return eng.projections.Rebuild(ctx, eng, projID)
 }
 
 // Subscribe with stream configuration
