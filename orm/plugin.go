@@ -26,6 +26,8 @@ func NewOrmPlugin[T any](config ConfigFunc[T]) *OrmPlugin[T] {
 	return &OrmPlugin[T]{config: config}
 }
 
+func (*OrmPlugin[T]) Name() string { return "orm" }
+
 // After allows you to hook on to after the connection is estabilished
 // to enable any gorm specific stuff you want like CTEs etc
 func (p *OrmPlugin[T]) After(handlers ...AfterFunc) *OrmPlugin[T] {

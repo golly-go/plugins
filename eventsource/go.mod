@@ -3,8 +3,7 @@ module github.com/golly-go/plugins/eventsource
 go 1.23.4
 
 require (
-	github.com/cespare/xxhash/v2 v2.3.0
-	github.com/golly-go/golly v0.6.0-rc1.0.20250124104536-2541c03f26a8
+	github.com/golly-go/golly v0.6.0-rc1.0.20250217095431-ff0cf93104aa
 	github.com/google/uuid v1.6.0
 	github.com/segmentio/encoding v0.4.1
 	github.com/spf13/cobra v1.8.1

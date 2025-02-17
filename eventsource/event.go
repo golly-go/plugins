@@ -32,9 +32,9 @@ type Event struct {
 	ID            uuid.UUID   `json:"id"`
 	Kind          EventKind   `json:"kind"`
 	CreatedAt     time.Time   `json:"createdAt"`
-	Type          string      `json:"eventType"`
-	AggregateID   string      `json:"aggregateId"`
-	AggregateType string      `json:"aggregateType"`
+	Type          string      `json:"eventType" gorm:"index:idx_events_type"`
+	AggregateID   string      `json:"aggregateId" gorm:"index:idx_events_aggregate"`
+	AggregateType string      `json:"aggregateType" gorm:"index:idx_events_aggregate"`
 	Version       int64       `json:"version"`
 	GlobalVersion int64       `json:"globalVersion"`
 	State         EventState  `json:"state,omitempty" gorm:"-"`

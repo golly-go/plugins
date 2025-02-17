@@ -2,9 +2,14 @@ package eventsource
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
+)
+
+var (
+	ErrVersionConflict = errors.New("version conflict")
 )
 
 // EventFilter represents criteria for filtering events during retrieval.
