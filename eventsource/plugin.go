@@ -31,47 +31,59 @@ import (
 // 	return nil
 // }
 
+const (
+	PluginName = "eventsource"
+)
+
 // Plugin implements the Plugin interface for the eventsource
-type Plugin struct {
+type EventsourcePlugin struct {
 	config Options
 	engine *Engine
 }
 
 // NewPlugin creates a new Plugin with the given store
-func NewPlugin(store EventStore) *Plugin {
-	return &Plugin{
+func NewPlugin(store EventStore) *EventsourcePlugin {
+	return &EventsourcePlugin{
 		engine: NewEngine(store),
 	}
 }
 
 // Name returns the name of the plugin
-func (p *Plugin) Name() string { return "eventsource" }
+func (p *EventsourcePlugin) Name() string { return PluginName }
 
 // Engine returns the initialized engine
-func (p *Plugin) Engine() *Engine { return p.engine }
+func (p *EventsourcePlugin) Engine() *Engine { return p.engine }
 
 // ConfigureEngine allows additional configuration or usage of the engine
-func (p *Plugin) ConfigureEngine(configure func(*Engine)) *Plugin {
+func (p *EventsourcePlugin) ConfigureEngine(configure func(*Engine)) *EventsourcePlugin {
 	configure(p.engine)
 	return p
 }
 
 // Initialize sets up the engine and starts it
-func (p *Plugin) Initialize(app *golly.Application) error {
+func (p *EventsourcePlugin) Initialize(app *golly.Application) error {
 	p.engine.Start()
 	return nil
 }
 
 // Deinitialize stops the engine
-func (p *Plugin) Deinitialize(app *golly.Application) error {
+func (p *EventsourcePlugin) Deinitialize(app *golly.Application) error {
 	p.engine.Stop()
 	return nil
 }
 
 // Commands returns the list of CLI commands provided by the plugin
-func (p *Plugin) Commands() []*cobra.Command {
+func (p *EventsourcePlugin) Commands() []*cobra.Command {
 	return []*cobra.Command{}
 }
 
 // Ensure Plugin implements the Plugin interface
-var _ golly.Plugin = (*Plugin)(nil)
+var _ golly.Plugin = (*EventsourcePlugin)(nil)
+
+// Plugin returns the eventsource plugin from the application
+func Plugin(app *golly.Application) *EventsourcePlugin {
+	if p, ok := app.Plugins().Get(PluginName).(*EventsourcePlugin); ok {
+		return p
+	}
+	return nil
+}
