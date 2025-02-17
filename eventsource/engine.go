@@ -59,27 +59,39 @@ func (eng *Engine) Stream(name string) *Stream {
 }
 
 // Store returns the underlying event store (if you need direct access)
-func (eng *Engine) Store() EventStore {
-	return eng.store
-}
+func (eng *Engine) Store() EventStore { return eng.store }
 
 // Streams returns the underlying stream manager
-func (eng *Engine) Streams() *StreamManager {
-	return eng.streams
-}
+func (eng *Engine) Streams() *StreamManager { return eng.streams }
 
 // Projections returns the underlying projection manager
-func (eng *Engine) Projections() *ProjectionManager {
-	return eng.projections
-}
+func (eng *Engine) Projections() *ProjectionManager { return eng.projections }
 
+// Aggregates returns the underlying aggregate registry
+func (eng *Engine) Aggregates() *AggregateRegistry { return eng.aggregates }
+
+// nextGlobalVersion returns the next global version
 func (eng *Engine) nextGlobalVersion() (int64, error) {
 	return eng.store.IncrementGlobalVersion(context.Background())
 }
 
-func (eng *Engine) Aggregates() *AggregateRegistry { return eng.aggregates }
 func (eng *Engine) RegisterAggregate(agg Aggregate, events []any) {
 	eng.aggregates.Register(agg, events)
+}
+
+// RebuildProjections rebuilds the projections for the given projection
+func (eng *Engine) RebuildProjections(ctx *golly.Context, projection any) error {
+	return eng.projections.Rebuild(ctx, eng, resolveInterfaceName(projection))
+}
+
+// RunProjectionToEnd runs the projection to the end of the event stream
+func (eng *Engine) RunProjectionToEnd(ctx *golly.Context, projection any) error {
+	return eng.projections.RunToEnd(ctx, eng, resolveInterfaceName(projection))
+}
+
+// RunProjectionOnce runs the projection once
+func (eng *Engine) RunProjectionOnce(ctx *golly.Context, projection any) error {
+	return eng.projections.RunOnce(ctx, eng, resolveInterfaceName(projection))
 }
 
 // RegisterProjection registers a projection with the engine

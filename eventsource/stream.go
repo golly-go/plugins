@@ -174,8 +174,6 @@ func (s *Stream) Project(proj Projection) {
 	aggs, events := projectionSteamConfig(proj)
 
 	logger.Tracef("registering projection %s stream=%s aggs=%d events=%d", projectionKey(proj), s.name, len(aggs), len(events))
-	logger.Tracef("aggs=%v", aggs)
-	logger.Tracef("events=%v", events)
 
 	for pos := range aggs {
 		s.Aggregate(aggs[pos], handler)

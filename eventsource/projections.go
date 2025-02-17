@@ -208,10 +208,16 @@ func projectionSteamConfig(p Projection) (aggs []string, evts []string) {
 }
 
 func resolveInterfaceName(obj any) string {
+
+	if i, ok := obj.(Projection); ok {
+		return projectionKey(i)
+	}
+
 	switch o := obj.(type) {
 	case string:
 		return o
 	default:
+
 		return ObjectName(o)
 	}
 }

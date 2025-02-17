@@ -250,7 +250,7 @@ func NewStreamQueue(cfg StreamQueueConfig) *StreamQueue {
 		cfg.BufferSize = defaultQueueSize
 	}
 	if cfg.BlockedTimeout == 0 {
-		cfg.BlockedTimeout = 3 * time.Second
+		cfg.BlockedTimeout = 1 * time.Second
 	}
 
 	sq := &StreamQueue{
