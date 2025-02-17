@@ -3,7 +3,7 @@ module github.com/golly-go/plugins/orm
 go 1.23.4
 
 require (
-	github.com/golly-go/golly v0.6.0-rc1.0.20250217095431-ff0cf93104aa
+	github.com/golly-go/golly v0.6.0-rc1.0.20250217101121-c2c13f1bdbc9
 	github.com/google/uuid v1.6.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.8.1

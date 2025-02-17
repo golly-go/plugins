@@ -13,8 +13,8 @@ github.com/fsnotify/fsnotify v1.8.0 h1:dAwr6QBTBZIkG8roQaJjGof0pp0EeF+tNV7YBP3F/
 github.com/fsnotify/fsnotify v1.8.0/go.mod h1:8jBTzvmWwFyi3Pb8djgCCO5IBqzKJ/Jwo8TRcHyHii0=
 github.com/go-redis/redis/v8 v8.11.5 h1:AcZZR7igkdvfVmQTPnu9WE37LRrO/YrBH5zWyjDC0oI=
 github.com/go-redis/redis/v8 v8.11.5/go.mod h1:gREzHqY1hg6oD9ngVRbLStwAWKhA0FEgq8Jd4h5lpwo=
-github.com/golly-go/golly v0.6.0-rc1.0.20250217095431-ff0cf93104aa h1:X7uIscqFMi2m5z1VTvgLeHPXYIAE0c7BU31o2vHjuBw=
-github.com/golly-go/golly v0.6.0-rc1.0.20250217095431-ff0cf93104aa/go.mod h1:d5ZWWaeQGFu59ju4Jy7tdh7vQ4WNRFz5Pd1J5Jhq3vI=
+github.com/golly-go/golly v0.6.0-rc1.0.20250217101121-c2c13f1bdbc9 h1:YcpJ1U2BG7ELgNT02oIRfKiaPmRZdeDf0MedaRL221w=
+github.com/golly-go/golly v0.6.0-rc1.0.20250217101121-c2c13f1bdbc9/go.mod h1:d5ZWWaeQGFu59ju4Jy7tdh7vQ4WNRFz5Pd1J5Jhq3vI=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/hashicorp/hcl v1.0.0 h1:0Anlzjpi4vEasTeNFn2mLJgTSwt0+6sfsiTG8qcWGx4=
