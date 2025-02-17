@@ -10,7 +10,7 @@ const (
 )
 
 // AggregateSnapshottedEvent represents a snapshot of the aggregate's state.
-type AggregateSnapshottedEvent struct {
+type AggregateSnapshotted struct {
 	State []byte
 }
 
@@ -22,7 +22,7 @@ func NewSnapshot(aggregate Aggregate) Event {
 		return Event{}
 	}
 
-	snapEvent := AggregateSnapshottedEvent{State: state}
+	snapEvent := AggregateSnapshotted{State: state}
 	event := NewEvent(snapEvent, EventStateApplied, nil)
 
 	event.AggregateID = aggregate.GetID()

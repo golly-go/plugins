@@ -73,25 +73,8 @@ func (eng *Engine) Projections() *ProjectionManager {
 	return eng.projections
 }
 
-func (eng *Engine) LoadGlobalVersion(gctx context.Context) (err error) {
-	eng.globalVersion, err = eng.store.GlobalVersion(gctx)
-	return err
-}
-
-func (eng *Engine) incrementGlobalVersion() int64 {
-	eng.mu.Lock()
-	defer eng.mu.Unlock()
-
-	eng.globalVersion++
-
-	return eng.globalVersion
-}
-
-func (eng *Engine) currentGlobalVersion() int64 {
-	eng.mu.RLock()
-	defer eng.mu.RUnlock()
-
-	return eng.globalVersion
+func (eng *Engine) nextGlobalVersion() (int64, error) {
+	return eng.store.IncrementGlobalVersion(context.Background())
 }
 
 func (eng *Engine) Aggregates() *AggregateRegistry { return eng.aggregates }
@@ -138,14 +121,19 @@ func (eng *Engine) CommitAggregateChanges(ctx *golly.Context, agg Aggregate) err
 	changes := agg.Changes().Uncommitted()
 
 	for i := range changes {
-		changes[i].GlobalVersion = eng.incrementGlobalVersion()
+		version, err := eng.nextGlobalVersion()
+		if err != nil {
+			return err
+		}
+
+		changes[i].GlobalVersion = version
 	}
 
 	if err := eng.store.Save(ctx, changes.Ptr()...); err != nil {
 		return err
 	}
 
-	eng.Send(changes...)
+	eng.Send(ctx, changes...)
 	agg.Changes().MarkComplete()
 
 	return nil
@@ -316,20 +304,26 @@ func (eng *Engine) SubscribeAggregate(streamName string, aggregateType string, h
 }
 
 // Send dispatches events to the appropriate stream
-func (eng *Engine) Send(events ...Event) {
-	eng.streams.Send(events...)
+func (eng *Engine) Send(ctx *golly.Context, events ...Event) {
+	eng.streams.Send(ctx, events...)
 }
 
 // Start starts all streams and begins processing events
 func (eng *Engine) Start() {
+	golly.Logger().Tracef("Starting engine")
+
 	eng.mu.Lock()
 	eng.running = true
 	eng.mu.Unlock()
+
+	eng.streams.Start()
 
 }
 
 // Stop gracefully shuts down all streams
 func (eng *Engine) Stop() {
+	golly.Logger().Tracef("Stopping engine")
+
 	eng.mu.Lock()
 	eng.running = false
 	eng.mu.Unlock()

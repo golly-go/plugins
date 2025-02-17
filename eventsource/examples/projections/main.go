@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/golly-go/golly"
 	"github.com/golly-go/plugins/eventsource"
 	"github.com/google/uuid"
 )
@@ -25,7 +26,7 @@ type OrderSummary struct {
 	TotalAmount    float64
 }
 
-func (os *OrderSummary) HandleEvent(evt eventsource.Event) error {
+func (os *OrderSummary) HandleEvent(ctx *golly.Context, evt eventsource.Event) error {
 	switch e := evt.Data.(type) {
 	case OrderCreated:
 		os.TotalOrders++
@@ -72,7 +73,7 @@ func main() {
 		})
 	}
 
-	engine.Send(events...)
+	engine.Send(golly.NewContext(nil), events...)
 
 	// Wait for the projection to process the events
 	// we could just call stop and let the engine handle it

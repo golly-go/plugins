@@ -41,9 +41,6 @@ type EventStore interface {
 	// if handler returns error processing is stopped (These is expected to return in order of GlobalVersion)
 	LoadEventsInBatches(ctx context.Context, batchSize int, handler func([]PersistedEvent) error, filters ...EventFilter) error
 
-	// Loads the global version from the evnetstore to prime the deck
-	GlobalVersion(context.Context) (int64, error)
-
 	// IsNewEvent checks if an event is new by inspecting its metadata (e.g., ID, version).
 	IsNewEvent(event Event) bool
 
@@ -58,6 +55,11 @@ type EventStore interface {
 
 	// LoadSnapshot retrieves the latest snapshot of an aggregate for faster loading.
 	LoadSnapshot(ctx context.Context, aggregateType, aggregateID string) (PersistedEvent, error)
+
+	IncrementGlobalVersion(ctx context.Context) (int64, error)
+
+	// Lock(Aggregate) error
+	// Unlock(Aggregate) error
 
 	// Hydrate(repo *EventRepository, event any) (Event, error)
 }

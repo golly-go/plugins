@@ -36,7 +36,7 @@ func TestStreamQueue_Ordering(t *testing.T) {
 			processed := make(map[string][]Event)
 
 			// Subscribe to "TestEvent" and collect them
-			stream.Subscribe("TestEvent", func(evt Event) {
+			stream.Subscribe("TestEvent", func(ctx *golly.Context, evt Event) {
 				mu.Lock()
 				processed[evt.AggregateID] = append(processed[evt.AggregateID], evt)
 				mu.Unlock()
@@ -65,7 +65,7 @@ func TestStreamQueue_Ordering(t *testing.T) {
 							AggregateID: aggID,
 							Version:     int64(version),
 						}
-						err := stream.Send(evt) // or Enqueue
+						err := stream.Send(golly.NewContext(nil), evt) // or Enqueue
 						assert.NoError(t, err)
 					}(aggID, i)
 				}
@@ -124,7 +124,7 @@ func TestStreamQueue_Draining(t *testing.T) {
 			var processed sync.Map
 			var count int32
 
-			stream.Subscribe("TestEvent", func(evt Event) {
+			stream.Subscribe("TestEvent", func(ctx *golly.Context, evt Event) {
 				processed.Store(evt.Data.(int), true)
 				atomic.AddInt32(&count, 1)
 			})
@@ -133,7 +133,7 @@ func TestStreamQueue_Draining(t *testing.T) {
 
 			id, _ := uuid.NewV7()
 			for i := 1; i <= tt.numEvents; i++ {
-				err := stream.Send(Event{
+				err := stream.Send(golly.NewContext(nil), Event{
 					AggregateID: id.String(),
 					Type:        "TestEvent",
 					Version:     int64(i),
@@ -148,7 +148,7 @@ func TestStreamQueue_Draining(t *testing.T) {
 			assert.Equal(t, tt.expectedCount, atomic.LoadInt32(&count),
 				"All events should be processed during drain")
 
-			err := stream.Send(Event{
+			err := stream.Send(golly.NewContext(nil), Event{
 				Type: "TestEvent",
 				Data: tt.numEvents + 1,
 			})
@@ -163,8 +163,7 @@ func BenchmarkStreamQueue_StartStop(b *testing.B) {
 		NumPartitions:  4,
 		BufferSize:     1000,
 		BlockedTimeout: 3 * time.Second,
-		Handler:        func(evt Event) {},
-		Logger:         golly.NewLogger(),
+		Handler:        func(ctx *golly.Context, evt Event) {},
 	}
 
 	b.Run("StartStop", func(b *testing.B) {

@@ -12,14 +12,6 @@ const (
 	projectionBatchSize = 100
 )
 
-// Add these interfaces to better define projection types
-type BaseProjection interface {
-	HandleEvent(*golly.Context, Event) error
-	Position() int64
-	SetPosition(pos int64) error
-	Reset() error
-}
-
 type AggregateProjection interface {
 	AggregateTypes() []any
 }
@@ -33,7 +25,8 @@ type IDdProjection interface {
 }
 
 type Projection interface {
-	HandleEvent(Event) error
+	HandleEvent(*golly.Context, Event) error
+
 	// Position returns the last known position in the global event stream.
 	Position() int64
 	SetPosition(pos int64) error
@@ -137,7 +130,7 @@ func (pm *ProjectionManager) RunToEnd(ctx *golly.Context, eng *Engine, projID st
 	var lastError error
 	err := eng.LoadEvents(ctx, 100, func(events []Event) error {
 		for _, evt := range events {
-			if err := proj.HandleEvent(evt); err != nil {
+			if err := proj.HandleEvent(ctx, evt); err != nil {
 				lastError = err
 				proj.SetPosition(-1) // Mark as failed
 				return nil           // Stop processing but don't fail other projections
@@ -186,7 +179,7 @@ func (pm *ProjectionManager) processProjection(
 
 		for i := range events {
 			e := events[i]
-			if err := p.HandleEvent(e); err != nil {
+			if err := p.HandleEvent(ctx, e); err != nil {
 				return err
 			}
 		}

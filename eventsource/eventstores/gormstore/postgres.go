@@ -20,6 +20,22 @@ type Event struct {
 	RawMetadata postgres.Jsonb `json:"-" gorm:"type:jsonb;column:metadata"`
 }
 
+type GlobalVersion struct {
+	ID      string `gorm:"primaryKey"`
+	Version int64  `gorm:"not null"`
+}
+
+var (
+	Models = []any{
+		&Event{},
+		&GlobalVersion{},
+	}
+)
+
+func Migrate(db *gorm.DB) error {
+	return db.AutoMigrate(Models...)
+}
+
 func (e *Event) Hydrate(engine *eventsource.Engine) (eventsource.Event, error) {
 	if err := e.Event.Hydrate(engine, e.RawData.RawMessage, e.RawMetadata.RawMessage); err != nil {
 		return eventsource.Event{}, err
@@ -58,25 +74,32 @@ func (s *Store) LoadEvents(ctx context.Context, filters ...eventsource.EventFilt
 	return evts, err
 }
 
-// GlobalVersion returns the highest global version in the event store.
-func (s *Store) GlobalVersion(ctx context.Context) (int64, error) {
-	var maxVersion int64
+// IncrementGlobalVersion atomically increments the global version and returns the new value.
+func (s *Store) IncrementGlobalVersion(ctx context.Context) (int64, error) {
+	var newVersion int64
 
-	// This assumes you have an EventModel table with a global_version column.
-	err := orm.
-		DB(ctx).
-		Model(&Event{}).
-		Select("global_version").
-		Order("id DESC").
-		Limit(1).
-		Scan(&maxVersion).
-		Error
+	err := orm.DB(ctx).Transaction(func(tx *gorm.DB) error {
+		// Use INSERT ... ON CONFLICT to atomically increment the version
+		err := tx.Raw(`
+			INSERT INTO global_versions (id, version)
+			VALUES (1, 1)
+			ON CONFLICT (id)
+			DO UPDATE SET version = global_versions.version + 1
+			RETURNING version
+		`).Scan(&newVersion).Error
+
+		if err != nil {
+			return fmt.Errorf("failed to increment global version: %w", err)
+		}
+
+		return nil
+	})
 
 	if err != nil {
-		return 0, fmt.Errorf("failed to get global version: %w", err)
+		return 0, err
 	}
 
-	return maxVersion, nil
+	return newVersion, nil
 }
 
 // LoadEventsInBatches loads events in batches, calling handler for each batch.

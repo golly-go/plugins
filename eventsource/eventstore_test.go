@@ -49,6 +49,11 @@ func (m *MockStore) LoadEvents(ctx context.Context, filters ...EventFilter) ([]P
 	return nil, args.Error(1)
 }
 
+func (m *MockStore) IncrementGlobalVersion(ctx context.Context) (int64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(int64), args.Error(1)
+}
+
 func (m *MockStore) LoadEventsInBatches(ctx context.Context, batchSize int,
 	handler func([]PersistedEvent) error,
 	filters ...EventFilter) error {

@@ -2,8 +2,9 @@ package eventsource
 
 import (
 	"errors"
-	"fmt"
 	"sync"
+
+	"github.com/golly-go/golly"
 )
 
 // StreamManager manages multiple streams and coordinates dispatch.
@@ -34,33 +35,25 @@ func (sm *StreamManager) RegisterStream(stream *Stream) *Stream {
 	return stream
 }
 
-// SendTo sends an event to a specific named stream.
-func (sm *StreamManager) SendTo(streamName string, event Event) {
-	sm.mu.RLock()
-	stream, ok := sm.streams[streamName]
-	sm.mu.RUnlock()
-
-	if ok {
-		stream.Send(event)
-	}
-}
-
 // Send sends an event to all streams.
-func (sm *StreamManager) Send(events ...Event) {
+func (sm *StreamManager) Send(ctx *golly.Context, events ...Event) {
 	streams := sm.getStreams()
+
 	for pos := range streams {
-		streams[pos].Send(events...)
+		streams[pos].Send(ctx, events...)
 	}
 }
 
 // getStreams returns a copy of the streams slice.
 func (sm *StreamManager) getStreams() []*Stream {
 	sm.mu.RLock()
+
 	copyOfStreams := make([]*Stream, 0, len(sm.streams))
 	for _, s := range sm.streams {
 		copyOfStreams = append(copyOfStreams, s)
 	}
 	sm.mu.RUnlock()
+
 	return copyOfStreams
 }
 
@@ -98,7 +91,7 @@ func (sm *StreamManager) RegisterProjection(proj Projection, opts ...Option) err
 		options.Stream = &defaultStreamOptions
 	}
 
-	fmt.Printf("Registering projection for stream: %s\n", options.Stream.Name)
+	golly.Logger().Tracef("Registering projection for stream: %s\n", options.Stream.Name)
 
 	stream, err := sm.GetOrCreateStream(*options.Stream)
 	if err != nil {

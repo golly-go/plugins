@@ -35,6 +35,16 @@ type InMemoryStore struct {
 	sync.RWMutex
 
 	SaveFail error
+
+	gobalVersion int64
+}
+
+func (s *InMemoryStore) IncrementGlobalVersion(context.Context) (int64, error) {
+	s.Lock()
+	defer s.Unlock()
+
+	s.gobalVersion++
+	return s.gobalVersion, nil
 }
 
 // Save persists one or more events atomically in memory.

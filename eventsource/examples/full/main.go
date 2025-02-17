@@ -58,7 +58,7 @@ func (*OrderSummary) AggregateTypes() []any {
 	return []any{&Order{}}
 }
 
-func (os *OrderSummary) HandleEvent(evt eventsource.Event) error {
+func (os *OrderSummary) HandleEvent(ctx *golly.Context, evt eventsource.Event) error {
 	switch e := evt.Data.(type) {
 	case OrderCreated:
 		os.TotalOrders++

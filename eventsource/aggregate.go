@@ -2,7 +2,7 @@ package eventsource
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -69,7 +69,10 @@ func (ab *AggregateBase) SetVersion(version int64) { ab.AggregateVersion = versi
 func (ab *AggregateBase) Version() int64           { return ab.AggregateVersion }
 
 func (ab *AggregateBase) ReplayOne(agg Aggregate, event Event) {
-	apply(agg, event)
+	if err := apply(agg, event); err != nil {
+		golly.Logger().Error(err)
+	}
+
 	agg.AppendChanges(event)
 }
 
@@ -83,7 +86,9 @@ func (a *AggregateBase) Replay(agg Aggregate, events []Event) {
 	sort.Slice(events, func(i, j int) bool { return events[i].Version < events[j].Version })
 
 	for _, evt := range events {
-		apply(agg, evt)
+		if err := apply(agg, evt); err != nil {
+			golly.Logger().Error(err)
+		}
 	}
 
 	agg.SetChanges(events)
@@ -134,7 +139,9 @@ func (ab *AggregateBase) ProcessChanges(ctx context.Context, ag Aggregate) {
 			continue
 		}
 
-		apply(ag, change)
+		if err := apply(ag, change); err != nil {
+			golly.Logger().Error(err)
+		}
 
 		// For now put this here till i can find a better way todo this
 		// perhaps we move Identity to be top level in Golly
@@ -162,13 +169,18 @@ func ApplySnapshot(ag Aggregate, event Event) error {
 	}
 
 	switch e := event.Data.(type) {
-	case AggregateSnapshottedEvent:
-		if err := json.Unmarshal(e.State, ag); err != nil {
+	case *AggregateSnapshotted:
+		if err := unmarshal(ag, e.State); err != nil {
 			return err
 		}
 
-		ag.SetVersion(event.Version)
+	case AggregateSnapshotted:
+		if err := unmarshal(ag, e.State); err != nil {
+			return err
+		}
 	}
+
+	ag.SetVersion(event.Version)
 
 	return nil
 }
@@ -199,17 +211,20 @@ func ApplySnapshot(ag Aggregate, event Event) error {
 //			o.RatingUpdatedHandler(event)
 //		}
 //	}
-func apply(ag Aggregate, event Event) {
+func apply(ag Aggregate, event Event) error {
 	if event.Data == nil {
-		return
+		return errors.New("event data is nil")
 	}
+
+	defer ag.SetVersion(event.Version)
 
 	if app, ok := ag.(Applier); ok {
 		app.Apply(event)
-		return
+		return nil
 	}
 
 	name := golly.InfNameNoPackage(event.Data)
+
 	methodName := fmt.Sprintf("%sHandler", capitalizeFirstCharASCII(name))
 
 	methodValue := reflect.ValueOf(ag).MethodByName(methodName)
@@ -219,31 +234,37 @@ func apply(ag Aggregate, event Event) {
 			golly.Logger().Tracef("No handler for %s#%s (method not found)",
 				golly.TypeNoPtr(ag).String(), methodName)
 		}
-		return
+		return nil
 	}
 
 	methodType := methodValue.Type()
 	if methodType.NumIn() != 1 {
-		fmt.Printf("Expected 1 param, got %d for %s#%s\n",
+		return fmt.Errorf("expected 1 param, got %d for %s#%s",
 			methodType.NumIn(), golly.TypeNoPtr(ag).String(), methodName)
-		return
 	}
 
+	// i really do not like this but it works for now (Its ugly and slightly magic)
+	// though i was really tired of the massiiiiiive switch statements for anything that was super
+	// large aggregation
+	// if you dont like this (It is slower use the Apply() method)
 	paramType := methodType.In(0)
 
-	switch {
-	case paramType == eventRType:
-		// The method expects the full `Event`
+	if paramType == eventRType {
 		methodValue.Call([]reflect.Value{reflect.ValueOf(event)})
-
-	case paramType == reflect.TypeOf(event.Data):
-		// The method expects just the `event.Data` part
-		methodValue.Call([]reflect.Value{reflect.ValueOf(event.Data)})
-
+		return nil
 	}
 
-	// If the parameter type doesn't match either, just update version
-	// (No reflection call)
-	ag.SetVersion(event.Version)
+	dataType := reflect.ValueOf(event.Data)
+	if dataType.Kind() == reflect.Ptr {
+		dataType = dataType.Elem()
+	}
+
+	if paramType == dataType.Type() {
+		methodValue.Call([]reflect.Value{dataType})
+		return nil
+	}
+
+	return fmt.Errorf("unexpected param type got %s for %s#%s",
+		paramType, golly.TypeNoPtr(ag).String(), methodName)
 
 }

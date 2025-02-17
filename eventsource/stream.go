@@ -16,7 +16,7 @@ const (
 	DefaultStreamName = "default"
 )
 
-type StreamHandler func(Event)
+type StreamHandler func(*golly.Context, Event)
 
 // Stream represents a single in-memory event stream with subscriptions.
 type Stream struct {
@@ -38,6 +38,7 @@ func NewStream(opts StreamOptions) *Stream {
 	}
 
 	s.queue = NewStreamQueue(StreamQueueConfig{
+		Name:          s.name,
 		NumPartitions: opts.NumPartitions,
 		BufferSize:    opts.BufferSize,
 		Handler:       s.handleStreamEvent,
@@ -52,13 +53,15 @@ func (s *Stream) Name() string {
 }
 
 // Send dispatches events to the stream's queue
-func (s *Stream) Send(events ...Event) error {
+func (s *Stream) Send(ctx *golly.Context, events ...Event) error {
 	if len(events) == 0 {
 		return nil
 	}
 
+	golly.Logger().Tracef("sending %d events to stream %s", len(events), s.name)
+
 	for _, evt := range events {
-		if err := s.queue.Enqueue(evt); err != nil {
+		if err := s.queue.Enqueue(ctx, evt); err != nil {
 			return fmt.Errorf("failed to enqueue event: %w", err)
 		}
 	}
@@ -84,7 +87,7 @@ func (s *Stream) Stop() {
 }
 
 // handleStreamEvent processes events for this stream
-func (s *Stream) handleStreamEvent(event Event) {
+func (s *Stream) handleStreamEvent(ctx *golly.Context, event Event) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -113,7 +116,7 @@ func (s *Stream) handleStreamEvent(event Event) {
 
 	// Process handlers
 	for pos := range handlers {
-		handlers[pos](event)
+		handlers[pos](ctx, event)
 	}
 }
 
@@ -156,14 +159,14 @@ func (s *Stream) Unsubscribe(eventType string, handler StreamHandler) {
 func (s *Stream) Project(proj Projection) {
 	logger := golly.NewLogger().WithField("stream", s.name)
 
-	handler := func(evt Event) {
+	handler := func(ctx *golly.Context, evt Event) {
 		defer func() {
 			if r := recover(); r != nil {
 				logger.Dup().Errorf("Recovered from panic in projection %s: %v", projectionKey(proj), r)
 			}
 		}()
 
-		if err := proj.HandleEvent(evt); err != nil {
+		if err := proj.HandleEvent(ctx, evt); err != nil {
 			logger.Dup().Errorf("cannot process projection %s (%s)", projectionKey(proj), err)
 		}
 	}
@@ -171,6 +174,8 @@ func (s *Stream) Project(proj Projection) {
 	aggs, events := projectionSteamConfig(proj)
 
 	logger.Tracef("registering projection %s stream=%s aggs=%d events=%d", projectionKey(proj), s.name, len(aggs), len(events))
+	logger.Tracef("aggs=%v", aggs)
+	logger.Tracef("events=%v", events)
 
 	for pos := range aggs {
 		s.Aggregate(aggs[pos], handler)

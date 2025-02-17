@@ -150,8 +150,8 @@ func (e *Event) Hydrate(engine *Engine, data, metadata any) error {
 	// Example: If you do special handling for snapshots, you can branch here:
 	if e.Kind == "snapshot" {
 		// Just an example approach:
-		snap := &AggregateSnapshottedEvent{}
-		if err := unmarshal(snap, data); err != nil {
+		snap := AggregateSnapshotted{}
+		if err := unmarshal(&snap, data); err != nil {
 			return err
 		}
 

@@ -4,6 +4,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/golly-go/golly"
 	"github.com/golly-go/plugins/eventsource"
 )
 
@@ -12,7 +13,7 @@ func main() {
 	engine := eventsource.NewEngine(&eventsource.InMemoryStore{})
 
 	// Add error handling middleware using the default stream
-	engine.Subscribe("UserAction", func(evt eventsource.Event) {
+	engine.Subscribe("UserAction", func(ctx *golly.Context, evt eventsource.Event) {
 		defer func() {
 			if r := recover(); r != nil {
 				log.Printf("Recovered from panic: %v", r)
@@ -26,7 +27,7 @@ func main() {
 		}()
 	})
 
-	engine.Send(eventsource.Event{
+	engine.Send(golly.NewContext(nil), eventsource.Event{
 		Type: "UserAction",
 		Data: map[string]interface{}{
 			"action": "login",

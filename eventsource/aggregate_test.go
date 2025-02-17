@@ -29,7 +29,6 @@ func (ta *TestAggregate) TestEventHandler(evt Event) {
 }
 
 func (ta *TestAggregate) GetID() string     { return ta.ID }
-func (ta *TestAggregate) SetID(string)      {}
 func (ta *TestAggregate) IsNewRecord() bool { return false }
 
 func TestReplay(t *testing.T) {

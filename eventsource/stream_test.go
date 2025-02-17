@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golly-go/golly"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 )
@@ -28,7 +29,7 @@ func TestStream_Aggregate(t *testing.T) {
 		BufferSize:    100,
 	})
 
-	handler := func(evt Event) {}
+	handler := func(ctx *golly.Context, evt Event) {}
 
 	s.Aggregate("MyAggregate", handler)
 
@@ -48,7 +49,7 @@ func TestStream_Aggregate(t *testing.T) {
 func TestStream_Subscribe(t *testing.T) {
 	s := NewStream(StreamOptions{Name: "subTest"})
 
-	handler := func(evt Event) {}
+	handler := func(ctx *golly.Context, evt Event) {}
 
 	s.Subscribe("TestEvent", handler)
 
@@ -68,8 +69,8 @@ func TestStream_Subscribe(t *testing.T) {
 func TestStream_Unsubscribe(t *testing.T) {
 	s := NewStream(StreamOptions{Name: "unsubTest"})
 
-	handler := func(evt Event) {}
-	anotherHandler := func(evt Event) {}
+	handler := func(ctx *golly.Context, evt Event) {}
+	anotherHandler := func(ctx *golly.Context, evt Event) {}
 
 	s.Subscribe("TestEvent", handler)
 	s.Subscribe("TestEvent", anotherHandler)
@@ -104,7 +105,7 @@ func TestStream_Send(t *testing.T) {
 	defer stream.Stop()
 
 	var handlerCalls int32
-	handlerA := func(evt Event) {
+	handlerA := func(ctx *golly.Context, evt Event) {
 		atomic.AddInt32(&handlerCalls, 1)
 	}
 
@@ -119,7 +120,7 @@ func TestStream_Send(t *testing.T) {
 	}
 
 	for _, evt := range events {
-		err := stream.Send(evt)
+		err := stream.Send(golly.NewContext(nil), evt)
 		assert.NoError(t, err)
 	}
 
@@ -134,9 +135,10 @@ func TestStream_ConcurrentSend(t *testing.T) {
 
 	var counter int32
 
-	handler := func(evt Event) {
+	handler := func(ctx *golly.Context, evt Event) {
 		atomic.AddInt32(&counter, 1)
 	}
+
 	s.Subscribe("TestEvent", handler)
 
 	// Start the stream before sending events
@@ -149,7 +151,7 @@ func TestStream_ConcurrentSend(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := s.Send(Event{Type: "TestEvent", AggregateID: "MyAggregate", Version: int64(i)})
+			err := s.Send(golly.NewContext(nil), Event{Type: "TestEvent", AggregateID: "MyAggregate", Version: int64(i)})
 
 			assert.NoError(t, err)
 		}()
@@ -173,7 +175,7 @@ func TestStreamPartitioning(t *testing.T) {
 
 	var mu sync.Mutex
 
-	stream.Subscribe("TestEvent", func(evt Event) {
+	stream.Subscribe("TestEvent", func(ctx *golly.Context, evt Event) {
 		mu.Lock()
 		partitionMap[evt.ID.String()] = evt.partitionID
 		mu.Unlock()
@@ -190,7 +192,7 @@ func TestStreamPartitioning(t *testing.T) {
 	}
 
 	for i := 0; i < 100; i++ {
-		stream.Send(evt)
+		stream.Send(golly.NewContext(nil), evt)
 	}
 
 	mu.Lock()
