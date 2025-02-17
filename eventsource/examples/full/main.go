@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -110,12 +111,21 @@ func main() {
 
 	time.Sleep(time.Millisecond * 100)
 
-	fmt.Println("Aggregate")
+	golly.Say("green", "Aggregate")
+
 	fmt.Printf("OrderID: %#v\n", order.ID)
 	fmt.Printf("Amount: %#v\n", order.Amount)
 
-	fmt.Println("Projection")
+	golly.Say("green", "Projection")
 	// Print the projection state
 	fmt.Printf("Total Orders: %d\n", summary.TotalOrders)
 	fmt.Printf("Total Amount: %.2f\n", summary.TotalAmount)
+
+	events, _ := engine.Store().LoadEvents(context.Background())
+
+	golly.Say("green", "Events")
+
+	b, _ := json.MarshalIndent(events, "", "\t")
+	fmt.Println(string(b))
+
 }

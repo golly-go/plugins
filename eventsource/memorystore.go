@@ -14,7 +14,7 @@ import (
 // InMemoryEvent wraps an Event and implements the PersistedEvent interface.
 // It can be as simple as returning the embedded Event on Hydrate(...).
 type InMemoryEvent struct {
-	e Event
+	Event
 }
 
 // Hydrate satisfies PersistedEvent. In this test store scenario,
@@ -22,11 +22,11 @@ type InMemoryEvent struct {
 // In a real store, you'd parse raw data or do reflection if needed.
 func (t InMemoryEvent) Hydrate(engine *Engine) (Event, error) {
 	// Return the underlying Event directly.
-	return t.e, nil
+	return t.Event, nil
 }
 
 func (t InMemoryEvent) GlobalVersion() int64 {
-	return t.e.GlobalVersion
+	return t.Event.GlobalVersion
 }
 
 // InMemoryStore is an in-memory implementation of EventStore for testing purposes.
@@ -66,7 +66,7 @@ func (s *InMemoryStore) LoadEvents(ctx context.Context, filters ...EventFilter) 
 	// Transform []Event => []PersistedEvent
 	result := make([]PersistedEvent, len(filtered))
 	for i, evt := range filtered {
-		result[i] = InMemoryEvent{e: evt}
+		result[i] = InMemoryEvent{evt}
 	}
 
 	return result, nil
@@ -102,7 +102,7 @@ func (s *InMemoryStore) LoadEventsInBatches(
 		// Convert to PersistedEvent
 		pEvents := make([]PersistedEvent, len(batchSlice))
 		for i, evt := range batchSlice {
-			pEvents[i] = InMemoryEvent{e: evt}
+			pEvents[i] = InMemoryEvent{evt}
 		}
 
 		if err := handler(pEvents); err != nil {
@@ -170,7 +170,7 @@ func (s *InMemoryStore) LoadSnapshot(ctx context.Context, aggregateType, aggrega
 			event.Kind == EventKindSnapshot &&
 			event.AggregateType == aggregateType {
 			// Return it wrapped as PersistedEvent
-			return InMemoryEvent{e: event}, nil
+			return InMemoryEvent{event}, nil
 		}
 	}
 	return nil, errors.New("record not found")

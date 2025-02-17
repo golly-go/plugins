@@ -167,11 +167,11 @@ func (eng *Engine) Execute(ctx *golly.Context, agg Aggregate, cmd Command) (err 
 		return handleExecutionError(ctx, agg, cmd, err)
 	}
 
+	agg.ProcessChanges(ctx, agg)
+
 	if agg.GetID() == "" {
 		return handleExecutionError(ctx, agg, cmd, ErrorNoAggregateID)
 	}
-
-	agg.ProcessChanges(ctx, agg)
 
 	return eng.CommitAggregateChanges(ctx, agg)
 }

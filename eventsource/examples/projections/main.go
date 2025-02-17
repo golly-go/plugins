@@ -70,8 +70,8 @@ func main() {
 				Amount:     float64(i) * 10.0,
 			},
 		})
-
 	}
+
 	engine.Send(events...)
 
 	// Wait for the projection to process the events

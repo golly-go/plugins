@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"github.com/golly-go/golly"
@@ -21,11 +22,9 @@ type User struct {
 	Name string
 }
 
-func (u *User) GetID() string {
-	return u.ID
-}
+func (u *User) GetID() string { return u.ID }
 
-func (u *User) ApplyUserCreated(event UserCreated) {
+func (u *User) UserCreatedHandler(event UserCreated) {
 	u.ID = event.ID
 	u.Name = event.Name
 }
@@ -36,15 +35,12 @@ type CreateUser struct {
 	Name string
 }
 
-func (c *CreateUser) Perform(ctx *golly.Context, agg eventsource.Aggregate) error {
-	user := agg.(*User)
-	user.Record(eventsource.Event{
-		Type: "UserCreated",
-		Data: UserCreated{
-			ID:   c.ID,
-			Name: c.Name,
-		},
+func (c CreateUser) Perform(ctx *golly.Context, agg eventsource.Aggregate) error {
+	agg.Record(UserCreated{
+		ID:   c.ID,
+		Name: c.Name,
 	})
+
 	return nil
 }
 
@@ -52,20 +48,35 @@ func main() {
 	// Create engine with in-memory store
 	engine := eventsource.NewEngine(&eventsource.InMemoryStore{})
 
+	engine.Start()
+	defer engine.Stop()
+
 	// Register the User aggregate
 	engine.RegisterAggregate(&User{}, []any{UserCreated{}})
 
-	// Create a new user
-	user := &User{ID: "user_1"}
+	user := &User{}
 
 	// Execute the CreateUser command
 	ctx := golly.NewContext(context.Background())
-	cmd := &CreateUser{ID: "user_1", Name: "Alice"}
+
+	cmd := CreateUser{ID: "user_1", Name: "Alice"}
+
 	if err := engine.Execute(ctx, user, cmd); err != nil {
 		log.Fatalf("Failed to execute command: %v", err)
 	}
 
 	// Print the user state
-	log.Printf("User ID: %s", user.ID)
-	log.Printf("User Name: %s", user.Name)
+	golly.Say("green", "Created User")
+
+	fmt.Printf("User ID: %s\n", user.ID)
+	fmt.Printf("User Name: %s\n", user.Name)
+
+	u2 := &User{ID: "user_1"}
+
+	engine.Load(ctx, u2)
+
+	golly.Say("green", "Loaded User")
+	fmt.Printf("User ID: %s\n", u2.ID)
+	fmt.Printf("User Name: %s\n", u2.Name)
+
 }

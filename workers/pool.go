@@ -1,4 +1,4 @@
-package eventsource
+package workers
 
 import (
 	"errors"

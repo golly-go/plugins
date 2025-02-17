@@ -13,6 +13,8 @@ import (
 
 var (
 	legacy = true
+
+	eventRType = reflect.TypeOf(Event{})
 )
 
 type Applier interface {
@@ -180,15 +182,22 @@ func ApplySnapshot(ag Aggregate, event Event) error {
 //
 // Usage:
 // If an event named "RatingUpdated" is passed, the function will attempt to call
-// "ApplyRatingUpdated" on the provided aggregate.
+// "RatingUpdatedHandler" on the provided aggregate.
 //
 // To bypass this dynamic behavior, define the "Apply" method explicitly
 // on the aggregate to ensure it overrides the reflection-based handler lookup.
 //
 // Example:
 //
-//	func (o *OrderAggregate) ApplyRatingUpdated(event Event) {
+//	func (o *OrderAggregate) RatingUpdatedHandler(event Event) {
 //	    // Custom application logic here
+//	}
+//
+//	func (o *OrderAggregate) Apply(event Event) {
+//		switch event.Data.(type) {
+//		case RatingUpdated:
+//			o.RatingUpdatedHandler(event)
+//		}
 //	}
 func apply(ag Aggregate, event Event) {
 	if event.Data == nil {
@@ -201,18 +210,40 @@ func apply(ag Aggregate, event Event) {
 	}
 
 	name := golly.InfNameNoPackage(event.Data)
-
 	methodName := fmt.Sprintf("%sHandler", capitalizeFirstCharASCII(name))
-	method := reflect.ValueOf(ag).MethodByName(methodName)
 
-	if !method.IsValid() {
+	methodValue := reflect.ValueOf(ag).MethodByName(methodName)
+	if !methodValue.IsValid() {
+		// Optionally log missing handler in dev/test
 		if golly.Env().IsDevelopmentOrTest() {
-			golly.Logger().Tracef("No handler for %s#%s %s", golly.TypeNoPtr(ag).String(), methodName, method)
+			golly.Logger().Tracef("No handler for %s#%s (method not found)",
+				golly.TypeNoPtr(ag).String(), methodName)
 		}
 		return
 	}
 
-	method.Call([]reflect.Value{reflect.ValueOf(event)})
+	methodType := methodValue.Type()
+	if methodType.NumIn() != 1 {
+		fmt.Printf("Expected 1 param, got %d for %s#%s\n",
+			methodType.NumIn(), golly.TypeNoPtr(ag).String(), methodName)
+		return
+	}
 
+	paramType := methodType.In(0)
+
+	switch {
+	case paramType == eventRType:
+		// The method expects the full `Event`
+		methodValue.Call([]reflect.Value{reflect.ValueOf(event)})
+
+	case paramType == reflect.TypeOf(event.Data):
+		// The method expects just the `event.Data` part
+		methodValue.Call([]reflect.Value{reflect.ValueOf(event.Data)})
+
+	}
+
+	// If the parameter type doesn't match either, just update version
+	// (No reflection call)
 	ag.SetVersion(event.Version)
+
 }
