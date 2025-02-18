@@ -33,6 +33,40 @@ import (
 // 	return nil
 // }
 
+type PluginOptions struct {
+	store  EventStore
+	engine *Engine
+
+	tenantIDFunc func(context.Context) string
+	identityFunc func(context.Context) any
+}
+
+type PluginOption func(*PluginOptions)
+
+func PluginWithTenantIDFunc(fnc func(context.Context) string) PluginOption {
+	return func(opt *PluginOptions) {
+		opt.tenantIDFunc = fnc
+	}
+}
+
+func PluginWithIdentityFunc(fnc func(context.Context) any) PluginOption {
+	return func(opt *PluginOptions) {
+		opt.identityFunc = fnc
+	}
+}
+
+func PluginWithStore(store EventStore) PluginOption {
+	return func(opt *PluginOptions) {
+		opt.store = store
+	}
+}
+
+func PluginWithEngine(engine *Engine) PluginOption {
+	return func(opt *PluginOptions) {
+		opt.engine = engine
+	}
+}
+
 const (
 	PluginName = "eventsource"
 )
@@ -44,9 +78,26 @@ type EventsourcePlugin struct {
 }
 
 // NewPlugin creates a new Plugin with the given store
-func NewPlugin(store EventStore) *EventsourcePlugin {
+func NewPlugin(opts ...PluginOption) *EventsourcePlugin {
+	cfg := PluginOptions{}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	if cfg.identityFunc != nil {
+		SetIdentityFunc(cfg.identityFunc)
+	}
+
+	if cfg.tenantIDFunc != nil {
+		SetTenantIDFunc(cfg.tenantIDFunc)
+	}
+
+	if cfg.engine == nil {
+		cfg.engine = NewEngine(cfg.store)
+	}
+
 	return &EventsourcePlugin{
-		engine: NewEngine(store),
+		engine: cfg.engine,
 	}
 }
 
@@ -61,11 +112,6 @@ func (p *EventsourcePlugin) Configure(configure func(*EventsourcePlugin)) *Event
 	configure(p)
 	return p
 }
-
-// SetIdentityFunc sets the global identity function for the application
-// this is global for now
-func (p *EventsourcePlugin) SetIdentityFunc(fnc func(context.Context) any)    { IdentityFunc(fnc) }
-func (p *EventsourcePlugin) SetTenantIDFunc(fnc func(context.Context) string) { SetTenantIDFunc(fnc) }
 
 // Initialize sets up the engine and starts it
 func (p *EventsourcePlugin) Initialize(app *golly.Application) error {

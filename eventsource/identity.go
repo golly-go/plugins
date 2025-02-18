@@ -19,7 +19,7 @@ func SetTenantIDFunc(fnc func(context.Context) string) {
 	tententIDFunc = fnc
 }
 
-func IdentityFunc(fnc func(context.Context) any) {
+func SetIdentityFunc(fnc func(context.Context) any) {
 	lock.Lock()
 	defer lock.Unlock()
 
