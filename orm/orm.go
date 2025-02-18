@@ -70,7 +70,7 @@ func ToContext(parent context.Context, db *gorm.DB) context.Context {
 	return context.WithValue(parent, contextKey, db)
 }
 
-func ToGollyContext(parent *golly.Context, db *gorm.DB) *golly.Context {
+func ToGollyContext(parent context.Context, db *gorm.DB) *golly.Context {
 	return golly.WithValue(parent, contextKey, db)
 }
 
@@ -83,8 +83,8 @@ func FromContext(ctx context.Context) *gorm.DB {
 	return nil
 }
 
-func CreateTestContext(c context.Context, modelsToMigration ...interface{}) context.Context {
-	return ToContext(c, NewInMemoryConnection(modelsToMigration...))
+func CreateTestContext(c context.Context, modelsToMigration ...interface{}) *golly.Context {
+	return ToGollyContext(c, NewInMemoryConnection(modelsToMigration...))
 }
 
 func Close(c context.Context) error {
