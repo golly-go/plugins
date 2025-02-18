@@ -62,6 +62,7 @@ func (r *AggregateRegistry) Register(agg Aggregate, eventSamples []any) *Aggrega
 	// Build codecs for each event sample
 	for _, evtSample := range eventSamples {
 		evtType := reflect.TypeOf(evtSample)
+
 		if evtType.Kind() != reflect.Ptr {
 			evtType = reflect.PointerTo(evtType)
 		}

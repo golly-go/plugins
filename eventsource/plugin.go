@@ -55,8 +55,8 @@ func (p *EventsourcePlugin) Name() string { return PluginName }
 func (p *EventsourcePlugin) Engine() *Engine { return p.engine }
 
 // ConfigureEngine allows additional configuration or usage of the engine
-func (p *EventsourcePlugin) ConfigureEngine(configure func(*Engine)) *EventsourcePlugin {
-	configure(p.engine)
+func (p *EventsourcePlugin) Configure(configure func(*EventsourcePlugin)) *EventsourcePlugin {
+	configure(p)
 	return p
 }
 
