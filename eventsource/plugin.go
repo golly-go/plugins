@@ -64,7 +64,8 @@ func (p *EventsourcePlugin) Configure(configure func(*EventsourcePlugin)) *Event
 
 // SetIdentityFunc sets the global identity function for the application
 // this is global for now
-func (p *EventsourcePlugin) SetIdentityFunc(fnc func(context.Context) any) { IdentityFunc(fnc) }
+func (p *EventsourcePlugin) SetIdentityFunc(fnc func(context.Context) any)    { IdentityFunc(fnc) }
+func (p *EventsourcePlugin) SetTenantIDFunc(fnc func(context.Context) string) { SetTenantIDFunc(fnc) }
 
 // Initialize sets up the engine and starts it
 func (p *EventsourcePlugin) Initialize(app *golly.Application) error {

@@ -146,7 +146,11 @@ func (ab *AggregateBase) ProcessChanges(ctx context.Context, ag Aggregate) {
 		// For now put this here till i can find a better way todo this
 		// perhaps we move Identity to be top level in Golly
 		if identiyFunc != nil {
-			change.Identity = identiyFunc(ctx)
+			change.Identity = identityFunc(ctx)
+		}
+
+		if tententIDFunc != nil {
+			change.TenantID = tententIDFunc(ctx)
 		}
 
 		change.AggregateID = ag.GetID()
