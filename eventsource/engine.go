@@ -94,10 +94,6 @@ func (eng *Engine) RunProjectionOnce(ctx *golly.Context, projection any) error {
 	return eng.projections.RunOnce(ctx, eng, resolveInterfaceName(projection))
 }
 
-// SetIdentityFunc sets the global identity function for the application
-// this is global for now
-func (eng *Engine) SetIdentityFunc(fnc func(context.Context) any) { IdentityFunc(fnc) }
-
 // RegisterProjection registers a projection with the engine
 func (eng *Engine) RegisterProjection(proj Projection, opts ...Option) error {
 	options := &Options{}

@@ -1,6 +1,8 @@
 package eventsource
 
 import (
+	"context"
+
 	"github.com/golly-go/golly"
 	"github.com/spf13/cobra"
 )
@@ -59,6 +61,10 @@ func (p *EventsourcePlugin) Configure(configure func(*EventsourcePlugin)) *Event
 	configure(p)
 	return p
 }
+
+// SetIdentityFunc sets the global identity function for the application
+// this is global for now
+func (p *EventsourcePlugin) SetIdentityFunc(fnc func(context.Context) any) { IdentityFunc(fnc) }
 
 // Initialize sets up the engine and starts it
 func (p *EventsourcePlugin) Initialize(app *golly.Application) error {
