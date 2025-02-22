@@ -3,7 +3,7 @@ module github.com/golly-go/plugins/vectordb
 go 1.23.4
 
 require (
-	github.com/golly-go/golly v0.6.0-rc1.0.20250217101121-c2c13f1bdbc9
+	github.com/golly-go/golly v0.6.0-rc2
 	github.com/golly-go/plugins/functional v0.0.0-20231119205746-8cf27e7fb893
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.10.0
