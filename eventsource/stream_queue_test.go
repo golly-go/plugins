@@ -1,6 +1,7 @@
 package eventsource
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -36,7 +37,7 @@ func TestStreamQueue_Ordering(t *testing.T) {
 			processed := make(map[string][]Event)
 
 			// Subscribe to "TestEvent" and collect them
-			stream.Subscribe("TestEvent", func(ctx *golly.Context, evt Event) {
+			stream.Subscribe("TestEvent", func(ctx context.Context, evt Event) {
 				mu.Lock()
 				processed[evt.AggregateID] = append(processed[evt.AggregateID], evt)
 				mu.Unlock()
@@ -117,7 +118,7 @@ func TestStreamQueue_Draining(t *testing.T) {
 			var processed sync.Map
 			var count int32
 
-			stream.Subscribe("TestEvent", func(ctx *golly.Context, evt Event) {
+			stream.Subscribe("TestEvent", func(ctx context.Context, evt Event) {
 				processed.Store(evt.Data.(int), true)
 				atomic.AddInt32(&count, 1)
 			})
@@ -156,7 +157,7 @@ func BenchmarkStreamQueue_StartStop(b *testing.B) {
 		NumPartitions:  4,
 		BufferSize:     1000,
 		BlockedTimeout: 3 * time.Second,
-		Handler:        func(ctx *golly.Context, evt Event) {},
+		Handler:        func(ctx context.Context, evt Event) {},
 	}
 
 	b.Run("StartStop", func(b *testing.B) {

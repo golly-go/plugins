@@ -1,6 +1,7 @@
 package eventsource
 
 import (
+	"context"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -28,7 +29,7 @@ func TestStream_Aggregate(t *testing.T) {
 		BufferSize:    100,
 	})
 
-	handler := func(ctx *golly.Context, evt Event) {}
+	handler := func(ctx context.Context, evt Event) {}
 
 	s.Aggregate("MyAggregate", handler)
 
@@ -48,7 +49,7 @@ func TestStream_Aggregate(t *testing.T) {
 func TestStream_Subscribe(t *testing.T) {
 	s := NewStream(StreamOptions{Name: "subTest"})
 
-	handler := func(ctx *golly.Context, evt Event) {}
+	handler := func(ctx context.Context, evt Event) {}
 
 	s.Subscribe("TestEvent", handler)
 
@@ -68,8 +69,8 @@ func TestStream_Subscribe(t *testing.T) {
 func TestStream_Unsubscribe(t *testing.T) {
 	s := NewStream(StreamOptions{Name: "unsubTest"})
 
-	handler := func(ctx *golly.Context, evt Event) {}
-	anotherHandler := func(ctx *golly.Context, evt Event) {}
+	handler := func(ctx context.Context, evt Event) {}
+	anotherHandler := func(ctx context.Context, evt Event) {}
 
 	s.Subscribe("TestEvent", handler)
 	s.Subscribe("TestEvent", anotherHandler)
@@ -104,7 +105,7 @@ func TestStream_Send(t *testing.T) {
 	defer stream.Stop()
 
 	var handlerCalls int32
-	handlerA := func(ctx *golly.Context, evt Event) {
+	handlerA := func(ctx context.Context, evt Event) {
 		atomic.AddInt32(&handlerCalls, 1)
 	}
 
@@ -134,7 +135,7 @@ func TestStream_ConcurrentSend(t *testing.T) {
 
 	var counter int32
 
-	handler := func(ctx *golly.Context, evt Event) {
+	handler := func(ctx context.Context, evt Event) {
 		atomic.AddInt32(&counter, 1)
 	}
 
@@ -174,7 +175,7 @@ func TestStream_ConcurrentSend(t *testing.T) {
 
 // 	var mu sync.Mutex
 
-// 	stream.Subscribe("TestEvent", func(ctx *golly.Context, evt Event) {
+// 	stream.Subscribe("TestEvent", func(ctx context.Context, evt Event) {
 // 		mu.Lock()
 // 		partitionMap[evt.ID.String()] = evt.partitionID
 // 		mu.Unlock()

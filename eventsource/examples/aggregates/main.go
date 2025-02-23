@@ -68,8 +68,9 @@ type AddOrderCommand struct {
 	OrderID    string
 }
 
-func (c *AddOrderCommand) Perform(ctx *golly.Context, agg eventsource.Aggregate) error {
+func (c *AddOrderCommand) Perform(ctx context.Context, agg eventsource.Aggregate) error {
 	customer := agg.(*Customer)
+
 	// Create event using domain event struct
 	customer.Record(eventsource.Event{
 		Type:          "CustomerOrderAdded",

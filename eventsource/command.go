@@ -1,9 +1,8 @@
 package eventsource
 
 import (
+	"context"
 	"fmt"
-
-	"github.com/golly-go/golly"
 )
 
 var (
@@ -15,13 +14,13 @@ var (
 )
 
 type Command interface {
-	Perform(*golly.Context, Aggregate) error
+	Perform(context.Context, Aggregate) error
 }
 
 type CommandValidator interface {
-	Validate(*golly.Context, Aggregate) error
+	Validate(context.Context, Aggregate) error
 }
 
 type CommandRollback interface {
-	Rollback(*golly.Context, Aggregate, error)
+	Rollback(context.Context, Aggregate, error)
 }

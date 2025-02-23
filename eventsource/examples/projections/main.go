@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"time"
@@ -26,7 +27,7 @@ type OrderSummary struct {
 	TotalAmount    float64
 }
 
-func (os *OrderSummary) HandleEvent(ctx *golly.Context, evt eventsource.Event) error {
+func (os *OrderSummary) HandleEvent(ctx context.Context, evt eventsource.Event) error {
 	switch e := evt.Data.(type) {
 	case OrderCreated:
 		os.TotalOrders++

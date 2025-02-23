@@ -1,6 +1,7 @@
 package eventsource
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -29,7 +30,7 @@ const (
 
 // Job wraps an event with its associated context
 type Job struct {
-	Ctx   *golly.Context
+	Ctx   context.Context
 	Event Event
 }
 
@@ -285,7 +286,7 @@ func (sq *StreamQueue) Stop() {
 	sq.wg.Wait()
 }
 
-func (sq *StreamQueue) Enqueue(ctx *golly.Context, evt Event) error {
+func (sq *StreamQueue) Enqueue(ctx context.Context, evt Event) error {
 	if atomic.LoadInt32(&sq.running) != 1 {
 		return ErrQueueDraining
 	}

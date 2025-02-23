@@ -75,7 +75,7 @@ func TestEvent_Hydrate(t *testing.T) {
 		inputData    any
 		setupEvent   Event
 		shouldError  bool
-		expectedData *TestEvent
+		expectedData TestEvent
 	}{
 		{
 			name:      "Valid byte data",
@@ -86,7 +86,7 @@ func TestEvent_Hydrate(t *testing.T) {
 				AggregateType: "eventsource.TestAggregate",
 			},
 			shouldError:  false,
-			expectedData: &TestEvent{Name: "John Doe", Age: 30},
+			expectedData: TestEvent{Name: "John Doe", Age: 30},
 		},
 		{
 			name:      "Missing Type",

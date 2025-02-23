@@ -1,6 +1,7 @@
 package eventsource
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -25,7 +26,7 @@ type IDdProjection interface {
 }
 
 type Projection interface {
-	HandleEvent(*golly.Context, Event) error
+	HandleEvent(context.Context, Event) error
 
 	// Position returns the last known position in the global event stream.
 	Position() int64
@@ -80,7 +81,7 @@ func (pm *ProjectionManager) Register(projs ...Projection) {
 }
 
 // Rebuild resets a single projection, then processes all events from version 0 upward.
-func (pm *ProjectionManager) Rebuild(ctx *golly.Context, eng *Engine, projID string) error {
+func (pm *ProjectionManager) Rebuild(ctx context.Context, eng *Engine, projID string) error {
 	pm.mu.Lock()
 	proj, ok := pm.projections[projID]
 	pm.mu.Unlock()
@@ -102,7 +103,7 @@ func (pm *ProjectionManager) Rebuild(ctx *golly.Context, eng *Engine, projID str
 }
 
 // RunOnce catches up a single projection from its current position to the end.
-func (pm *ProjectionManager) RunOnce(ctx *golly.Context, eng *Engine, projID string) error {
+func (pm *ProjectionManager) RunOnce(ctx context.Context, eng *Engine, projID string) error {
 	pm.mu.Lock()
 	proj, ok := pm.projections[projID]
 	pm.mu.Unlock()
@@ -115,7 +116,7 @@ func (pm *ProjectionManager) RunOnce(ctx *golly.Context, eng *Engine, projID str
 }
 
 // RunToEnd catches up all registered projections from their current positions.
-func (pm *ProjectionManager) RunToEnd(ctx *golly.Context, eng *Engine, projID string) error {
+func (pm *ProjectionManager) RunToEnd(ctx context.Context, eng *Engine, projID string) error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
@@ -151,7 +152,7 @@ func (pm *ProjectionManager) RunToEnd(ctx *golly.Context, eng *Engine, projID st
 // processProjection loads events from 'fromGlobalVersion' in batches, calling p.HandleEvent,
 // then does ONE p.SetPosition() per batch.
 func (pm *ProjectionManager) processProjection(
-	ctx *golly.Context,
+	ctx context.Context,
 	eng *Engine,
 	p Projection,
 	fromGlobalVersion int,

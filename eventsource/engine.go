@@ -79,17 +79,17 @@ func (eng *Engine) RegisterAggregate(agg Aggregate, events []any) {
 }
 
 // RebuildProjection rebuilds a single projection
-func (eng *Engine) RebuildProjection(ctx *golly.Context, projection any) error {
+func (eng *Engine) RebuildProjection(ctx context.Context, projection any) error {
 	return eng.projections.Rebuild(ctx, eng, resolveInterfaceName(projection))
 }
 
 // RunProjectionToEnd runs the projection to the end of the event stream
-func (eng *Engine) RunProjectionToEnd(ctx *golly.Context, projection any) error {
+func (eng *Engine) RunProjectionToEnd(ctx context.Context, projection any) error {
 	return eng.projections.RunToEnd(ctx, eng, resolveInterfaceName(projection))
 }
 
 // RunProjectionOnce runs the projection once
-func (eng *Engine) RunProjectionOnce(ctx *golly.Context, projection any) error {
+func (eng *Engine) RunProjectionOnce(ctx context.Context, projection any) error {
 	return eng.projections.RunOnce(ctx, eng, resolveInterfaceName(projection))
 }
 
@@ -128,7 +128,7 @@ func (eng *Engine) RegisterProjection(proj Projection, opts ...Option) error {
 //  2. Saves the events to the event store.
 //  3. Publishes them to the stream manageeng.
 //  4. Marks the aggregate's changes as complete.
-func (eng *Engine) CommitAggregateChanges(ctx *golly.Context, agg Aggregate) error {
+func (eng *Engine) CommitAggregateChanges(ctx context.Context, agg Aggregate) error {
 	changes := agg.Changes().Uncommitted()
 
 	for i := range changes {
@@ -151,7 +151,7 @@ func (eng *Engine) CommitAggregateChanges(ctx *golly.Context, agg Aggregate) err
 }
 
 // Execute handles command execution, including loading the aggregate, replaying events, validating, and persisting changes.
-func (eng *Engine) Execute(ctx *golly.Context, agg Aggregate, cmd Command) (err error) {
+func (eng *Engine) Execute(ctx context.Context, agg Aggregate, cmd Command) (err error) {
 	if err = eng.Replay(ctx, agg); err != nil {
 		return handleExecutionError(ctx, agg, cmd, err)
 	}
@@ -175,7 +175,7 @@ func (eng *Engine) Execute(ctx *golly.Context, agg Aggregate, cmd Command) (err 
 	return eng.CommitAggregateChanges(ctx, agg)
 }
 
-func (eng *Engine) Replay(ctx *golly.Context, agg Aggregate) error {
+func (eng *Engine) Replay(ctx context.Context, agg Aggregate) error {
 	// Quick exits: invalid ID or uncommitted changes
 	id := agg.GetID()
 	if id == "" || id == uuid.Nil.String() || id == "0" {
@@ -242,7 +242,7 @@ func (eng *Engine) LoadEvents(
 	}, filter...)
 }
 
-func (eng *Engine) Load(ctx *golly.Context, agg Aggregate) error {
+func (eng *Engine) Load(ctx context.Context, agg Aggregate) error {
 	if err := eng.Replay(ctx, agg); err != nil {
 		return err
 	}
@@ -257,7 +257,7 @@ func (eng *Engine) Load(ctx *golly.Context, agg Aggregate) error {
 }
 
 // handleExecutionError processes errors and rolls back if necessary
-func handleExecutionError(ctx *golly.Context, agg Aggregate, cmd Command, err error) error {
+func handleExecutionError(ctx context.Context, agg Aggregate, cmd Command, err error) error {
 	if agg != nil {
 		agg.SetChanges(agg.Changes().MarkFailed())
 	}
@@ -310,7 +310,7 @@ func (eng *Engine) SubscribeAggregate(streamName string, aggregateType string, h
 }
 
 // Send dispatches events to the appropriate stream
-func (eng *Engine) Send(ctx *golly.Context, events ...Event) {
+func (eng *Engine) Send(ctx context.Context, events ...Event) {
 	eng.streams.Send(ctx, events...)
 }
 

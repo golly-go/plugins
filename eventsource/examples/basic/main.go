@@ -35,12 +35,8 @@ type CreateUser struct {
 	Name string
 }
 
-func (c CreateUser) Perform(ctx *golly.Context, agg eventsource.Aggregate) error {
-	agg.Record(UserCreated{
-		ID:   c.ID,
-		Name: c.Name,
-	})
-
+func (c CreateUser) Perform(ctx context.Context, agg eventsource.Aggregate) error {
+	agg.Record(UserCreated(c))
 	return nil
 }
 

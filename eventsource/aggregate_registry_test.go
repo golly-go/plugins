@@ -34,7 +34,7 @@ func TestRegistry_RegisterAndRetrieve(t *testing.T) {
 
 	unmarshaled, err := codec.UnmarshalFn(raw)
 	require.NoError(t, err, "unmarshalling testEvent should not fail")
-	assert.IsType(t, &testEvent{}, unmarshaled)
+	assert.IsType(t, testEvent{}, unmarshaled)
 }
 
 func TestRegistry_GetNonExistent(t *testing.T) {

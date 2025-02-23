@@ -16,7 +16,7 @@ type TestCommand struct {
 	performErr    error
 }
 
-func (m *TestCommand) Perform(ctx *golly.Context, agg Aggregate) error {
+func (m *TestCommand) Perform(ctx context.Context, agg Aggregate) error {
 	if m.performErr != nil {
 		return m.performErr
 	}

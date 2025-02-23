@@ -1,6 +1,7 @@
 package eventsource
 
 import (
+	"context"
 	"errors"
 	"sync"
 
@@ -36,7 +37,7 @@ func (sm *StreamManager) RegisterStream(stream *Stream) *Stream {
 }
 
 // Send sends an event to all streams.
-func (sm *StreamManager) Send(ctx *golly.Context, events ...Event) {
+func (sm *StreamManager) Send(ctx context.Context, events ...Event) {
 	streams := sm.getStreams()
 
 	for pos := range streams {

@@ -1,6 +1,7 @@
 package eventsource
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"sync"
@@ -16,7 +17,7 @@ const (
 	DefaultStreamName = "default"
 )
 
-type StreamHandler func(*golly.Context, Event)
+type StreamHandler func(context.Context, Event)
 
 // Stream represents a single in-memory event stream with subscriptions.
 type Stream struct {
@@ -53,7 +54,7 @@ func (s *Stream) Name() string {
 }
 
 // Send dispatches events to the stream's queue
-func (s *Stream) Send(ctx *golly.Context, events ...Event) error {
+func (s *Stream) Send(ctx context.Context, events ...Event) error {
 	if len(events) == 0 {
 		return nil
 	}
@@ -87,7 +88,7 @@ func (s *Stream) Stop() {
 }
 
 // handleStreamEvent processes events for this stream
-func (s *Stream) handleStreamEvent(ctx *golly.Context, event Event) {
+func (s *Stream) handleStreamEvent(ctx context.Context, event Event) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -159,7 +160,7 @@ func (s *Stream) Unsubscribe(eventType string, handler StreamHandler) {
 func (s *Stream) Project(proj Projection) {
 	logger := golly.NewLogger().WithField("stream", s.name)
 
-	handler := func(ctx *golly.Context, evt Event) {
+	handler := func(ctx context.Context, evt Event) {
 		defer func() {
 			if r := recover(); r != nil {
 				logger.Dup().Errorf("Recovered from panic in projection %s: %v", projectionKey(proj), r)
@@ -172,6 +173,11 @@ func (s *Stream) Project(proj Projection) {
 	}
 
 	aggs, events := projectionSteamConfig(proj)
+
+	if len(aggs) == 0 && len(events) == 0 {
+		logger.Warnf("projection %s does not have any events or aggregates defined for it", projectionKey(proj))
+		return
+	}
 
 	logger.Tracef("registering projection %s stream=%s aggs=%d events=%d", projectionKey(proj), s.name, len(aggs), len(events))
 

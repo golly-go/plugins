@@ -2,7 +2,8 @@ package eventsource
 
 import (
 	"encoding/json"
-	"log"
+
+	"github.com/golly-go/golly"
 )
 
 const (
@@ -18,7 +19,7 @@ type AggregateSnapshotted struct {
 func NewSnapshot(aggregate Aggregate) Event {
 	state, err := json.Marshal(aggregate)
 	if err != nil {
-		log.Printf("Failed to serialize aggregate: %v", err)
+		golly.Logger().Warnf("Failed to serialize aggregate: %v", err)
 		return Event{}
 	}
 

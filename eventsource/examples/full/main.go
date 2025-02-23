@@ -58,7 +58,7 @@ func (*OrderSummary) AggregateTypes() []any {
 	return []any{&Order{}}
 }
 
-func (os *OrderSummary) HandleEvent(ctx *golly.Context, evt eventsource.Event) error {
+func (os *OrderSummary) HandleEvent(ctx context.Context, evt eventsource.Event) error {
 	switch e := evt.Data.(type) {
 	case OrderCreated:
 		os.TotalOrders++
@@ -73,12 +73,8 @@ type CreateOrder struct {
 	Amount float64
 }
 
-func (c CreateOrder) Perform(ctx *golly.Context, agg eventsource.Aggregate) error {
-	agg.Record(OrderCreated{
-		ID:     c.ID,
-		Amount: c.Amount,
-	})
-
+func (c CreateOrder) Perform(ctx context.Context, agg eventsource.Aggregate) error {
+	agg.Record(OrderCreated(c))
 	return nil
 }
 

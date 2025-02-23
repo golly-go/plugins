@@ -28,7 +28,7 @@ type TestProjection struct {
 func (tp *TestProjection) AggregateTypes() []string { return tp.aggregates }
 func (tp *TestProjection) EventTypes() []string     { return tp.events }
 
-func (tp *TestProjection) HandleEvent(ctx *golly.Context, evt Event) error {
+func (tp *TestProjection) HandleEvent(ctx context.Context, evt Event) error {
 	current := atomic.AddInt64(&tp.eventCounter, 1)
 	if tp.failOnEventNumber > 0 && current == tp.failOnEventNumber {
 		return fmt.Errorf("simulated error on event #%d", current)
@@ -42,8 +42,8 @@ type noOpProjection struct {
 	ProjectionBase
 }
 
-func (p *noOpProjection) HandleEvent(ctx *golly.Context, evt Event) error { return nil }
-func (p *noOpProjection) Reset() error                                    { return nil }
+func (p *noOpProjection) HandleEvent(ctx context.Context, evt Event) error { return nil }
+func (p *noOpProjection) Reset() error                                     { return nil }
 
 var _ Projection = (*TestProjection)(nil)
 
