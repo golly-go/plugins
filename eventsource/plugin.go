@@ -39,6 +39,7 @@ type PluginOptions struct {
 
 	tenantIDFunc func(context.Context) string
 	identityFunc func(context.Context) any
+	userIDFunc   func(context.Context) string
 }
 
 type PluginOption func(*PluginOptions)
@@ -46,6 +47,12 @@ type PluginOption func(*PluginOptions)
 func PluginWithTenantIDFunc(fnc func(context.Context) string) PluginOption {
 	return func(opt *PluginOptions) {
 		opt.tenantIDFunc = fnc
+	}
+}
+
+func PluginWithUserIDFunc(fnc func(context.Context) string) PluginOption {
+	return func(opt *PluginOptions) {
+		opt.userIDFunc = fnc
 	}
 }
 
@@ -73,7 +80,6 @@ const (
 
 // Plugin implements the Plugin interface for the eventsource
 type EventsourcePlugin struct {
-	config Options
 	engine *Engine
 }
 
@@ -90,6 +96,10 @@ func NewPlugin(opts ...PluginOption) *EventsourcePlugin {
 
 	if cfg.tenantIDFunc != nil {
 		SetTenantIDFunc(cfg.tenantIDFunc)
+	}
+
+	if cfg.userIDFunc != nil {
+		SetUserIDFunc(cfg.userIDFunc)
 	}
 
 	if cfg.engine == nil {

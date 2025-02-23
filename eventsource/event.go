@@ -41,8 +41,8 @@ type Event struct {
 	Data          interface{} `json:"data" gorm:"-"`
 	Identity      interface{} `json:"identity,omitempty" gorm:"-"`
 	Metadata      Metadata    `json:"metadata" gorm:"-"`
-	partitionID   uint32      // internal tracking
 	TenantID      string      `json:"tenantID"`
+	UserID        string      `json:"userID"`
 }
 
 type PersistedEvent interface {

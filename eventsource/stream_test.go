@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/golly-go/golly"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -162,46 +161,46 @@ func TestStream_ConcurrentSend(t *testing.T) {
 	assert.Equal(t, int32(100), atomic.LoadInt32(&counter))
 }
 
-func TestStreamPartitioning(t *testing.T) {
-	// Create stream with 16 partitions
-	stream := NewStream(StreamOptions{
-		Name:          "test",
-		NumPartitions: 16,
-		BufferSize:    1000,
-	})
+// func TestStreamPartitioning(t *testing.T) {
+// 	// Create stream with 16 partitions
+// 	stream := NewStream(StreamOptions{
+// 		Name:          "test",
+// 		NumPartitions: 16,
+// 		BufferSize:    1000,
+// 	})
 
-	// Track which partition handles each event
-	partitionMap := make(map[string]uint32)
+// 	// Track which partition handles each event
+// 	partitionMap := make(map[string]uint32)
 
-	var mu sync.Mutex
+// 	var mu sync.Mutex
 
-	stream.Subscribe("TestEvent", func(ctx *golly.Context, evt Event) {
-		mu.Lock()
-		partitionMap[evt.ID.String()] = evt.partitionID
-		mu.Unlock()
-	})
+// 	stream.Subscribe("TestEvent", func(ctx *golly.Context, evt Event) {
+// 		mu.Lock()
+// 		partitionMap[evt.ID.String()] = evt.partitionID
+// 		mu.Unlock()
+// 	})
 
-	stream.Start()
-	defer stream.Stop()
+// 	stream.Start()
+// 	defer stream.Stop()
 
-	// Send same event multiple times - should always go to same partition
-	id, _ := uuid.Parse("123e4567-e89b-12d3-a456-426614174000")
-	evt := Event{
-		ID:   id,
-		Type: "TestEvent",
-	}
+// 	// Send same event multiple times - should always go to same partition
+// 	id, _ := uuid.Parse("123e4567-e89b-12d3-a456-426614174000")
+// 	evt := Event{
+// 		ID:   id,
+// 		Type: "TestEvent",
+// 	}
 
-	for i := 0; i < 100; i++ {
-		stream.Send(golly.NewContext(nil), evt)
-	}
+// 	for i := 0; i < 100; i++ {
+// 		stream.Send(golly.NewContext(nil), evt)
+// 	}
 
-	mu.Lock()
-	defer mu.Unlock()
+// 	mu.Lock()
+// 	defer mu.Unlock()
 
-	// Verify all instances went to same partition
-	firstPartition := partitionMap[evt.ID.String()]
-	for _, partition := range partitionMap {
-		assert.Equal(t, firstPartition, partition,
-			"Same event ID should always map to same partition")
-	}
-}
+// 	// Verify all instances went to same partition
+// 	firstPartition := partitionMap[evt.ID.String()]
+// 	for _, partition := range partitionMap {
+// 		assert.Equal(t, firstPartition, partition,
+// 			"Same event ID should always map to same partition")
+// 	}
+// }

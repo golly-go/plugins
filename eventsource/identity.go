@@ -8,9 +8,17 @@ import (
 var (
 	identityFunc  func(context.Context) any
 	tententIDFunc func(context.Context) string
+	userIDFunc    func(context.Context) string
 
 	lock sync.RWMutex
 )
+
+func SetUserIDFunc(fnc func(context.Context) string) {
+	lock.Lock()
+	defer lock.Unlock()
+
+	userIDFunc = fnc
+}
 
 func SetTenantIDFunc(fnc func(context.Context) string) {
 	lock.Lock()

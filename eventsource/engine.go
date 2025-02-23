@@ -26,9 +26,8 @@ type Engine struct {
 	projections *ProjectionManager
 	aggregates  *AggregateRegistry
 
-	mu            sync.RWMutex
-	globalVersion int64
-	running       bool
+	mu      sync.RWMutex
+	running bool
 
 	config EngineConfig
 }

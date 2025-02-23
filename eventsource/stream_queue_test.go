@@ -91,13 +91,6 @@ func TestStreamQueue_Ordering(t *testing.T) {
 						t.Errorf("Events for aggregate %s are out of order at position %d", aggID, i)
 					}
 				}
-
-				// Also verify all events for that aggregate stayed on the same partition
-				firstPartition := events[0].partitionID
-				for _, evt := range events {
-					assert.Equal(t, firstPartition, evt.partitionID,
-						"Events for aggregate %s must stay on the same partition", aggID)
-				}
 			}
 		})
 	}
