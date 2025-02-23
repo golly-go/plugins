@@ -153,6 +153,10 @@ func (ab *AggregateBase) ProcessChanges(ctx context.Context, ag Aggregate) {
 			change.TenantID = tententIDFunc(ctx)
 		}
 
+		if userIDFunc != nil {
+			change.UserID = userIDFunc(ctx)
+		}
+
 		change.AggregateID = ag.GetID()
 		change.AggregateType = ObjectName(ag)
 
