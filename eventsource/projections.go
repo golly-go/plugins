@@ -33,7 +33,7 @@ type Projection interface {
 	SetPosition(pos int64) error
 
 	// Reset to clear state for rebuild
-	Reset() error
+	Reset(context.Context) error
 }
 
 // ProjectionBase is an embeddable helper for common Projection logic.
@@ -52,7 +52,7 @@ func (p *ProjectionBase) SetPosition(pos int64) error {
 }
 
 // Reset sets position to -1
-func (p *ProjectionBase) Reset() error {
+func (p *ProjectionBase) Reset(ctx context.Context) error {
 	atomic.StoreInt64(&p.position, -1)
 	return nil
 }
@@ -106,7 +106,7 @@ func (pm *ProjectionManager) Rebuild(ctx context.Context, eng *Engine, projID st
 		return fmt.Errorf("projection %s not found", projID)
 	}
 
-	if err := proj.Reset(); err != nil {
+	if err := proj.Reset(ctx); err != nil {
 		return err
 	}
 
@@ -142,7 +142,7 @@ func (pm *ProjectionManager) RunToEnd(ctx context.Context, eng *Engine, projID s
 	}
 
 	// Reset projection state before running
-	if err := proj.Reset(); err != nil {
+	if err := proj.Reset(ctx); err != nil {
 		return fmt.Errorf("failed to reset projection: %w", err)
 	}
 
@@ -237,7 +237,6 @@ func resolveInterfaceName(obj any) string {
 	case string:
 		return o
 	default:
-
 		return ObjectName(o)
 	}
 }

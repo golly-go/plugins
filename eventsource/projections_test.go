@@ -43,7 +43,7 @@ type noOpProjection struct {
 }
 
 func (p *noOpProjection) HandleEvent(ctx context.Context, evt Event) error { return nil }
-func (p *noOpProjection) Reset() error                                     { return nil }
+func (p *noOpProjection) Reset(ctx context.Context) error                  { return nil }
 
 var _ Projection = (*TestProjection)(nil)
 
