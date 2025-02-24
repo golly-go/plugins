@@ -144,9 +144,19 @@ func (p *EventsourcePlugin) Commands() []*cobra.Command {
 var _ golly.Plugin = (*EventsourcePlugin)(nil)
 
 // Plugin returns the eventsource plugin from the application
-func Plugin(app *golly.Application) *EventsourcePlugin {
-	if p, ok := app.Plugins().Get(PluginName).(*EventsourcePlugin); ok {
-		return p
+func Plugin() *EventsourcePlugin {
+	if pm := golly.CurrentPlugins(); pm != nil {
+		if p, ok := pm.Get(PluginName).(*EventsourcePlugin); ok {
+			return p
+		}
 	}
+	return nil
+}
+
+func DefaultEngine() *Engine {
+	if plugin := Plugin(); plugin != nil {
+		return plugin.engine
+	}
+
 	return nil
 }
