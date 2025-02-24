@@ -54,6 +54,49 @@ func (tp *TestProjection) handled() int64 {
 	return atomic.LoadInt64(&tp.handledCount)
 }
 
+func TestProjectionManager_Get(t *testing.T) {
+
+	tests := []struct {
+		name        string
+		key         string
+		setup       func(*ProjectionManager)
+		expectedErr bool
+	}{
+		{
+			name: "Get a projection that exists",
+			key:  "proj1",
+			setup: func(pm *ProjectionManager) {
+				proj := &TestProjection{id: "proj1"}
+				pm.Register(proj)
+			},
+			expectedErr: false,
+		},
+		{
+			name:        "Get a projection that does not exist",
+			key:         "proj2",
+			setup:       func(pm *ProjectionManager) {},
+			expectedErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pm := NewProjectionManager()
+			tt.setup(pm)
+
+			proj, err := pm.Get(tt.key)
+			if tt.expectedErr {
+				require.Error(t, err)
+				assert.Nil(t, proj)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.NotNil(t, proj)
+		})
+	}
+}
+
 func TestProjectionManager_RunToEnd(t *testing.T) {
 	tests := []struct {
 		name          string

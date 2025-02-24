@@ -80,6 +80,22 @@ func (pm *ProjectionManager) Register(projs ...Projection) {
 	}
 }
 
+// Get returns a projection by ID.
+// Returns an error if the projection is not found.
+// Returns nil if the projection is found.
+// Returns nil if the projection is found.
+func (pm *ProjectionManager) Get(projID string) (Projection, error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	proj, ok := pm.projections[projID]
+	if !ok {
+		return nil, fmt.Errorf("projection %s not found", projID)
+	}
+
+	return proj, nil
+}
+
 // Rebuild resets a single projection, then processes all events from version 0 upward.
 func (pm *ProjectionManager) Rebuild(ctx context.Context, eng *Engine, projID string) error {
 	pm.mu.Lock()
