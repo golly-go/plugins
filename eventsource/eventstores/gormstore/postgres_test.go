@@ -69,3 +69,42 @@ func TestGormRepository_Save(t *testing.T) {
 	json.Unmarshal(loaded.RawData.RawMessage, &unmarshaledData)
 	assert.Equal(t, "value", unmarshaledData["key"])
 }
+
+func TestGormRepository_IncrementEventSourceVersion(t *testing.T) {
+	ctx := orm.CreateTestContext(golly.NewContext(context.Background()), EventSourceVersion{})
+	defer orm.Close(ctx)
+
+	t.Run("already exists", func(t *testing.T) {
+		orm.DB(ctx).Create(&EventSourceVersion{ID: "test", Version: 1})
+
+		version, err := IncrementEventSourceVersion(ctx, "test")
+		assert.NoError(t, err)
+
+		assert.Equal(t, int64(2), version)
+	})
+
+	t.Run("does not exist", func(t *testing.T) {
+		version, err := IncrementEventSourceVersion(ctx, "does-not-exist")
+		assert.NoError(t, err)
+		assert.Equal(t, int64(1), version)
+	})
+}
+
+func TestGormRepository_GetEventSourceVersion(t *testing.T) {
+	ctx := orm.CreateTestContext(golly.NewContext(context.Background()), EventSourceVersion{})
+	defer orm.Close(ctx)
+
+	t.Run("exists", func(t *testing.T) {
+		orm.DB(ctx).Create(&EventSourceVersion{ID: "test", Version: 1})
+
+		version, err := GetEventSourceVersion(ctx, "test")
+		assert.NoError(t, err)
+		assert.Equal(t, int64(1), version)
+	})
+
+	t.Run("does not exist", func(t *testing.T) {
+		version, err := GetEventSourceVersion(ctx, "does-not-exist")
+		assert.Error(t, err)
+		assert.Equal(t, int64(0), version)
+	})
+}

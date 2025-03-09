@@ -46,6 +46,14 @@ func (p *ProjectionBase) Position() int64 {
 	return atomic.LoadInt64(&p.position)
 }
 
+func (p *ProjectionBase) WriteState(ctx context.Context) error {
+	return nil
+}
+
+func (p *ProjectionBase) ReadState(ctx context.Context) (any, error) {
+	return nil, nil
+}
+
 func (p *ProjectionBase) SetPosition(pos int64) error {
 	atomic.StoreInt64(&p.position, pos)
 	return nil

@@ -2,6 +2,7 @@ package gormstore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/golly-go/plugins/eventsource"
@@ -19,15 +20,21 @@ type Event struct {
 	RawMetadata postgres.Jsonb `json:"-" gorm:"type:jsonb;column:metadata"`
 }
 
-type GlobalVersion struct {
+const (
+	GlobalVersionID = "global"
+)
+
+type EventSourceVersion struct {
 	ID      string `gorm:"primaryKey"`
 	Version int64  `gorm:"not null"`
 }
 
 var (
+	ErrVersionNotFound = errors.New("version not found")
+
 	Models = []any{
 		&Event{},
-		&GlobalVersion{},
+		&EventSourceVersion{},
 	}
 )
 
@@ -75,30 +82,7 @@ func (s *Store) LoadEvents(ctx context.Context, filters ...eventsource.EventFilt
 
 // IncrementGlobalVersion atomically increments the global version and returns the new value.
 func (s *Store) IncrementGlobalVersion(ctx context.Context) (int64, error) {
-	var newVersion int64
-
-	err := orm.DB(ctx).Transaction(func(tx *gorm.DB) error {
-		// Use INSERT ... ON CONFLICT to atomically increment the version
-		err := tx.Raw(`
-			INSERT INTO global_versions (id, version)
-			VALUES (1, 1)
-			ON CONFLICT (id)
-			DO UPDATE SET version = global_versions.version + 1
-			RETURNING version
-		`).Scan(&newVersion).Error
-
-		if err != nil {
-			return fmt.Errorf("failed to increment global version: %w", err)
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return 0, err
-	}
-
-	return newVersion, nil
+	return IncrementEventSourceVersion(ctx, GlobalVersionID)
 }
 
 // LoadEventsInBatches loads events in batches, calling handler for each batch.
@@ -162,13 +146,17 @@ func (s *Store) Save(ctx context.Context, events ...*eventsource.Event) error {
 
 	desiredStartVersion := batch[0].Version - 1
 
-	// Use the same DB connection in a transaction, so advisory lock is maintained
-	return orm.NewDB(ctx).Transaction(func(tx *gorm.DB) error {
-		// 1) Acquire advisory lock
-		lockKey := aggregatorLockKey(batch[0].AggregateType, batch[0].AggregateID)
+	db := orm.NewDB(ctx)
 
-		if err := tx.Exec("SELECT pg_advisory_xact_lock(?);", lockKey).Error; err != nil {
-			return err
+	// Use the same DB connection in a transaction, so advisory lock is maintained
+	return db.Transaction(func(tx *gorm.DB) error {
+		if db.Dialector.Name() == "postgres" {
+			// 1) Acquire advisory lock
+			lockKey := aggregatorLockKey(batch[0].AggregateType, batch[0].AggregateID)
+
+			if err := tx.Exec("SELECT pg_advisory_xact_lock(?);", lockKey).Error; err != nil {
+				return err
+			}
 		}
 
 		var currentVersion int64
@@ -256,3 +244,59 @@ func (*Store) LoadSnapshot(ctx context.Context, aggregateType, aggregateID strin
 }
 
 var _ eventsource.EventStore = (*Store)(nil)
+
+func IncrementEventSourceVersion(ctx context.Context, versionID string) (int64, error) {
+	var newVersion int64
+
+	db := orm.NewDB(ctx)
+
+	err := db.Transaction(func(tx *gorm.DB) error {
+
+		if db.Dialector.Name() == "postgres" {
+			lockKey := aggregatorLockKey("event_source_versions", versionID)
+
+			if err := tx.Exec("SELECT pg_advisory_xact_lock(?);", lockKey).Error; err != nil {
+				return err
+			}
+		}
+
+		// Use INSERT ... ON CONFLICT to atomically increment the version
+		err := tx.Raw(`
+			INSERT INTO event_source_versions (id, version)
+			VALUES (?, 1)
+			ON CONFLICT (id)
+			DO UPDATE SET version = event_source_versions.version + 1
+			RETURNING version
+		`, versionID).Scan(&newVersion).Error
+
+		if err != nil {
+			return fmt.Errorf("failed to increment global version: %w", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return 0, err
+	}
+
+	return newVersion, nil
+}
+
+func GetEventSourceVersion(ctx context.Context, versionID string) (int64, error) {
+	var version int64
+
+	err := orm.
+		DB(ctx).
+		Model(&EventSourceVersion{}).
+		Where("id = ?", versionID).
+		Select("version").
+		Scan(&version).
+		Error
+
+	if version == 0 {
+		return 0, ErrVersionNotFound
+	}
+
+	return version, err
+}
