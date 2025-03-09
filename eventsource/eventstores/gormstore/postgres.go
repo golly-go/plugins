@@ -267,7 +267,8 @@ func IncrementEventSourceVersion(ctx context.Context, versionID string) (int64, 
 			ON CONFLICT (id)
 			DO UPDATE SET version = event_source_versions.version + 1
 			RETURNING version
-		`, versionID).Scan(&newVersion).Error
+		`, versionID).
+			Scan(&newVersion).Error
 
 		if err != nil {
 			return fmt.Errorf("failed to increment global version: %w", err)
@@ -281,6 +282,29 @@ func IncrementEventSourceVersion(ctx context.Context, versionID string) (int64, 
 	}
 
 	return newVersion, nil
+}
+
+func SetEventSourceVersion(ctx context.Context, versionID string, version int64) error {
+	db := orm.NewDB(ctx)
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		if db.Dialector.Name() == "postgres" {
+			lockKey := aggregatorLockKey("event_source_versions", versionID)
+
+			if err := tx.Exec("SELECT pg_advisory_xact_lock(?);", lockKey).Error; err != nil {
+				return err
+			}
+		}
+
+		fmt.Printf("setting version %s to %d\n", versionID, version)
+
+		return tx.Exec(`
+			INSERT INTO event_source_versions (id, version)
+			VALUES (?, ?)
+			ON CONFLICT (id)
+			DO UPDATE SET version = ?
+		`, versionID, version, version).Error
+	})
 }
 
 func GetEventSourceVersion(ctx context.Context, versionID string) (int64, error) {

@@ -108,3 +108,26 @@ func TestGormRepository_GetEventSourceVersion(t *testing.T) {
 		assert.Equal(t, int64(0), version)
 	})
 }
+
+func TestGormRepository_SetEventSourceVersion(t *testing.T) {
+	ctx := orm.CreateTestContext(golly.NewContext(context.Background()), EventSourceVersion{})
+	defer orm.Close(ctx)
+
+	t.Run("exists", func(t *testing.T) {
+		err := SetEventSourceVersion(ctx, "test", 2)
+		assert.NoError(t, err)
+
+		version, err := GetEventSourceVersion(ctx, "test")
+		assert.NoError(t, err)
+		assert.Equal(t, int64(2), version)
+	})
+
+	t.Run("does not exist", func(t *testing.T) {
+		err := SetEventSourceVersion(ctx, "does-not-exist", 1)
+		assert.NoError(t, err)
+
+		version, err := GetEventSourceVersion(ctx, "does-not-exist")
+		assert.NoError(t, err)
+		assert.Equal(t, int64(1), version)
+	})
+}
