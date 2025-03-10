@@ -29,8 +29,8 @@ type Projection interface {
 	HandleEvent(context.Context, Event) error
 
 	// Position returns the last known position in the global event stream.
-	Position() int64
-	SetPosition(pos int64) error
+	Position(context.Context) int64
+	SetPosition(context.Context, int64) error
 
 	// Reset to clear state for rebuild
 	Reset(context.Context) error
@@ -42,19 +42,11 @@ type ProjectionBase struct {
 }
 
 // Position/SetPosition with atomic
-func (p *ProjectionBase) Position() int64 {
+func (p *ProjectionBase) Position(context.Context) int64 {
 	return atomic.LoadInt64(&p.position)
 }
 
-func (p *ProjectionBase) WriteState(ctx context.Context) error {
-	return nil
-}
-
-func (p *ProjectionBase) ReadState(ctx context.Context) (any, error) {
-	return nil, nil
-}
-
-func (p *ProjectionBase) SetPosition(pos int64) error {
+func (p *ProjectionBase) SetPosition(ctx context.Context, pos int64) error {
 	atomic.StoreInt64(&p.position, pos)
 	return nil
 }
@@ -119,7 +111,7 @@ func (pm *ProjectionManager) Rebuild(ctx context.Context, eng *Engine, projID st
 	}
 
 	// -1 means no events processed
-	if err := proj.SetPosition(-1); err != nil {
+	if err := proj.SetPosition(ctx, -1); err != nil {
 		return err
 	}
 
@@ -136,7 +128,7 @@ func (pm *ProjectionManager) RunOnce(ctx context.Context, eng *Engine, projID st
 		return fmt.Errorf("projection not found: %s", projID)
 	}
 
-	return pm.processProjection(ctx, eng, proj, int(proj.Position()+1), projectionBatchSize)
+	return pm.processProjection(ctx, eng, proj, int(proj.Position(ctx)+1), projectionBatchSize)
 }
 
 // RunToEnd catches up all registered projections from their current positions.
@@ -159,10 +151,10 @@ func (pm *ProjectionManager) RunToEnd(ctx context.Context, eng *Engine, projID s
 		for _, evt := range events {
 			if err := proj.HandleEvent(ctx, evt); err != nil {
 				lastError = err
-				proj.SetPosition(-1) // Mark as failed
-				return nil           // Stop processing but don't fail other projections
+				proj.SetPosition(ctx, -1) // Mark as failed
+				return nil                // Stop processing but don't fail other projections
 			}
-			proj.SetPosition(evt.GlobalVersion) // Use GlobalVersion instead of Version
+			proj.SetPosition(ctx, evt.GlobalVersion) // Use GlobalVersion instead of Version
 		}
 		return nil
 	})
@@ -212,7 +204,7 @@ func (pm *ProjectionManager) processProjection(
 			}
 		}
 
-		return p.SetPosition(events[len(events)-1].GlobalVersion)
+		return p.SetPosition(ctx, events[len(events)-1].GlobalVersion)
 	}, filter)
 }
 

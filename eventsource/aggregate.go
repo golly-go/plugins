@@ -148,7 +148,6 @@ func (ab *AggregateBase) ProcessChanges(ctx context.Context, ag Aggregate) {
 		if identityFunc != nil {
 			change.Identity = identityFunc(ctx)
 		}
-
 		if tententIDFunc != nil {
 			change.TenantID = tententIDFunc(ctx)
 		}

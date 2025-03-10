@@ -166,8 +166,9 @@ func TestProjectionManager_RunToEnd(t *testing.T) {
 			eng := NewEngine(&InMemoryStore{})
 
 			projID := tt.setup(pm, eng)
+			ctx := golly.NewContext(context.Background())
 
-			err := pm.RunToEnd(golly.NewContext(context.Background()), eng, projID)
+			err := pm.RunToEnd(ctx, eng, projID)
 
 			if tt.expectErr {
 				require.Error(t, err)
@@ -179,7 +180,7 @@ func TestProjectionManager_RunToEnd(t *testing.T) {
 			}
 
 			if proj, ok := pm.projections[projID]; ok {
-				assert.Equal(t, int64(tt.expectedPos), proj.Position(), "proj final position")
+				assert.Equal(t, int64(tt.expectedPos), proj.Position(ctx), "proj final position")
 				assert.Equal(t, int64(tt.expectedCount), proj.(*TestProjection).handled(), "proj handled count")
 			}
 		})
@@ -243,7 +244,7 @@ func TestProjectionManager_RunOnce(t *testing.T) {
 			var proj *TestProjection
 			if c.projName != "missing" {
 				proj = &TestProjection{id: c.projName}
-				proj.SetPosition(c.initialPos)
+				proj.SetPosition(ctx, c.initialPos)
 				proj.failOnEventNumber = c.failOnEvent
 				pm.Register(proj)
 			}
@@ -263,7 +264,7 @@ func TestProjectionManager_RunOnce(t *testing.T) {
 
 			// 5) If we have a real projection, verify
 			if proj != nil {
-				assert.Equal(t, c.finalPosition, proj.Position(), "final position mismatch")
+				assert.Equal(t, c.finalPosition, proj.Position(ctx), "final position mismatch")
 				assert.Equal(t, c.handled, proj.handled(), "handled mismatch")
 			}
 		})
@@ -349,7 +350,7 @@ func TestProjectionManager_Rebuild(t *testing.T) {
 
 			// 5) Validate final state if we have a real projection
 			if proj != nil {
-				assert.Equal(t, c.finalPosition, proj.Position(), "final position mismatch")
+				assert.Equal(t, c.finalPosition, proj.Position(ctx), "final position mismatch")
 				assert.Equal(t, c.handled, proj.handled(), "handled mismatch")
 			}
 		})
