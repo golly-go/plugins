@@ -33,6 +33,10 @@ import (
 // 	return nil
 // }
 
+var (
+	engineKey golly.ContextKey = "eventsource.engine"
+)
+
 type PluginOptions struct {
 	store  EventStore
 	engine *Engine
@@ -159,4 +163,12 @@ func DefaultEngine() *Engine {
 	}
 
 	return nil
+}
+
+func GetEngine(ctx context.Context) *Engine {
+	if engine, ok := ctx.Value(engineKey).(*Engine); ok {
+		return engine
+	}
+
+	return DefaultEngine()
 }

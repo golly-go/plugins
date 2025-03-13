@@ -34,11 +34,11 @@ type Aggregate interface {
 	RecordWithMetadata(any, Metadata)
 
 	// Process the events into the aggregation
-	ProcessChanges(context.Context, Aggregate)
+	ProcessChanges(context.Context, Aggregate) error
 
 	// Replay events
-	Replay(Aggregate, []Event)
-	ReplayOne(Aggregate, Event)
+	Replay(Aggregate, []Event) error
+	ReplayOne(Aggregate, Event) error
 
 	// Get the ID of the aggregate it is a string so it supports
 	// both UUID and INT representations
@@ -68,18 +68,19 @@ func (ab *AggregateBase) Changes() Events { return ab.changes }
 func (ab *AggregateBase) SetVersion(version int64) { ab.AggregateVersion = version }
 func (ab *AggregateBase) Version() int64           { return ab.AggregateVersion }
 
-func (ab *AggregateBase) ReplayOne(agg Aggregate, event Event) {
+func (ab *AggregateBase) ReplayOne(agg Aggregate, event Event) error {
 	if err := apply(agg, event); err != nil {
-		golly.Logger().Error(err)
+		return err
 	}
 
 	agg.AppendChanges(event)
+	return nil
 }
 
 // Replay applies events in the correct order to rebuild aggregate state.
-func (a *AggregateBase) Replay(agg Aggregate, events []Event) {
+func (a *AggregateBase) Replay(agg Aggregate, events []Event) error {
 	if len(events) == 0 {
-		return
+		return nil
 	}
 
 	// Sort events by version or created_at timestamp
@@ -87,11 +88,12 @@ func (a *AggregateBase) Replay(agg Aggregate, events []Event) {
 
 	for _, evt := range events {
 		if err := apply(agg, evt); err != nil {
-			golly.Logger().Error(err)
+			return err
 		}
 	}
 
 	agg.SetChanges(events)
+	return nil
 }
 
 // Record generates and tracks events for the aggregate, incrementing the version for each event.
@@ -125,11 +127,11 @@ func (ab *AggregateBase) RecordWithMetadata(data any, metadata Metadata) {
 // ProcessChanges applies all uncommitted changes to the aggregate.
 // Each change is processed if it does not have the READY state set.
 // Changes are updated to reflect their applied state and reattached to the aggregate.
-func (ab *AggregateBase) ProcessChanges(ctx context.Context, ag Aggregate) {
+func (ab *AggregateBase) ProcessChanges(ctx context.Context, ag Aggregate) error {
 	changes := ag.Changes()
 
 	if len(changes) == 0 {
-		return
+		return nil
 	}
 
 	version := ag.Version()
@@ -140,7 +142,7 @@ func (ab *AggregateBase) ProcessChanges(ctx context.Context, ag Aggregate) {
 		}
 
 		if err := apply(ag, change); err != nil {
-			golly.Logger().Error(err)
+			return err
 		}
 
 		// For now put this here till i can find a better way todo this
@@ -168,6 +170,8 @@ func (ab *AggregateBase) ProcessChanges(ctx context.Context, ag Aggregate) {
 	if ShouldSnapshot(int(version), int(ag.Version())) {
 		ag.AppendChanges(NewSnapshot(ag))
 	}
+
+	return nil
 }
 
 func ApplySnapshot(ag Aggregate, event Event) error {
@@ -258,16 +262,6 @@ func apply(ag Aggregate, event Event) error {
 
 	if paramType == eventRType {
 		methodValue.Call([]reflect.Value{reflect.ValueOf(event)})
-		return nil
-	}
-
-	dataType := reflect.ValueOf(event.Data)
-	if dataType.Kind() == reflect.Ptr {
-		dataType = dataType.Elem()
-	}
-
-	if paramType == dataType.Type() {
-		methodValue.Call([]reflect.Value{dataType})
 		return nil
 	}
 

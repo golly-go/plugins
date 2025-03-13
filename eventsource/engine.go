@@ -166,7 +166,9 @@ func (eng *Engine) Execute(ctx context.Context, agg Aggregate, cmd Command) (err
 		return handleExecutionError(ctx, agg, cmd, err)
 	}
 
-	agg.ProcessChanges(ctx, agg)
+	if err = agg.ProcessChanges(ctx, agg); err != nil {
+		return handleExecutionError(ctx, agg, cmd, err)
+	}
 
 	if agg.GetID() == "" {
 		return handleExecutionError(ctx, agg, cmd, ErrorNoAggregateID)
@@ -205,7 +207,10 @@ func (eng *Engine) Replay(ctx context.Context, agg Aggregate) error {
 				if err != nil {
 					return err
 				}
-				agg.ReplayOne(agg, e)
+
+				if err := agg.ReplayOne(agg, e); err != nil {
+					return err
+				}
 			}
 
 			return nil
@@ -240,6 +245,26 @@ func (eng *Engine) LoadEvents(
 
 		return handle(batch)
 	}, filter...)
+}
+
+func (eng *Engine) LoadEventTypes(ctx context.Context, batchSize int, eventTypes ...any) (events []Event, err error) {
+	types := make([]string, len(eventTypes))
+	for i := range eventTypes {
+		if t, ok := eventTypes[i].(string); ok {
+			types[i] = t
+			continue
+		}
+		types[i] = golly.TypeNoPtr(eventTypes[i]).String()
+	}
+
+	var result []Event
+
+	err = eng.LoadEvents(ctx, batchSize, func(events []Event) error {
+		result = append(result, events...)
+		return nil
+	}, EventFilter{EventType: types})
+
+	return result, err
 }
 
 func (eng *Engine) Load(ctx context.Context, agg Aggregate) error {

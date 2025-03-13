@@ -82,7 +82,7 @@ func applyFilters(query *gorm.DB, filters ...eventsource.EventFilter) *gorm.DB {
 
 	}
 
-	return query.Order("global_version ASC")
+	return query
 }
 
 func aggregatorLockKey(aggType, aggID string) int64 {
