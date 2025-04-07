@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/glebarez/sqlite"
+	"github.com/golly-go/golly"
 	"gorm.io/gorm"
 )
 
@@ -30,20 +31,11 @@ func sqliteConnection(config SQLiteConfig, modelsToMigrate ...any) (*gorm.DB, er
 // this is used for testing makes things easier.
 // NewInMemoryConnection creates a new database connection and migrates any passed in model
 func NewSQLiteConnection(config SQLiteConfig, modelToMigrate ...interface{}) (*gorm.DB, error) {
-	connectionString := config.ConnectionString
-	if connectionString == "" {
-		if config.Database == "" {
-			return nil, ErrorDatabaseNotDefined
-		}
+	fmt.Printf("XXX NewSQLiteConnection: %+v\n", config)
 
-		path := config.Path
-		if path == "" {
-			path = "db/"
+	connectionString := makeConnectionString(config)
 
-		}
-
-		connectionString = fmt.Sprintf("%s/%s.sqlite", path, config.Database)
-	}
+	golly.Logger().Debugf("XXX Connecting to sqlite database: %s", connectionString)
 
 	db, _ := gorm.Open(sqlite.Open(connectionString), &gorm.Config{Logger: NewLogger(connectionString, false)})
 
@@ -68,4 +60,25 @@ func NewInMemoryConnection(modelToMigrate ...interface{}) *gorm.DB {
 	}
 
 	return db
+}
+
+func makeConnectionString(config SQLiteConfig) string {
+	if config.ConnectionString != "" {
+		return config.ConnectionString
+	}
+
+	if config.Database == "" {
+		return ""
+	}
+
+	path := config.Path
+	if path == "" {
+		path = "db/"
+	}
+
+	if path[len(path)-1] != '/' {
+		path += "/"
+	}
+
+	return fmt.Sprintf("%s%s.sqlite", path, config.Database)
 }
