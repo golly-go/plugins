@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/glebarez/sqlite"
-	"github.com/golly-go/golly"
 	"gorm.io/gorm"
 )
 
@@ -16,6 +15,7 @@ var (
 type SQLiteConfig struct {
 	InMemory bool
 	Database string
+	Path     string
 }
 
 func sqliteConnection(config SQLiteConfig, modelsToMigrate ...any) (*gorm.DB, error) {
@@ -33,9 +33,15 @@ func NewSQLiteConnection(config SQLiteConfig, modelToMigrate ...interface{}) (*g
 		return nil, ErrorDatabaseNotDefined
 	}
 
-	dbName := fmt.Sprintf("db/%s.sqlite", golly.Env())
+	path := config.Path
+	if path == "" {
+		if config.Database == "" {
+			return nil, ErrorDatabaseNotDefined
+		}
+		path = fmt.Sprintf("db/%s.sqlite", config.Database)
+	}
 
-	db, _ := gorm.Open(sqlite.Open(dbName), &gorm.Config{Logger: NewLogger(dbName, false)})
+	db, _ := gorm.Open(sqlite.Open(path), &gorm.Config{Logger: NewLogger(path, false)})
 
 	if len(modelToMigrate) > 0 {
 		if err := db.AutoMigrate(modelToMigrate...); err != nil {
