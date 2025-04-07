@@ -1,17 +1,29 @@
 package eventsource
 
+import "time"
+
 // Option is a function that configures a projection registration or other engine-related setup.
 type Option func(*Options)
 
 type StreamOptions struct {
-	Name          string
-	NumPartitions uint32
-	BufferSize    int
+	Name           string
+	NumPartitions  uint32
+	BufferSize     int
+	BlockedTimeout time.Duration
 }
 
 // Options holds all possible configuration parameters that can be adjusted via Option functions.
 type Options struct {
 	Stream *StreamOptions
+}
+
+func WithStreamBlockedTimeout(timeout time.Duration) Option {
+	return func(o *Options) {
+		if o.Stream == nil {
+			o.Stream = &StreamOptions{}
+		}
+		o.Stream.BlockedTimeout = timeout
+	}
 }
 
 func WithStreamName(name string) Option {

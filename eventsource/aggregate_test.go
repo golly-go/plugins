@@ -15,8 +15,6 @@ type TestAggregate struct {
 	ID               string
 	Name             string
 	LastAppliedEvent *Event
-
-	es EventStore
 }
 
 func (ta *TestAggregate) TestEventHandler(evt Event) {
@@ -40,25 +38,25 @@ func TestReplay(t *testing.T) {
 		{
 			name: "Events in order",
 			events: []Event{
-				{Version: 1},
-				{Version: 2},
-				{Version: 3},
+				{Version: 1, Data: testEvent{name: "FirstEvent"}},
+				{Version: 2, Data: testEvent{name: "SecondEvent"}},
+				{Version: 3, Data: testEvent{name: "ThirdEvent"}},
 			},
 			expectOrder: []int64{1, 2, 3},
 		},
 		{
 			name: "Events out of order",
 			events: []Event{
-				{Version: 3},
-				{Version: 1},
-				{Version: 2},
+				{Version: 3, Data: testEvent{name: "ThirdEvent"}},
+				{Version: 1, Data: testEvent{name: "FirstEvent"}},
+				{Version: 2, Data: testEvent{name: "SecondEvent"}},
 			},
 			expectOrder: []int64{1, 2, 3},
 		},
 		{
 			name: "Single event",
 			events: []Event{
-				{Version: 1},
+				{Version: 1, Data: testEvent{name: "FirstEvent"}},
 			},
 			expectOrder: []int64{1},
 		},
@@ -72,7 +70,8 @@ func TestReplay(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			aggregate := &TestAggregate{}
-			aggregate.Replay(aggregate, tt.events)
+			err := aggregate.Replay(aggregate, tt.events)
+			assert.NoError(t, err)
 
 			changes := aggregate.Changes()
 
@@ -153,12 +152,14 @@ func TestProcessChanges(t *testing.T) {
 	}
 
 	mockAggregate.SetChanges([]Event{
-		{ID: uuid.New(), State: EventStateFailed},
-		{ID: uuid.New(), State: EventStateReady},
-		{ID: uuid.New(), State: EventStateRetry},
+		{ID: uuid.New(), State: EventStateFailed, Data: testEvent{name: "FirstEvent"}},
+		{ID: uuid.New(), State: EventStateReady, Data: testEvent{name: "SecondEvent"}},
+		{ID: uuid.New(), State: EventStateRetry, Data: testEvent{name: "ThirdEvent"}},
 	})
 
-	mockAggregate.ProcessChanges(golly.NewContext(context.Background()), mockAggregate)
+	err := mockAggregate.ProcessChanges(golly.NewContext(context.Background()), mockAggregate)
+	assert.NoError(t, err)
+
 	changes := mockAggregate.Changes()
 
 	assert.Equal(t, EventStateApplied, changes[0].GetState(), "First event should be marked as APPLIED")
