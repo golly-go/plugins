@@ -13,9 +13,10 @@ var (
 )
 
 type SQLiteConfig struct {
-	InMemory bool
-	Database string
-	Path     string
+	InMemory         bool
+	Database         string
+	Path             string
+	ConnectionString string
 }
 
 func sqliteConnection(config SQLiteConfig, modelsToMigrate ...any) (*gorm.DB, error) {
@@ -29,19 +30,22 @@ func sqliteConnection(config SQLiteConfig, modelsToMigrate ...any) (*gorm.DB, er
 // this is used for testing makes things easier.
 // NewInMemoryConnection creates a new database connection and migrates any passed in model
 func NewSQLiteConnection(config SQLiteConfig, modelToMigrate ...interface{}) (*gorm.DB, error) {
-	if config.Database == "" {
-		return nil, ErrorDatabaseNotDefined
-	}
-
-	path := config.Path
-	if path == "" {
+	connectionString := config.ConnectionString
+	if connectionString == "" {
 		if config.Database == "" {
 			return nil, ErrorDatabaseNotDefined
 		}
-		path = fmt.Sprintf("db/%s.sqlite", config.Database)
+
+		path := config.Path
+		if path == "" {
+			path = "db/"
+
+		}
+
+		connectionString = fmt.Sprintf("%s/%s.sqlite", path, config.Database)
 	}
 
-	db, _ := gorm.Open(sqlite.Open(path), &gorm.Config{Logger: NewLogger(path, false)})
+	db, _ := gorm.Open(sqlite.Open(connectionString), &gorm.Config{Logger: NewLogger(connectionString, false)})
 
 	if len(modelToMigrate) > 0 {
 		if err := db.AutoMigrate(modelToMigrate...); err != nil {
