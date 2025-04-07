@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/glebarez/sqlite"
 	"github.com/golly-go/golly"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
