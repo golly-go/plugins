@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 
 	"github.com/google/uuid"
 )
@@ -32,19 +33,16 @@ func (t InMemoryEvent) GlobalVersion() int64 {
 // InMemoryStore is an in-memory implementation of EventStore for testing purposes.
 type InMemoryStore struct {
 	data []Event
-	sync.RWMutex
+	lock sync.RWMutex
 
 	SaveFail error
 
 	gobalVersion int64
 }
 
-func (s *InMemoryStore) IncrementGlobalVersion(context.Context) (int64, error) {
-	s.Lock()
-	defer s.Unlock()
-
-	s.gobalVersion++
-	return s.gobalVersion, nil
+func (s *InMemoryStore) IncrementGlobalVersion(ctx context.Context) (int64, error) {
+	ret := atomic.AddInt64(&s.gobalVersion, 1)
+	return ret, nil
 }
 
 // Save persists one or more events atomically in memory.
@@ -53,8 +51,8 @@ func (s *InMemoryStore) Save(ctx context.Context, events ...*Event) error {
 		return s.SaveFail
 	}
 
-	s.Lock()
-	defer s.Unlock()
+	s.lock.Lock()
+	defer s.lock.Unlock()
 
 	for _, evt := range events {
 		s.data = append(s.data, *evt)
@@ -64,8 +62,8 @@ func (s *InMemoryStore) Save(ctx context.Context, events ...*Event) error {
 
 // LoadEvents retrieves all events (optionally filtered) as []PersistedEvent.
 func (s *InMemoryStore) LoadEvents(ctx context.Context, filters ...EventFilter) ([]PersistedEvent, error) {
-	s.RLock()
-	defer s.RUnlock()
+	s.lock.RLock()
+	defer s.lock.RUnlock()
 
 	var f EventFilter
 	if len(filters) > 0 {
@@ -89,8 +87,8 @@ func (s *InMemoryStore) LoadEventsInBatches(
 	handler func([]PersistedEvent) error,
 	filters ...EventFilter,
 ) error {
-	s.RLock()
-	defer s.RUnlock()
+	s.lock.RLock()
+	defer s.lock.RUnlock()
 
 	var f EventFilter
 	if len(filters) > 0 {
@@ -125,8 +123,8 @@ func (s *InMemoryStore) LoadEventsInBatches(
 
 // GlobalVersion returns the highest global version in this test store.
 func (s *InMemoryStore) GlobalVersion(ctx context.Context) (int64, error) {
-	s.RLock()
-	defer s.RUnlock()
+	s.lock.RLock()
+	defer s.lock.RUnlock()
 
 	if len(s.data) == 0 {
 		return 0, nil
@@ -137,8 +135,8 @@ func (s *InMemoryStore) GlobalVersion(ctx context.Context) (int64, error) {
 
 // IsNewEvent checks if an event is new by aggregate ID and version.
 func (s *InMemoryStore) IsNewEvent(event Event) bool {
-	s.RLock()
-	defer s.RUnlock()
+	s.lock.RLock()
+	defer s.lock.RUnlock()
 
 	for _, e := range s.data {
 		if e.AggregateID == event.AggregateID && e.Version == event.Version {
@@ -150,8 +148,8 @@ func (s *InMemoryStore) IsNewEvent(event Event) bool {
 
 // Exists checks if an event exists by its ID.
 func (s *InMemoryStore) Exists(ctx context.Context, eventID uuid.UUID) (bool, error) {
-	s.RLock()
-	defer s.RUnlock()
+	s.lock.RLock()
+	defer s.lock.RUnlock()
 
 	for _, event := range s.data {
 		if event.ID == eventID {
@@ -169,8 +167,8 @@ func (s *InMemoryStore) SaveSnapshot(ctx context.Context, agg Aggregate) error {
 
 // LoadSnapshot retrieves the latest snapshot for an aggregate as a PersistedEvent.
 func (s *InMemoryStore) LoadSnapshot(ctx context.Context, aggregateType, aggregateID string) (PersistedEvent, error) {
-	s.RLock()
-	defer s.RUnlock()
+	s.lock.RLock()
+	defer s.lock.RUnlock()
 
 	// Find the most recent snapshot. For simplicity, we'll return the *first* we find
 	// matching your criteria. Or you might iterate to find the max version.
@@ -188,8 +186,8 @@ func (s *InMemoryStore) LoadSnapshot(ctx context.Context, aggregateType, aggrega
 
 // DeleteEvent removes an event by ID.
 func (s *InMemoryStore) DeleteEvent(ctx context.Context, eventID uuid.UUID) error {
-	s.Lock()
-	defer s.Unlock()
+	s.lock.Lock()
+	defer s.lock.Unlock()
 
 	for i, event := range s.data {
 		if event.ID == eventID {

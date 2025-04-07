@@ -172,3 +172,7 @@ func GetEngine(ctx context.Context) *Engine {
 
 	return DefaultEngine()
 }
+
+func SetEngine(parent context.Context, engine *Engine) context.Context {
+	return context.WithValue(parent, engineKey, engine)
+}

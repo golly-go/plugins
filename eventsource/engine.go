@@ -70,8 +70,8 @@ func (eng *Engine) Projections() *ProjectionManager { return eng.projections }
 func (eng *Engine) Aggregates() *AggregateRegistry { return eng.aggregates }
 
 // nextGlobalVersion returns the next global version
-func (eng *Engine) nextGlobalVersion() (int64, error) {
-	return eng.store.IncrementGlobalVersion(context.Background())
+func (eng *Engine) nextGlobalVersion(ctx context.Context) (int64, error) {
+	return eng.store.IncrementGlobalVersion(ctx)
 }
 
 func (eng *Engine) RegisterAggregate(agg Aggregate, events []any) {
@@ -132,7 +132,7 @@ func (eng *Engine) CommitAggregateChanges(ctx context.Context, agg Aggregate) er
 	changes := agg.Changes().Uncommitted()
 
 	for i := range changes {
-		version, err := eng.nextGlobalVersion()
+		version, err := eng.nextGlobalVersion(ctx)
 		if err != nil {
 			return err
 		}
@@ -152,6 +152,12 @@ func (eng *Engine) CommitAggregateChanges(ctx context.Context, agg Aggregate) er
 
 // Execute handles command execution, including loading the aggregate, replaying events, validating, and persisting changes.
 func (eng *Engine) Execute(ctx context.Context, agg Aggregate, cmd Command) (err error) {
+
+	fmt.Printf("Execute called with engine: %+v", eng) // Add debug logging
+	if eng == nil {
+		return fmt.Errorf("engine is nil")
+	}
+
 	if err = eng.Replay(ctx, agg); err != nil {
 		return handleExecutionError(ctx, agg, cmd, err)
 	}
