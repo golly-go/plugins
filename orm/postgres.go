@@ -1,8 +1,11 @@
 package orm
 
 import (
+	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -17,15 +20,42 @@ type PostgresConfig struct {
 	SSL      bool
 	URL      string // Optional: Use a full database URL if provided.
 	Logger   bool   // Disable logger if false.
+
+	AuthToken     func() (string, error)
+	BeforeConnect func(ctx context.Context, config *pgx.ConnConfig) error
+}
+
+func beforeConnectWrapper(pconf PostgresConfig) func(ctx context.Context, config *pgx.ConnConfig) error {
+	return func(ctx context.Context, config *pgx.ConnConfig) error {
+		if pconf.AuthToken != nil {
+			token, err := pconf.AuthToken()
+			if err != nil {
+				return err
+			}
+			config.Password = token
+		}
+
+		if err := pconf.BeforeConnect(ctx, config); err != nil {
+			return err
+		}
+		return nil
+	}
 }
 
 // NewPostgresConnection creates a new PostgreSQL connection.
 func NewPostgresConnection(config PostgresConfig) (*gorm.DB, error) {
 	connectionString := BuildPostgresConnectionString(config)
 
-	db, err := gorm.Open(postgres.Open(connectionString), &gorm.Config{
+	psConfig, err := pgx.ParseConfig(connectionString)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse PostgreSQL connection string: %w", err)
+	}
+
+	conn := stdlib.OpenDB(*psConfig, stdlib.OptionBeforeConnect(beforeConnectWrapper(config)))
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: conn}), &gorm.Config{
 		Logger: NewLogger("postgres", !config.Logger),
 	})
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to PostgreSQL: %w", err)
 	}
@@ -44,13 +74,18 @@ func BuildPostgresConnectionString(config PostgresConfig) string {
 		sslMode = "sslmode=require"
 	}
 
+	password := ""
+	if config.Password != "" {
+		password = fmt.Sprintf(" password=%s", config.Password)
+	}
+
 	return fmt.Sprintf(
-		"dbname=%s host=%s port=%d user=%s password=%s %s",
+		"dbname=%s host=%s port=%d user=%s%s %s",
 		config.Database,
 		config.Host,
 		config.Port,
 		config.User,
-		config.Password,
+		password,
 		sslMode,
 	)
 }

@@ -31,11 +31,9 @@ func sqliteConnection(config SQLiteConfig, modelsToMigrate ...any) (*gorm.DB, er
 // this is used for testing makes things easier.
 // NewInMemoryConnection creates a new database connection and migrates any passed in model
 func NewSQLiteConnection(config SQLiteConfig, modelToMigrate ...interface{}) (*gorm.DB, error) {
-	fmt.Printf("XXX NewSQLiteConnection: %+v\n", config)
-
 	connectionString := makeConnectionString(config)
 
-	golly.Logger().Debugf("XXX Connecting to sqlite database: %s", connectionString)
+	golly.Logger().Tracef("Connecting to sqlite database: %s", connectionString)
 
 	db, _ := gorm.Open(sqlite.Open(connectionString), &gorm.Config{Logger: NewLogger(connectionString, false)})
 
