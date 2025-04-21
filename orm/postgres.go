@@ -35,9 +35,12 @@ func beforeConnectWrapper(pconf PostgresConfig) func(ctx context.Context, config
 			config.Password = token
 		}
 
-		if err := pconf.BeforeConnect(ctx, config); err != nil {
-			return err
+		if pconf.BeforeConnect != nil {
+			if err := pconf.BeforeConnect(ctx, config); err != nil {
+				return err
+			}
 		}
+
 		return nil
 	}
 }
