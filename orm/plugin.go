@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm"
 )
 
-type ConfigFunc[T any] func(a *golly.Application) T
+type ConfigFunc[T any] func(a *golly.Application) (T, error)
 type AfterFunc func(db *gorm.DB) error
 
 // OrmConfig provides a generic configuration wrapper for the ORM plugin.
@@ -16,7 +16,8 @@ type OrmPlugin[T any] struct {
 	UseGormMigrations bool
 
 	config ConfigFunc[T]
-	after  []AfterFunc
+
+	after []AfterFunc
 
 	Database T // Generic configuration, specific to the database driver
 }
@@ -42,7 +43,11 @@ func (p *OrmPlugin[T]) Initialize(app *golly.Application) error {
 	defer lock.Unlock()
 
 	if p.config != nil {
-		p.Database = p.config(app)
+		if d, err := p.config(app); err != nil {
+			return err
+		} else {
+			p.Database = d
+		}
 	}
 
 	switch cfg := any(p.Database).(type) {
