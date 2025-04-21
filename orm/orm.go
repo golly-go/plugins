@@ -95,3 +95,7 @@ func Close(c context.Context) error {
 
 	return db.Close()
 }
+
+func trace(format string, args ...interface{}) {
+	golly.Logger().Tracef("[ORM] "+format, args...)
+}

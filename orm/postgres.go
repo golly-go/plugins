@@ -2,12 +2,14 @@ package orm
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 // PostgresConfig defines the configuration required to connect to a PostgreSQL database.
@@ -20,6 +22,13 @@ type PostgresConfig struct {
 	SSL      bool
 	URL      string // Optional: Use a full database URL if provided.
 	Logger   bool   // Disable logger if false.
+
+	MaxIdleConns    int
+	MaxOpenConns    int
+	ConnMaxLifetime time.Duration
+	MaxIdleTime     time.Duration
+
+	ConnectionTimeout time.Duration
 
 	AuthToken     func() (string, error)
 	BeforeConnect func(ctx context.Context, config *pgx.ConnConfig) error
@@ -45,28 +54,52 @@ func beforeConnectWrapper(pconf PostgresConfig) func(ctx context.Context, config
 	}
 }
 
-// NewPostgresConnection creates a new PostgreSQL connection.
 func NewPostgresConnection(config PostgresConfig) (*gorm.DB, error) {
-	connectionString := BuildPostgresConnectionString(config)
 
-	psConfig, err := pgx.ParseConfig(connectionString)
+	connString := BuildPostgresConnectionString(config)
+
+	pgxConfig, err := pgx.ParseConfig(connString)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse PostgreSQL connection string: %w", err)
 	}
 
-	conn := stdlib.OpenDB(*psConfig, stdlib.OptionBeforeConnect(beforeConnectWrapper(config)))
-	db, err := gorm.Open(postgres.New(postgres.Config{Conn: conn}), &gorm.Config{
-		Logger: NewLogger("postgres", !config.Logger),
+	trace("Connecting to PostgreSQL: %s", pgxConfig.ConnString())
+
+	var dbConn *sql.DB
+	if config.AuthToken != nil {
+		dbConn = stdlib.OpenDB(*pgxConfig, stdlib.OptionBeforeConnect(beforeConnectWrapper(config)))
+	} else {
+		dbConn = stdlib.OpenDB(*pgxConfig)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := dbConn.PingContext(ctx); err != nil {
+		return nil, fmt.Errorf("Ping failed: %w", err)
+	}
+
+	setConnectionPoolSettings(dbConn, config)
+
+	// critical fix: use the custom dialector explicitly here
+	gormDB, err := gorm.Open(CustomDialector{DB: dbConn}, &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to PostgreSQL: %w", err)
+		return nil, fmt.Errorf("gorm.Open failed: %w", err)
 	}
 
-	return db, nil
+	return gormDB, nil
 }
 
-// BuildPostgresConnectionString constructs a PostgreSQL connection string.
+func setConnectionPoolSettings(db *sql.DB, config PostgresConfig) {
+	db.SetMaxIdleConns(config.MaxIdleConns)
+	db.SetMaxOpenConns(config.MaxOpenConns)
+	db.SetConnMaxLifetime(config.ConnMaxLifetime)
+	db.SetConnMaxIdleTime(config.MaxIdleTime)
+}
+
 func BuildPostgresConnectionString(config PostgresConfig) string {
 	if config.URL != "" {
 		return config.URL
@@ -80,6 +113,10 @@ func BuildPostgresConnectionString(config PostgresConfig) string {
 	password := ""
 	if config.Password != "" {
 		password = fmt.Sprintf(" password=%s", config.Password)
+	}
+
+	if config.ConnectionTimeout == 0 {
+		config.ConnectionTimeout = 30 * time.Second
 	}
 
 	return fmt.Sprintf(
