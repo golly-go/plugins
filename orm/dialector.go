@@ -15,37 +15,49 @@ type CustomDialector struct {
 	Dialector gorm.Dialector
 }
 
-func (dialect CustomDialector) Name() string {
+// ensureDialector ensures that the Dialector is initialized
+func (dialect *CustomDialector) ensureDialector() {
+	if dialect.Dialector == nil && dialect.DB != nil {
+		dialect.Dialector = postgres.New(postgres.Config{Conn: dialect.DB})
+	}
+}
+
+func (dialect *CustomDialector) Name() string {
 	return "postgres"
 }
 
-func (dialect CustomDialector) Initialize(db *gorm.DB) error {
+func (dialect *CustomDialector) Initialize(db *gorm.DB) error {
 	db.ConnPool = dialect.DB
 	dialect.Dialector = postgres.New(postgres.Config{Conn: dialect.DB})
-
-	return nil
+	return dialect.Dialector.Initialize(db)
 }
 
-func (dialect CustomDialector) Migrator(db *gorm.DB) gorm.Migrator {
+func (dialect *CustomDialector) Migrator(db *gorm.DB) gorm.Migrator {
+	dialect.ensureDialector()
 	return dialect.Dialector.Migrator(db)
 }
 
-func (dialect CustomDialector) DataTypeOf(field *schema.Field) string {
+func (dialect *CustomDialector) DataTypeOf(field *schema.Field) string {
+	dialect.ensureDialector()
 	return dialect.Dialector.DataTypeOf(field)
 }
 
-func (dialect CustomDialector) DefaultValueOf(field *schema.Field) clause.Expression {
+func (dialect *CustomDialector) DefaultValueOf(field *schema.Field) clause.Expression {
+	dialect.ensureDialector()
 	return dialect.Dialector.DefaultValueOf(field)
 }
 
-func (dialect CustomDialector) BindVarTo(writer clause.Writer, stmt *gorm.Statement, v interface{}) {
+func (dialect *CustomDialector) BindVarTo(writer clause.Writer, stmt *gorm.Statement, v interface{}) {
+	dialect.ensureDialector()
 	dialect.Dialector.BindVarTo(writer, stmt, v)
 }
 
-func (dialect CustomDialector) QuoteTo(writer clause.Writer, s string) {
+func (dialect *CustomDialector) QuoteTo(writer clause.Writer, s string) {
+	dialect.ensureDialector()
 	dialect.Dialector.QuoteTo(writer, s)
 }
 
-func (dialect CustomDialector) Explain(sql string, vars ...interface{}) string {
+func (dialect *CustomDialector) Explain(sql string, vars ...interface{}) string {
+	dialect.ensureDialector()
 	return dialect.Dialector.Explain(sql, vars...)
 }

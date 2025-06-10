@@ -9,7 +9,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 // PostgresConfig defines the configuration required to connect to a PostgreSQL database.
@@ -82,8 +81,8 @@ func NewPostgresConnection(config PostgresConfig) (*gorm.DB, error) {
 	setConnectionPoolSettings(dbConn, config)
 
 	// critical fix: use the custom dialector explicitly here
-	gormDB, err := gorm.Open(CustomDialector{DB: dbConn}, &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
+	gormDB, err := gorm.Open(&CustomDialector{DB: dbConn}, &gorm.Config{
+		Logger: NewLogger("postgres", config.Logger),
 	})
 
 	if err != nil {
