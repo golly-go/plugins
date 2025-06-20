@@ -30,7 +30,7 @@ func TestBeforeConnect(t *testing.T) {
 			User:     "postgres",
 			Password: "postgres",
 			Database: "postgres",
-			BeforeConnect: func(ctx context.Context, config *pgx.ConnConfig) error {
+			BeforeConnectFnc: func(ctx context.Context, config *pgx.ConnConfig) error {
 				config.Password = "test"
 				return nil
 			},
@@ -38,7 +38,7 @@ func TestBeforeConnect(t *testing.T) {
 		{
 			name: "auth token",
 			config: PostgresConfig{
-				AuthToken: func() (string, error) {
+				AuthTokenFnc: func() (string, error) {
 					return "test", nil
 				},
 			},
@@ -46,7 +46,7 @@ func TestBeforeConnect(t *testing.T) {
 		{
 			name: "auth token error",
 			config: PostgresConfig{
-				AuthToken: func() (string, error) {
+				AuthTokenFnc: func() (string, error) {
 					return "", errors.New("error")
 				},
 			},

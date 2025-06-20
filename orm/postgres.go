@@ -71,7 +71,7 @@ func NewPostgresConnection(config PostgresConfig) (*gorm.DB, error) {
 	trace("Connecting to PostgreSQL: %s", pgxConfig.ConnString())
 
 	var dbConn *sql.DB
-	if config.AuthToken != nil {
+	if config.AuthTokenFnc != nil || config.BeforeConnectFnc != nil {
 		dbConn = stdlib.OpenDB(*pgxConfig, stdlib.OptionBeforeConnect(beforeConnectWrapper(config)))
 	} else {
 		dbConn = stdlib.OpenDB(*pgxConfig)
