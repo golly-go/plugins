@@ -29,26 +29,32 @@ type PostgresConfig struct {
 
 	ConnectionTimeout time.Duration
 
-	AuthToken     func() (string, error)
-	BeforeConnect func(ctx context.Context, config *pgx.ConnConfig) error
+	AuthToken        string
+	AuthTokenFnc     func() (string, error)
+	BeforeConnectFnc func(ctx context.Context, config *pgx.ConnConfig) error
 }
 
 func beforeConnectWrapper(pconf PostgresConfig) func(ctx context.Context, config *pgx.ConnConfig) error {
 	return func(ctx context.Context, config *pgx.ConnConfig) error {
-		if pconf.AuthToken != nil {
-			token, err := pconf.AuthToken()
+		// Allow authtoken to be passed for local development
+		if pconf.AuthToken != "" {
+			config.Password = pconf.AuthToken
+			return nil
+		}
+
+		if pconf.AuthTokenFnc != nil {
+			token, err := pconf.AuthTokenFnc()
 			if err != nil {
 				return err
 			}
 			config.Password = token
 		}
 
-		if pconf.BeforeConnect != nil {
-			if err := pconf.BeforeConnect(ctx, config); err != nil {
+		if pconf.BeforeConnectFnc != nil {
+			if err := pconf.BeforeConnectFnc(ctx, config); err != nil {
 				return err
 			}
 		}
-
 		return nil
 	}
 }
