@@ -13,6 +13,8 @@ import (
 
 // PostgresConfig defines the configuration required to connect to a PostgreSQL database.
 type PostgresConfig struct {
+	ConnectionString string
+
 	Host     string
 	Port     int
 	User     string
@@ -106,6 +108,10 @@ func setConnectionPoolSettings(db *sql.DB, config PostgresConfig) {
 }
 
 func BuildPostgresConnectionString(config PostgresConfig) string {
+	if config.ConnectionString != "" {
+		return config.ConnectionString
+	}
+
 	if config.URL != "" {
 		return config.URL
 	}
