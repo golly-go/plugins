@@ -39,7 +39,7 @@ type Event struct {
 	GlobalVersion int64       `json:"globalVersion"`
 	State         EventState  `json:"state,omitempty" gorm:"-"`
 	Data          interface{} `json:"data" gorm:"-"`
-	Identity      interface{} `json:"identity,omitempty" gorm:"-"`
+	UserInfo      UserInfo    `json:"userInfo,omitempty" gorm:"-"`
 	Metadata      Metadata    `json:"metadata" gorm:"-"`
 	TenantID      string      `json:"tenantID"`
 	UserID        string      `json:"userID"`

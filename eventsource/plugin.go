@@ -41,28 +41,14 @@ type PluginOptions struct {
 	store  EventStore
 	engine *Engine
 
-	tenantIDFunc func(context.Context) string
-	identityFunc func(context.Context) any
-	userIDFunc   func(context.Context) string
+	userInfoFunc func(context.Context) UserInfo
 }
 
 type PluginOption func(*PluginOptions)
 
-func PluginWithTenantIDFunc(fnc func(context.Context) string) PluginOption {
+func PluginWithUserInfoFunc(fnc func(context.Context) UserInfo) PluginOption {
 	return func(opt *PluginOptions) {
-		opt.tenantIDFunc = fnc
-	}
-}
-
-func PluginWithUserIDFunc(fnc func(context.Context) string) PluginOption {
-	return func(opt *PluginOptions) {
-		opt.userIDFunc = fnc
-	}
-}
-
-func PluginWithIdentityFunc(fnc func(context.Context) any) PluginOption {
-	return func(opt *PluginOptions) {
-		opt.identityFunc = fnc
+		opt.userInfoFunc = fnc
 	}
 }
 
@@ -94,16 +80,8 @@ func NewPlugin(opts ...PluginOption) *EventsourcePlugin {
 		opt(&cfg)
 	}
 
-	if cfg.identityFunc != nil {
-		SetIdentityFunc(cfg.identityFunc)
-	}
-
-	if cfg.tenantIDFunc != nil {
-		SetTenantIDFunc(cfg.tenantIDFunc)
-	}
-
-	if cfg.userIDFunc != nil {
-		SetUserIDFunc(cfg.userIDFunc)
+	if cfg.userInfoFunc != nil {
+		SetUserInfoFunc(cfg.userInfoFunc)
 	}
 
 	if cfg.engine == nil {

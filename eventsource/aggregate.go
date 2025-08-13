@@ -2,10 +2,10 @@ package eventsource
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 
 	"github.com/golly-go/golly"
 	"github.com/google/uuid"
@@ -147,16 +147,12 @@ func (ab *AggregateBase) ProcessChanges(ctx context.Context, ag Aggregate) error
 
 		// For now put this here till i can find a better way todo this
 		// perhaps we move Identity to be top level in Golly
-		if identityFunc != nil {
-			change.Identity = identityFunc(ctx)
-		}
-		if tententIDFunc != nil {
-			change.TenantID = tententIDFunc(ctx)
+		if userInfoFunc != nil {
+			change.UserInfo = userInfoFunc(ctx)
 		}
 
-		if userIDFunc != nil {
-			change.UserID = userIDFunc(ctx)
-		}
+		change.TenantID = change.UserInfo.TenantID
+		change.UserID = change.UserInfo.UserID
 
 		change.AggregateID = ag.GetID()
 		change.AggregateType = ObjectName(ag)
@@ -222,50 +218,98 @@ func ApplySnapshot(ag Aggregate, event Event) error {
 //			o.RatingUpdatedHandler(event)
 //		}
 //	}
+// func apply(ag Aggregate, event Event) error {
+// 	if event.Data == nil {
+// 		return errors.New("event data is nil")
+// 	}
+
+// 	defer ag.SetVersion(event.Version)
+
+// 	if app, ok := ag.(Applier); ok {
+// 		app.Apply(event)
+// 		return nil
+// 	}
+
+// 	name := golly.InfNameNoPackage(event.Data)
+
+// 	methodName := fmt.Sprintf("%sHandler", capitalizeFirstCharASCII(name))
+
+// 	methodValue := reflect.ValueOf(ag).MethodByName(methodName)
+// 	if !methodValue.IsValid() {
+// 		// Optionally log missing handler in dev/test
+// 		if golly.Env().IsDevelopmentOrTest() {
+// 			golly.Logger().Tracef("No handler for %s#%s (method not found)",
+// 				golly.TypeNoPtr(ag).String(), methodName)
+// 		}
+// 		return nil
+// 	}
+
+// 	methodType := methodValue.Type()
+// 	if methodType.NumIn() != 1 {
+// 		return fmt.Errorf("expected 1 param, got %d for %s#%s",
+// 			methodType.NumIn(), golly.TypeNoPtr(ag).String(), methodName)
+// 	}
+
+// 	// i really do not like this but it works for now (Its ugly and slightly magic)
+// 	// though i was really tired of the massiiiiiive switch statements for anything that was super
+// 	// large aggregation
+// 	// if you dont like this (It is slower use the Apply() method)
+// 	paramType := methodType.In(0)
+
+// 	if paramType == eventRType {
+// 		methodValue.Call([]reflect.Value{reflect.ValueOf(event)})
+// 		return nil
+// 	}
+
+// 	return fmt.Errorf("unexpected param type got %s for %s#%s",
+// 		paramType, golly.TypeNoPtr(ag).String(), methodName)
+
+// }
+
 func apply(ag Aggregate, event Event) error {
 	if event.Data == nil {
-		return errors.New("event data is nil")
+		return fmt.Errorf("event data is nil")
 	}
-
 	defer ag.SetVersion(event.Version)
 
+	// custom Apply() takes precedence
 	if app, ok := ag.(Applier); ok {
 		app.Apply(event)
 		return nil
 	}
 
-	name := golly.InfNameNoPackage(event.Data)
-
-	methodName := fmt.Sprintf("%sHandler", capitalizeFirstCharASCII(name))
-
-	methodValue := reflect.ValueOf(ag).MethodByName(methodName)
-	if !methodValue.IsValid() {
-		// Optionally log missing handler in dev/test
-		if golly.Env().IsDevelopmentOrTest() {
-			golly.Logger().Tracef("No handler for %s#%s (method not found)",
-				golly.TypeNoPtr(ag).String(), methodName)
+	// derive "<EventName>Handler"
+	name := event.Type
+	if name == "" {
+		name = golly.InfNameNoPackage(event.Data)
+	} else {
+		// Trim package/path prefixes: e.g. "eventsource.testEvent" or "pkg/path.TestEvent"
+		if i := strings.LastIndex(name, "."); i >= 0 {
+			name = name[i+1:]
 		}
+		if j := strings.LastIndex(name, "/"); j >= 0 {
+			name = name[j+1:]
+		}
+	}
+	methodName := capitalizeFirstCharASCII(name) + "Handler"
+
+	// fetch or build index map once per type
+	handlers := handlerCache.getOrBuildHandlers(ag)
+
+	// call if present
+	if idx, ok := handlers[methodName]; ok {
+		v := reflect.ValueOf(ag)
+		// make sure we have a pointer receiver value to call Method(idx)
+		if v.Kind() != reflect.Ptr && v.CanAddr() {
+			v = v.Addr()
+		}
+		var args [1]reflect.Value
+		args[0] = reflect.ValueOf(event)
+		v.Method(idx).Call(args[:])
 		return nil
 	}
 
-	methodType := methodValue.Type()
-	if methodType.NumIn() != 1 {
-		return fmt.Errorf("expected 1 param, got %d for %s#%s",
-			methodType.NumIn(), golly.TypeNoPtr(ag).String(), methodName)
-	}
-
-	// i really do not like this but it works for now (Its ugly and slightly magic)
-	// though i was really tired of the massiiiiiive switch statements for anything that was super
-	// large aggregation
-	// if you dont like this (It is slower use the Apply() method)
-	paramType := methodType.In(0)
-
-	if paramType == eventRType {
-		methodValue.Call([]reflect.Value{reflect.ValueOf(event)})
-		return nil
-	}
-
-	return fmt.Errorf("unexpected param type got %s for %s#%s",
-		paramType, golly.TypeNoPtr(ag).String(), methodName)
-
+	// optional noisy logging in dev/test; quiet no-op in prod
+	// logMissingHandler(ag, methodName)
+	return nil
 }
