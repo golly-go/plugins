@@ -40,6 +40,14 @@ type InMemoryStore struct {
 	gobalVersion int64
 }
 
+func AddEvents(ctx context.Context, store *InMemoryStore, events ...Event) error {
+	store.lock.Lock()
+	defer store.lock.Unlock()
+
+	store.data = append(store.data, events...)
+	return nil
+}
+
 func (s *InMemoryStore) IncrementGlobalVersion(ctx context.Context) (int64, error) {
 	ret := atomic.AddInt64(&s.gobalVersion, 1)
 	return ret, nil
