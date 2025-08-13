@@ -18,6 +18,9 @@ type TestEventData struct {
 	AggregateType string
 	Data          any
 	Metadata      Metadata
+
+	Version       int64
+	GlobalVersion int64
 }
 
 // NewInMemoryEngine creates a new in-memory engine with the given options.
@@ -45,6 +48,10 @@ func buildInMemoryEvents(data []any) []Event {
 			events[i] = testEventToEvent(data, int64(i+1))
 		} else if data, ok := evt.(Event); ok {
 			events[i] = data
+
+			if events[i].GlobalVersion == 0 {
+				events[i].GlobalVersion = int64(i + 1)
+			}
 		}
 	}
 
@@ -58,7 +65,12 @@ func testEventToEvent(e TestEventData, version int64) Event {
 	evt.AggregateID = e.AggregateID
 	evt.AggregateType = e.AggregateType
 	evt.Type = golly.TypeNoPtr(e.Data).String()
-	evt.GlobalVersion = version
+
+	if e.GlobalVersion == 0 {
+		evt.GlobalVersion = version
+	} else {
+		evt.GlobalVersion = e.GlobalVersion
+	}
 
 	return evt
 }
