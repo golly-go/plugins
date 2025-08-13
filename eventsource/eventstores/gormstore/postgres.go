@@ -324,3 +324,61 @@ func GetEventSourceVersion(ctx context.Context, versionID string) (int64, error)
 
 	return version, err
 }
+
+// Query loads all events matching the provided scopes.
+func Query(ctx context.Context, scopes ...func(db *gorm.DB) *gorm.DB) ([]eventsource.PersistedEvent, error) {
+	var events []Event
+
+	err := orm.DB(ctx).Model(&Event{}).Scopes(scopes...).Find(&events).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	evts := make([]eventsource.PersistedEvent, len(events))
+	for pos := range events {
+		evts[pos] = &events[pos]
+	}
+
+	return evts, nil
+}
+
+// QueryInBatches loads Event rows in batches and calls handler for each batch.
+// - Respects ctx cancellation (via orm.DB(ctx))
+// - Applies any provided GORM scopes
+// - Converts []Event -> []eventsource.PersistedEvent (as *Event)
+func QueryInBatches(
+	ctx context.Context,
+	batchSize int,
+	handler func([]eventsource.PersistedEvent) error,
+	scopes ...func(*gorm.DB) *gorm.DB,
+) error {
+	if batchSize <= 0 {
+		batchSize = 1000
+	}
+
+	db := orm.DB(ctx).Model(&Event{}).Scopes(scopes...)
+
+	var events []Event
+	res := db.FindInBatches(&events, batchSize, func(tx *gorm.DB, batch int) error {
+		if len(events) == 0 {
+			return nil
+		}
+		// Wrap current batch as []PersistedEvent (pointing at the batch items)
+		evts := make([]eventsource.PersistedEvent, len(events))
+		for i := range events {
+			evts[i] = &events[i]
+		}
+		return handler(evts)
+	})
+
+	return res.Error
+}
+
+// func QueryInBatches(ctx context.Context, batchSize int, handler func([]eventsource.PersistedEvent) error, scopes ...func(db *gorm.DB) *gorm.DB) error {
+// 	var events []Event
+
+// 	query := orm.DB(ctx).Model(&Event{}).Scopes(scopes...)
+
+// 	return nil
+// }
