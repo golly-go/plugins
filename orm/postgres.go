@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -14,6 +16,7 @@ import (
 // PostgresConfig defines the configuration required to connect to a PostgreSQL database.
 type PostgresConfig struct {
 	ConnectionString string
+	ApplicationName  string
 
 	Host     string
 	Port     int
@@ -57,6 +60,7 @@ func beforeConnectWrapper(pconf PostgresConfig) func(ctx context.Context, config
 				return err
 			}
 		}
+
 		return nil
 	}
 }
@@ -70,28 +74,30 @@ func NewPostgresConnection(config PostgresConfig) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to parse PostgreSQL connection string: %w", err)
 	}
 
-	trace("Connecting to PostgreSQL: %s", pgxConfig.ConnString())
+	trace("Connecting to PostgreSQL: %s (Logging = %v)", pgxConfig.ConnString(), config.Logger)
+
+	// Respect caller-provided timeout during connect and ping
+	if config.ConnectionTimeout > 0 {
+		pgxConfig.ConnectTimeout = config.ConnectionTimeout
+	}
 
 	var dbConn *sql.DB
-	if config.AuthTokenFnc != nil || config.BeforeConnectFnc != nil {
+	if config.AuthToken != "" || config.AuthTokenFnc != nil || config.BeforeConnectFnc != nil {
 		dbConn = stdlib.OpenDB(*pgxConfig, stdlib.OptionBeforeConnect(beforeConnectWrapper(config)))
 	} else {
 		dbConn = stdlib.OpenDB(*pgxConfig)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := dbConn.PingContext(ctx); err != nil {
-		return nil, fmt.Errorf("Ping failed: %w", err)
-	}
-
 	setConnectionPoolSettings(dbConn, config)
 
-	// critical fix: use the custom dialector explicitly here
+	// Use stock postgres dialector to isolate behavior
 	gormDB, err := gorm.Open(&CustomDialector{DB: dbConn}, &gorm.Config{
-		Logger: NewLogger("postgres", config.Logger),
+		Logger: NewLogger("postgres", !config.Logger),
+		// DisableAutomaticPing:   true, // we already pinged with context
+		SkipDefaultTransaction: true,
 	})
+
+	trace("Databsae connection complete (hasError = %v)", err != nil)
 
 	if err != nil {
 		return nil, fmt.Errorf("gorm.Open failed: %w", err)
@@ -101,10 +107,22 @@ func NewPostgresConnection(config PostgresConfig) (*gorm.DB, error) {
 }
 
 func setConnectionPoolSettings(db *sql.DB, config PostgresConfig) {
-	db.SetMaxIdleConns(config.MaxIdleConns)
-	db.SetMaxOpenConns(config.MaxOpenConns)
-	db.SetConnMaxLifetime(config.ConnMaxLifetime)
-	db.SetConnMaxIdleTime(config.MaxIdleTime)
+	if config.MaxIdleConns > 0 {
+		db.SetMaxIdleConns(config.MaxIdleConns)
+	}
+	if config.MaxOpenConns > 0 {
+		db.SetMaxOpenConns(config.MaxOpenConns)
+	}
+	if config.ConnMaxLifetime > 0 {
+		db.SetConnMaxLifetime(config.ConnMaxLifetime)
+	}
+	if config.MaxIdleTime > 0 {
+		db.SetConnMaxIdleTime(config.MaxIdleTime)
+	}
+
+	if config.ConnectionTimeout > 0 {
+		db.SetConnMaxLifetime(config.ConnectionTimeout)
+	}
 }
 
 func BuildPostgresConnectionString(config PostgresConfig) string {
@@ -130,13 +148,27 @@ func BuildPostgresConnectionString(config PostgresConfig) string {
 		config.ConnectionTimeout = 30 * time.Second
 	}
 
+	name := strings.ReplaceAll(os.Args[0], "/", "-")
+	if config.ApplicationName != "" {
+		name = config.ApplicationName
+	}
+
+	if name[0] == '-' {
+		name = name[1:]
+	}
+
+	if len(name) > 20 {
+		name = name[:20]
+	}
+
 	return fmt.Sprintf(
-		"dbname=%s host=%s port=%d user=%s%s %s",
+		"dbname=%s host=%s port=%d user=%s%s application_name=%s %s",
 		config.Database,
 		config.Host,
 		config.Port,
 		config.User,
 		password,
+		name,
 		sslMode,
 	)
 }

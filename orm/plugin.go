@@ -62,6 +62,7 @@ func (p *OrmPlugin[T]) Initialize(app *golly.Application) error {
 		if err != nil {
 			return fmt.Errorf("failed to connect to Postgres: %w", err)
 		}
+
 	default:
 		return fmt.Errorf("unsupported configuration type: %T", p.Database)
 	}
@@ -71,6 +72,8 @@ func (p *OrmPlugin[T]) Initialize(app *golly.Application) error {
 			return err
 		}
 	}
+
+	trace("Connected to database with config %T", p.Database)
 
 	// Add middleware to attach the database connection to the context.
 	app.Routes().Use(middlewareWithConnection(db))

@@ -10,8 +10,11 @@ import (
 )
 
 const (
-	contextKey        golly.ContextKey = "database"
-	DefaultConnection                  = "default"
+	DefaultConnection = "default"
+)
+
+const (
+	contextKey golly.ContextKey = "database"
 
 	InMemoryDriver Driver = "in-memory"
 	SQLiteDriver   Driver = "sqlite"
@@ -97,5 +100,9 @@ func Close(c context.Context) error {
 }
 
 func trace(format string, args ...interface{}) {
-	golly.Logger().Tracef("[ORM] "+format, args...)
+	// Ensure Trace always prints when LOG_LEVEL=trace
+	lg := golly.Logger()
+	if lg != nil {
+		lg.Tracef("[ORM] "+format, args...)
+	}
 }

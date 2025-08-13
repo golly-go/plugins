@@ -27,9 +27,18 @@ func (dialect *CustomDialector) Name() string {
 }
 
 func (dialect *CustomDialector) Initialize(db *gorm.DB) error {
+	trace("Dialector.Initialize: start")
 	db.ConnPool = dialect.DB
+	trace("Dialector.Initialize: set ConnPool")
 	dialect.Dialector = postgres.New(postgres.Config{Conn: dialect.DB})
-	return dialect.Dialector.Initialize(db)
+	trace("Dialector.Initialize: created inner postgres dialector")
+	err := dialect.Dialector.Initialize(db)
+	if err != nil {
+		trace("Dialector.Initialize: inner initialize error: %v", err)
+		return err
+	}
+	trace("Dialector.Initialize: end")
+	return nil
 }
 
 func (dialect *CustomDialector) Migrator(db *gorm.DB) gorm.Migrator {
