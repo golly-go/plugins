@@ -8,15 +8,15 @@ type AggregateDefinition struct {
 type TestEngineOptions struct {
 	Aggregates  []AggregateDefinition
 	Projections []Projection
-	Events      []any
+	Data        []any
 }
 
 // NewInMemoryEngine creates a new in-memory engine with the given options.
 // for testing purposes.
 func NewInMemoryEngine(opts TestEngineOptions) *Engine {
-	events := make([]Event, len(opts.Events))
-	if opts.Events != nil {
-		for i, evt := range opts.Events {
+	events := make([]Event, len(opts.Data))
+	if opts.Data != nil {
+		for i, evt := range opts.Data {
 			events[i] = NewEvent(evt, EventStateReady, nil)
 			events[i].Data = evt
 		}
