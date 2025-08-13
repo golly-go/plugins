@@ -17,9 +17,12 @@ type TestEventData struct {
 	AggregateID   string
 	AggregateType string
 	Data          any
-	Metadata      Metadata
+	// Optional metadata
+	Metadata Metadata
 
-	Version       int64
+	// if not set, will be set to the version
+	Version int64
+	// if not set, will be set to the version
 	GlobalVersion int64
 }
 
@@ -70,6 +73,12 @@ func testEventToEvent(e TestEventData, version int64) Event {
 		evt.GlobalVersion = version
 	} else {
 		evt.GlobalVersion = e.GlobalVersion
+	}
+
+	if e.Version == 0 {
+		evt.Version = version
+	} else {
+		evt.Version = e.Version
 	}
 
 	return evt
