@@ -157,11 +157,10 @@ func (pw *partitionWorker) processJob(job Job) {
 		pw.aggregatorMap[evt.AggregateID] = agg
 	}
 
-	if len(agg.buffered) >= maxBufferPerAgg {
-		// drop oldest / refuse / emit metric; here we refuse:
-		// TODO: metric: projection_buffer_overflow_total
-		return
+	if agg.nextVersion == 0 {
+		agg.nextVersion = evt.Version
 	}
+
 	agg.buffered[evt.Version] = job
 	pw.flushAggregator(agg)
 }
@@ -177,6 +176,7 @@ func (pw *partitionWorker) flushAggregator(agg *aggregatorState) {
 			}
 			return
 		}
+
 		// we have the event
 		delete(agg.buffered, agg.nextVersion)
 		agg.blockedSince = time.Time{}
@@ -184,7 +184,7 @@ func (pw *partitionWorker) flushAggregator(agg *aggregatorState) {
 		// call user-defined handler
 		pw.handler(job.Ctx, job.Event)
 
-		agg.nextVersion++
+		agg.nextVersion = job.Event.Version + 1
 	}
 }
 
@@ -210,19 +210,20 @@ func (pw *partitionWorker) flushAggregator(agg *aggregatorState) {
 
 func (pw *partitionWorker) checkBlockedAggregators() {
 	now := time.Now()
-	for _, agg := range pw.aggregatorMap {
+	for ag, agg := range pw.aggregatorMap {
 		if agg.blockedSince.IsZero() || now.Sub(agg.blockedSince) <= pw.blockedTimeout {
+			golly.Logger().Tracef("skipping blocked aggregator %s (blockedSince=%s, blockedTimeout=%s)", ag, agg.blockedSince, pw.blockedTimeout)
 			continue
 		}
-		if agg.skips >= maxSkipsPerAgg {
-			// park; rely on external reconcile and leave blocked
-			continue
-		}
-		agg.skips++
-		// TODO: metrics: projection_event_skipped_total{partition=..., next_version=...}
-		agg.nextVersion++ // advance once
 
-		agg.blockedSince = time.Time{}
+		if len(agg.buffered) == 0 {
+			continue
+		}
+
+		agg.skips++
+		agg.nextVersion++ // advance once
+		// TODO: metrics: projection_event_skipped_total{partition=..., next_version=...}
+
 		pw.flushAggregator(agg) // resume if next is available
 	}
 }
@@ -314,7 +315,6 @@ func (pw *partitionWorker) drain() {
 // --------------------------------------------------------------------
 
 type StreamQueue struct {
-	name       string
 	partitions []*partitionWorker
 	numParts   uint32
 	wg         sync.WaitGroup
