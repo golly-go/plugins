@@ -20,8 +20,11 @@ import (
 var ErrQueueDraining = errors.New("queue is draining and not accepting new events")
 
 const (
-	defaultPartitions = 4
-	defaultQueueSize  = 1000
+	maxSkipsPerAgg      = 3
+	defaultPartitions   = 4
+	defaultQueueSize    = 1000
+	backpressureTimeout = 250 * time.Millisecond
+	maxBufferPerAgg     = 2048
 )
 
 // --------------------------------------------------------------------
@@ -43,6 +46,7 @@ type aggregatorState struct {
 	nextVersion  int64
 	blockedSince time.Time
 	buffered     map[int64]Job
+	skips        int
 }
 
 // newAggregatorState constructs a fresh aggregatorState
@@ -79,9 +83,21 @@ func newPartitionWorker(
 		id:             id,
 		jobs:           make(chan Job, bufferSize),
 		aggregatorMap:  make(map[string]*aggregatorState, 64),
-		handler:        handler,
+		handler:        wrapHandler(handler),
 		blockedTimeout: blockedTimeout,
 		wg:             wg,
+	}
+}
+
+func wrapHandler(handler StreamHandler) StreamHandler {
+	return func(ctx context.Context, evt Event) {
+		defer func() {
+			if r := recover(); r != nil {
+				golly.Logger().Errorf("panic in handler: %v", r)
+			}
+		}()
+
+		handler(ctx, evt)
 	}
 }
 
@@ -119,16 +135,33 @@ func (pw *partitionWorker) run() {
 }
 
 // processJob buffers the event, tries to flush
+// func (pw *partitionWorker) processJob(job Job) {
+// 	evt := job.Event
+// 	aggID := evt.AggregateID
+
+// 	agg, exists := pw.aggregatorMap[aggID]
+// 	if !exists {
+// 		agg = newAggregatorState()
+// 		pw.aggregatorMap[aggID] = agg
+// 	}
+
+// 	agg.buffered[evt.Version] = job
+// 	pw.flushAggregator(agg)
+// }
+
 func (pw *partitionWorker) processJob(job Job) {
 	evt := job.Event
-	aggID := evt.AggregateID
-
-	agg, exists := pw.aggregatorMap[aggID]
-	if !exists {
+	agg := pw.aggregatorMap[evt.AggregateID]
+	if agg == nil {
 		agg = newAggregatorState()
-		pw.aggregatorMap[aggID] = agg
+		pw.aggregatorMap[evt.AggregateID] = agg
 	}
 
+	if len(agg.buffered) >= maxBufferPerAgg {
+		// drop oldest / refuse / emit metric; here we refuse:
+		// TODO: metric: projection_buffer_overflow_total
+		return
+	}
 	agg.buffered[evt.Version] = job
 	pw.flushAggregator(agg)
 }
@@ -156,22 +189,41 @@ func (pw *partitionWorker) flushAggregator(agg *aggregatorState) {
 }
 
 // checkBlockedAggregators times out missing versions => skip one version
+// func (pw *partitionWorker) checkBlockedAggregators() {
+// 	now := time.Now()
+// 	for _, agg := range pw.aggregatorMap {
+// 		if agg.blockedSince.IsZero() {
+// 			continue
+// 		}
+
+// 		if now.Sub(agg.blockedSince) <= pw.blockedTimeout {
+// 			continue
+// 		}
+
+// 		// skip exactly one version
+// 		agg.nextVersion++
+// 		agg.blockedSince = time.Time{}
+
+// 		pw.flushAggregator(agg)
+// 	}
+// }
+
 func (pw *partitionWorker) checkBlockedAggregators() {
 	now := time.Now()
 	for _, agg := range pw.aggregatorMap {
-		if agg.blockedSince.IsZero() {
+		if agg.blockedSince.IsZero() || now.Sub(agg.blockedSince) <= pw.blockedTimeout {
 			continue
 		}
-
-		if now.Sub(agg.blockedSince) <= pw.blockedTimeout {
+		if agg.skips >= maxSkipsPerAgg {
+			// park; rely on external reconcile and leave blocked
 			continue
 		}
+		agg.skips++
+		// TODO: metrics: projection_event_skipped_total{partition=..., next_version=...}
+		agg.nextVersion++ // advance once
 
-		// skip exactly one version
-		agg.nextVersion++
 		agg.blockedSince = time.Time{}
-
-		pw.flushAggregator(agg)
+		pw.flushAggregator(agg) // resume if next is available
 	}
 }
 
@@ -186,38 +238,73 @@ func (pw *partitionWorker) cleanupEmptyAggregators() {
 }
 
 // drain forcibly processes or skips all aggregator states
+// func (pw *partitionWorker) drain() {
+// 	if !atomic.CompareAndSwapInt32(&pw.drained, 0, 1) {
+// 		return
+// 	}
+
+// 	// read leftover items
+// 	for job := range pw.jobs {
+// 		pw.processJob(job)
+// 	}
+
+// 	// final flush or skip everything
+// 	for aggID, agg := range pw.aggregatorMap {
+
+// 		bufferKeys := make([]int, 0, len(agg.buffered))
+// 		for k := range agg.buffered {
+// 			bufferKeys = append(bufferKeys, int(k))
+// 		}
+
+// 		sort.Ints(bufferKeys)
+
+// 		// Keep skipping or processing until aggregator is empty
+// 		for _, v := range bufferKeys {
+
+// 			// if we have nextVersion in buffer, process it
+// 			job := agg.buffered[int64(v)]
+
+// 			delete(agg.buffered, agg.nextVersion)
+
+// 			pw.handler(job.Ctx, job.Event)
+// 		}
+
+// 		// aggregator is now fully processed or skipped
+// 		delete(pw.aggregatorMap, aggID)
+// 	}
+// }
+
 func (pw *partitionWorker) drain() {
 	if !atomic.CompareAndSwapInt32(&pw.drained, 0, 1) {
 		return
 	}
 
-	// read leftover items
+	// consume any remaining jobs
 	for job := range pw.jobs {
 		pw.processJob(job)
 	}
 
-	// final flush or skip everything
 	for aggID, agg := range pw.aggregatorMap {
 
-		bufferKeys := make([]int, 0, len(agg.buffered))
+		keys := make([]int64, 0, len(agg.buffered))
 		for k := range agg.buffered {
-			bufferKeys = append(bufferKeys, int(k))
+
+			keys = append(keys, k)
 		}
 
-		sort.Ints(bufferKeys)
+		sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
 
-		// Keep skipping or processing until aggregator is empty
-		for _, v := range bufferKeys {
+		for _, ver := range keys {
+			job := agg.buffered[ver]
 
-			// if we have nextVersion in buffer, process it
-			job := agg.buffered[int64(v)]
+			delete(agg.buffered, ver) // delete by actual key
 
-			delete(agg.buffered, agg.nextVersion)
+			pw.handler(job.Ctx, job.Event) // best-effort deliver
 
-			pw.handler(job.Ctx, job.Event)
+			if ver >= agg.nextVersion { // advance nextVersion
+				agg.nextVersion = ver + 1
+			}
 		}
-
-		// aggregator is now fully processed or skipped
 		delete(pw.aggregatorMap, aggID)
 	}
 }
@@ -271,6 +358,7 @@ func (sq *StreamQueue) Start() {
 	if !atomic.CompareAndSwapInt32(&sq.running, 0, 1) {
 		return
 	}
+
 	for _, pw := range sq.partitions {
 		pw.start()
 	}
@@ -280,18 +368,39 @@ func (sq *StreamQueue) Stop() {
 	if !atomic.CompareAndSwapInt32(&sq.running, 1, 0) {
 		return
 	}
+
 	for _, pw := range sq.partitions {
 		close(pw.jobs)
 	}
+
 	sq.wg.Wait()
 }
+
+// func (sq *StreamQueue) Enqueue(ctx context.Context, evt Event) error {
+// 	if atomic.LoadInt32(&sq.running) != 1 {
+// 		return ErrQueueDraining
+// 	}
+// 	part := sq.getPartition(evt.AggregateID)
+// 	sq.partitions[part].jobs <- Job{Ctx: ctx, Event: evt}
+// 	return nil
+// }
 
 func (sq *StreamQueue) Enqueue(ctx context.Context, evt Event) error {
 	if atomic.LoadInt32(&sq.running) != 1 {
 		return ErrQueueDraining
 	}
+
 	part := sq.getPartition(evt.AggregateID)
-	sq.partitions[part].jobs <- Job{Ctx: ctx, Event: evt}
+
+	select {
+	case sq.partitions[part].jobs <- Job{Ctx: ctx, Event: evt}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(250 * time.Millisecond):
+		return errors.New("queue full: backpressure on partition")
+	}
+
 	return nil
 }
 

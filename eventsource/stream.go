@@ -39,7 +39,7 @@ func NewStream(opts StreamOptions) *Stream {
 	}
 
 	s.queue = NewStreamQueue(StreamQueueConfig{
-		Name:          s.name,
+		Name:          streamName(&opts),
 		NumPartitions: opts.NumPartitions,
 		BufferSize:    opts.BufferSize,
 		Handler:       s.handleStreamEvent,
@@ -72,12 +72,16 @@ func (s *Stream) Send(ctx context.Context, events ...Event) error {
 // Start begins processing events in the stream
 func (s *Stream) Start() {
 	s.mu.Lock()
+
 	if s.started {
 		s.mu.Unlock()
 		return
 	}
+
 	s.started = true
 	s.mu.Unlock()
+
+	golly.Logger().Tracef("starting stream %s numPartitions=%d", s.name, s.queue.numParts)
 
 	s.queue.Start()
 }
@@ -126,7 +130,6 @@ func (s *Stream) Aggregate(aggregate any, handler StreamHandler) *Stream {
 	defer s.mu.Unlock()
 
 	aggregateType := resolveName(aggregate)
-
 	s.aggregations[aggregateType] = append(s.aggregations[aggregateType], handler)
 	return s
 }
@@ -172,17 +175,13 @@ func (s *Stream) Project(proj Projection) {
 		}
 	}
 
-	aggs, events := projectionSteamConfig(proj)
+	_, events := projectionSteamConfig(proj)
 
-	if len(aggs) == 0 && len(events) == 0 {
-		logger.Warnf("projection %s does not have any events or aggregates defined for it", projectionKey(proj))
+	logger.Tracef("registering projection %s stream=%s events=%d", projectionKey(proj), s.name, len(events))
+
+	if len(events) == 0 {
+		s.Subscribe(AllEvents, handler)
 		return
-	}
-
-	logger.Tracef("registering projection %s stream=%s aggs=%d events=%d", projectionKey(proj), s.name, len(aggs), len(events))
-
-	for pos := range aggs {
-		s.Aggregate(aggs[pos], handler)
 	}
 
 	for pos := range events {
@@ -205,4 +204,16 @@ func streamName(cfg *StreamOptions) string {
 		return DefaultStreamName
 	}
 	return cfg.Name
+}
+
+func streamNamesForProjection(proj Projection) []string {
+	aggs, _ := projectionSteamConfig(proj)
+
+	names := make([]string, 0, len(aggs))
+
+	for pos := range aggs {
+		names = append(names, resolveName(aggs[pos]))
+	}
+
+	return names
 }

@@ -135,6 +135,9 @@ func TestEngine_RegisterProjection(t *testing.T) {
 		{
 			name: "StreamNotExist",
 			setup: func(e *Engine) (Projection, []Option) {
+				// Under new behavior, streams are not auto-created without config.
+				// Pre-register the stream to satisfy this test case.
+				e.streams.RegisterStream(NewStream(StreamOptions{Name: "nonexistent"}))
 				return &noOpProjection{}, []Option{
 					WithStreamName("nonexistent"),
 				}
@@ -160,7 +163,7 @@ func TestEngine_RegisterProjection(t *testing.T) {
 			engine := NewEngine(&InMemoryStore{})
 			proj, opts := tt.setup(engine)
 
-			err := engine.RegisterProjection(proj, opts...)
+			err := engine.RegisterProjection(proj)
 			cfg := Options{}
 			for _, opt := range opts {
 				opt(&cfg)

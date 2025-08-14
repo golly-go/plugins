@@ -28,14 +28,6 @@ type Engine struct {
 
 	mu      sync.RWMutex
 	running bool
-
-	config EngineConfig
-}
-
-type EngineConfig struct {
-	SnapshotFrequency int
-	BatchSize         int
-	// Other config options...
 }
 
 // NewEngine initializes everything
@@ -69,13 +61,34 @@ func (eng *Engine) Projections() *ProjectionManager { return eng.projections }
 // Aggregates returns the underlying aggregate registry
 func (eng *Engine) Aggregates() *AggregateRegistry { return eng.aggregates }
 
+func (eng *Engine) IsRunning() bool {
+	eng.mu.RLock()
+	defer eng.mu.RUnlock()
+	return eng.running
+}
+
 // nextGlobalVersion returns the next global version
 func (eng *Engine) nextGlobalVersion(ctx context.Context) (int64, error) {
 	return eng.store.IncrementGlobalVersion(ctx)
 }
 
-func (eng *Engine) RegisterAggregate(agg Aggregate, events []any) {
+func (eng *Engine) RegisterAggregate(agg Aggregate, events []any, opts ...Option) error {
 	eng.aggregates.Register(agg, events)
+
+	options := handleOptions(opts...)
+
+	options.Stream.Name = resolveName(agg)
+
+	stream, err := eng.streams.GetOrCreateStream(*options.Stream)
+	if err != nil {
+		return err
+	}
+
+	if eng.IsRunning() {
+		stream.Start()
+	}
+
+	return nil
 }
 
 // RebuildProjection rebuilds a single projection
@@ -93,33 +106,39 @@ func (eng *Engine) RunProjectionOnce(ctx context.Context, projection any) error 
 	return eng.projections.RunOnce(ctx, eng, resolveInterfaceName(projection))
 }
 
-// RegisterProjection registers a projection with the engine
-func (eng *Engine) RegisterProjection(proj Projection, opts ...Option) error {
-	options := &Options{}
-	for _, opt := range opts {
-		opt(options)
-	}
-
-	if options.Stream == nil {
-		options.Stream = &defaultStreamOptions
-	}
-
-	stream, err := eng.streams.GetOrCreateStream(*options.Stream)
-	if err != nil {
-		return fmt.Errorf("failed to register stream: %w", err)
-	}
-
+// RegisterProjection registers a projection and attaches it to per-aggregate streams
+// declared by the projection. If no aggregates are declared, it attaches to the default stream.
+func (eng *Engine) RegisterProjection(proj Projection) error {
 	eng.projections.Register(proj)
-	stream.Project(proj)
 
-	if eng.running {
-		stream.Start()
+	// Determine aggregates and events declared by the projection
+	aggs, _ := projectionSteamConfig(proj)
+
+	// If projection declares aggregates, attach to each aggregate-named stream
+	if len(aggs) > 0 {
+		isRunning := eng.IsRunning()
+		for _, a := range aggs {
+			name := resolveName(a)
+			stream, ok := eng.streams.Get(name)
+			if !ok {
+				return fmt.Errorf("stream %s not found", name)
+			}
+
+			stream.Project(proj)
+			if isRunning {
+				stream.Start()
+			}
+
+		}
+		return nil
 	}
 
-	eng.mu.RLock()
-
-	eng.mu.RUnlock()
-
+	// Fallback: no aggregates declared → attach to default stream
+	stream, ok := eng.streams.Get(DefaultStreamName)
+	if !ok {
+		return fmt.Errorf("default stream not found")
+	}
+	stream.Project(proj)
 	return nil
 }
 

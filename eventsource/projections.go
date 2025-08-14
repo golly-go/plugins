@@ -17,6 +17,8 @@ type AggregateProjection interface {
 	AggregateTypes() []any
 }
 
+// EventProjection must be used with AggregateProjection this just allows
+// additonal event filtering (TBD if we keep this)
 type EventProjection interface {
 	EventTypes() []any
 }
@@ -218,10 +220,6 @@ func projectionKey(p Projection) string {
 func projectionSteamConfig(p Projection) (aggs []string, evts []string) {
 	if at, ok := p.(AggregateProjection); ok {
 		aggs = golly.Map(at.AggregateTypes(), resolveInterfaceName)
-	}
-
-	if et, ok := p.(EventProjection); ok {
-		evts = golly.Map(et.EventTypes(), resolveInterfaceName)
 	}
 
 	return

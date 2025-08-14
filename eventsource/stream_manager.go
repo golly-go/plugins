@@ -37,11 +37,46 @@ func (sm *StreamManager) RegisterStream(stream *Stream) *Stream {
 }
 
 // Send sends an event to all streams.
-func (sm *StreamManager) Send(ctx context.Context, events ...Event) {
-	streams := sm.getStreams()
+// func (sm *StreamManager) Send(ctx context.Context, events ...Event) {
+// 	var streamCopy map[string]*Stream
+// 	sm.mu.RLock()
 
-	for pos := range streams {
-		streams[pos].Send(ctx, events...)
+// 	streamCopy = make(map[string]*Stream, len(sm.streams))
+// 	for k, v := range sm.streams {
+// 		streamCopy[k] = v
+// 	}
+// 	sm.mu.RUnlock()
+
+// 	for pos := range events {
+// 		streamCopy[events[pos].AggregateType].Send(ctx, events[pos])
+// 	}
+
+// }
+
+func (sm *StreamManager) Send(ctx context.Context, events ...Event) {
+	sm.mu.RLock()
+
+	if len(sm.streams) == 0 || len(events) == 0 {
+		sm.mu.RUnlock()
+		return
+	}
+
+	// bucket by *Stream, preserves per-stream ordering
+	buckets := make(map[*Stream][]Event, len(sm.streams))
+	for i := 0; i < len(events); i++ {
+		if s := sm.streams[events[i].AggregateType]; s != nil {
+			buckets[s] = append(buckets[s], events[i])
+		}
+	}
+	sm.mu.RUnlock()
+
+	// deliver each batch
+	for s, batch := range buckets {
+		if len(batch) == 0 {
+			continue
+		}
+
+		s.Send(ctx, batch...)
 	}
 }
 

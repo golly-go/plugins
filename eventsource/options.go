@@ -52,3 +52,16 @@ func WithStreamBufferSize(size int) Option {
 		o.Stream.BufferSize = size
 	}
 }
+
+func handleOptions(opts ...Option) *Options {
+	options := &Options{}
+	for _, opt := range opts {
+		opt(options)
+	}
+
+	if options.Stream == nil {
+		options.Stream = &defaultStreamOptions
+	}
+
+	return options
+}
