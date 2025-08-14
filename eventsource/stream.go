@@ -59,7 +59,7 @@ func (s *Stream) Send(ctx context.Context, events ...Event) error {
 		return nil
 	}
 
-	golly.Logger().Tracef("sending %d events to stream %s", len(events), s.name)
+	trace("sending %d events to stream %s", len(events), s.name)
 
 	for _, evt := range events {
 		if err := s.queue.Enqueue(ctx, evt); err != nil {
@@ -81,7 +81,7 @@ func (s *Stream) Start() {
 	s.started = true
 	s.mu.Unlock()
 
-	golly.Logger().Tracef("starting stream %s numPartitions=%d", s.name, s.queue.numParts)
+	trace("starting stream %s numPartitions=%d", s.name, s.queue.numParts)
 
 	s.queue.Start()
 }
@@ -119,7 +119,7 @@ func (s *Stream) handleStreamEvent(ctx context.Context, event Event) {
 		handlers = append(handlers, h...)
 	}
 
-	golly.Logger().Tracef("Processing event %s (type=%s) handlers=%d", event.ID, eventType, len(handlers))
+	trace("Processing event %s (type=%s) handlers=%d", event.ID, eventType, len(handlers))
 
 	// Process handlers
 	for pos := range handlers {
@@ -140,6 +140,8 @@ func (s *Stream) Aggregate(aggregate any, handler StreamHandler) *Stream {
 func (s *Stream) Subscribe(eventType string, handler StreamHandler) *Stream {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	trace("Subscribing to event type %s handler=%#v", eventType, handler)
 
 	s.handlers[eventType] = append(s.handlers[eventType], handler)
 	return s
@@ -166,20 +168,22 @@ func (s *Stream) Project(proj Projection) {
 	logger := golly.NewLogger().WithField("stream", s.name)
 
 	handler := func(ctx context.Context, evt Event) {
+		log := logger.Dup()
+
 		defer func() {
 			if r := recover(); r != nil {
-				logger.Dup().Errorf("Recovered from panic in projection %s: %v", projectionKey(proj), r)
+				log.Errorf("Recovered from panic in projection %s: %v", projectionKey(proj), r)
 			}
 		}()
 
 		if err := proj.HandleEvent(ctx, evt); err != nil {
-			logger.Dup().Errorf("cannot process projection %s (%s)", projectionKey(proj), err)
+			log.Errorf("cannot process projection %s (%s)", projectionKey(proj), err)
 		}
 	}
 
 	_, events := projectionSteamConfig(proj)
 
-	logger.Tracef("registering projection %s %T stream=%s events=%d", projectionKey(proj), proj, s.name, len(events))
+	trace("registering projection %s %T stream=%s events=%d", projectionKey(proj), proj, s.name, len(events))
 
 	if len(events) == 0 {
 		s.Subscribe(AllEvents, handler)
@@ -189,21 +193,4 @@ func (s *Stream) Project(proj Projection) {
 	for pos := range events {
 		s.Subscribe(events[pos], handler)
 	}
-}
-
-func resolveName(obj any) (name string) {
-	switch o := obj.(type) {
-	case string:
-		name = o
-	default:
-		name = ObjectName(o)
-	}
-	return
-}
-
-func streamName(cfg *StreamOptions) string {
-	if cfg == nil {
-		return DefaultStreamName
-	}
-	return cfg.Name
 }
