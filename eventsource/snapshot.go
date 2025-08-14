@@ -1,7 +1,7 @@
 package eventsource
 
 import (
-	"encoding/json"
+	"github.com/segmentio/encoding/json"
 
 	"github.com/golly-go/golly"
 )

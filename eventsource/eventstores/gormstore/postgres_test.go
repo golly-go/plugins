@@ -2,10 +2,11 @@ package gormstore
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/segmentio/encoding/json"
 
 	"github.com/golly-go/golly"
 	"github.com/golly-go/plugins/eventsource"

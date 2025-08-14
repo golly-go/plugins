@@ -117,8 +117,10 @@ func (eng *Engine) RegisterProjection(proj Projection) error {
 	// If projection declares aggregates, attach to each aggregate-named stream
 	if len(aggs) > 0 {
 		isRunning := eng.IsRunning()
+
 		for _, a := range aggs {
 			name := resolveName(a)
+
 			stream, ok := eng.streams.Get(name)
 			if !ok {
 				return fmt.Errorf("stream %s not found", name)

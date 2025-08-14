@@ -1,9 +1,11 @@
 package eventsource
 
 import (
-	"encoding/json"
+	"bytes"
 	"fmt"
 	"time"
+
+	"github.com/segmentio/encoding/json"
 
 	"github.com/google/uuid"
 )
@@ -198,4 +200,21 @@ func unmarshal(instance, raw any) error {
 	}
 
 	return nil
+}
+
+func EventDataToMap(data any) (map[string]any, error) {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return nil, err
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(jsonData))
+	decoder.UseNumber()
+
+	var m map[string]any
+	if err := decoder.Decode(&m); err != nil {
+		return nil, err
+	}
+
+	return m, nil
 }

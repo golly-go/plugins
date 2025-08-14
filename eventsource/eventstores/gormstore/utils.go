@@ -1,8 +1,9 @@
 package gormstore
 
 import (
-	"encoding/json"
 	"hash/fnv"
+
+	"github.com/segmentio/encoding/json"
 
 	"github.com/golly-go/plugins/eventsource"
 	"gorm.io/gorm"

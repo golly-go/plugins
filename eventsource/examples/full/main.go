@@ -2,10 +2,11 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/segmentio/encoding/json"
 
 	"github.com/golly-go/golly"
 	"github.com/golly-go/plugins/eventsource"

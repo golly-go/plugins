@@ -1,9 +1,10 @@
 package eventsource
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/segmentio/encoding/json"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

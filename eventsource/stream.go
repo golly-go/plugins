@@ -119,6 +119,8 @@ func (s *Stream) handleStreamEvent(ctx context.Context, event Event) {
 		handlers = append(handlers, h...)
 	}
 
+	fmt.Printf("#### Processing event %s (type=%s) handlers=%d [%#v]\n", event.ID, eventType, len(handlers), handlers)
+
 	// Process handlers
 	for pos := range handlers {
 		handlers[pos](ctx, event)
@@ -177,7 +179,7 @@ func (s *Stream) Project(proj Projection) {
 
 	_, events := projectionSteamConfig(proj)
 
-	logger.Tracef("registering projection %s stream=%s events=%d", projectionKey(proj), s.name, len(events))
+	logger.Tracef("registering projection %s %T stream=%s events=%d", projectionKey(proj), proj, s.name, len(events))
 
 	if len(events) == 0 {
 		s.Subscribe(AllEvents, handler)
