@@ -63,5 +63,15 @@ func handleOptions(opts ...Option) *Options {
 		options.Stream = &defaultStreamOptions
 	}
 
+	if options.Stream.NumPartitions == 0 {
+		options.Stream.NumPartitions = 1
+	}
+
+	if options.Stream.BufferSize == 0 {
+		options.Stream.BufferSize = 100
+	}
+
+	options.Stream.Name = streamName(options.Stream)
+
 	return options
 }

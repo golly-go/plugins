@@ -171,8 +171,6 @@ func (eng *Engine) CommitAggregateChanges(ctx context.Context, agg Aggregate) er
 
 // Execute handles command execution, including loading the aggregate, replaying events, validating, and persisting changes.
 func (eng *Engine) Execute(ctx context.Context, agg Aggregate, cmd Command) (err error) {
-
-	fmt.Printf("Execute called with engine: %+v", eng) // Add debug logging
 	if eng == nil {
 		return fmt.Errorf("engine is nil")
 	}
@@ -344,11 +342,11 @@ func (eng *Engine) SubscribeToStream(streamName, eventType string, handler Strea
 	return nil
 }
 
-func (eng *Engine) SubscribeAggregate(streamName string, aggregateType string, handler StreamHandler, opts ...Option) error {
-	cfg := &Options{}
-	for _, opt := range opts {
-		opt(cfg)
-	}
+// deprecated: use Subscribe or SubscribeToStream instead
+func (eng *Engine) SubscribeAggregate(aggregateType string, handler StreamHandler, opts ...Option) error {
+	cfg := handleOptions(opts...)
+
+	WithStreamName(aggregateType)(cfg)
 
 	stream, err := eng.streams.GetOrCreateStream(*cfg.Stream)
 	if err != nil {

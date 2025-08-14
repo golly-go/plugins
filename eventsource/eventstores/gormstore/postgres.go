@@ -296,8 +296,6 @@ func SetEventSourceVersion(ctx context.Context, versionID string, version int64)
 			}
 		}
 
-		fmt.Printf("setting version %s to %d\n", versionID, version)
-
 		return tx.Exec(`
 			INSERT INTO event_source_versions (id, version)
 			VALUES (?, ?)

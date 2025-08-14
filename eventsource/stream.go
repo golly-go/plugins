@@ -205,15 +205,3 @@ func streamName(cfg *StreamOptions) string {
 	}
 	return cfg.Name
 }
-
-func streamNamesForProjection(proj Projection) []string {
-	aggs, _ := projectionSteamConfig(proj)
-
-	names := make([]string, 0, len(aggs))
-
-	for pos := range aggs {
-		names = append(names, resolveName(aggs[pos]))
-	}
-
-	return names
-}

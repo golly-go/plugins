@@ -36,23 +36,6 @@ func (sm *StreamManager) RegisterStream(stream *Stream) *Stream {
 	return stream
 }
 
-// Send sends an event to all streams.
-// func (sm *StreamManager) Send(ctx context.Context, events ...Event) {
-// 	var streamCopy map[string]*Stream
-// 	sm.mu.RLock()
-
-// 	streamCopy = make(map[string]*Stream, len(sm.streams))
-// 	for k, v := range sm.streams {
-// 		streamCopy[k] = v
-// 	}
-// 	sm.mu.RUnlock()
-
-// 	for pos := range events {
-// 		streamCopy[events[pos].AggregateType].Send(ctx, events[pos])
-// 	}
-
-// }
-
 func (sm *StreamManager) Send(ctx context.Context, events ...Event) {
 	sm.mu.RLock()
 
