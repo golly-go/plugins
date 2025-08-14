@@ -119,7 +119,7 @@ func (s *Stream) handleStreamEvent(ctx context.Context, event Event) {
 		handlers = append(handlers, h...)
 	}
 
-	fmt.Printf("#### Processing event %s (type=%s) handlers=%d [%#v]\n", event.ID, eventType, len(handlers), handlers)
+	golly.Logger().Tracef("Processing event %s (type=%s) handlers=%d", event.ID, eventType, len(handlers))
 
 	// Process handlers
 	for pos := range handlers {
