@@ -81,8 +81,10 @@ func (p *OrmPlugin[T]) Initialize(app *golly.Application) error {
 	return nil
 }
 
-// Deinitialize closes the global database connection.
-func (p *OrmPlugin[T]) Deinitialize(app *golly.Application) error {
+func (p *OrmPlugin[T]) Deinitialize() error { return nil }
+
+// AfterDeinitialize closes the global database connection.
+func (p *OrmPlugin[T]) AfterDeinitialize(app *golly.Application) error {
 	connection := GlobalConnection()
 
 	lock.Lock()

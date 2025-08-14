@@ -3,7 +3,7 @@ module github.com/golly-go/plugins/eventsource
 go 1.23.4
 
 require (
-	github.com/golly-go/golly v0.6.0-rc2.0.20250224061648-16a28bbcca1c
+	github.com/golly-go/golly v0.7.1-0.20250814060728-3e36afc099a0
 	github.com/google/uuid v1.6.0
 	github.com/segmentio/encoding v0.4.1
 	github.com/spf13/cobra v1.8.1
