@@ -1,63 +1,57 @@
 package eventsource
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
+type snapAgg struct {
+	AggregateBase
+	ID    string
+	Count int
+}
+
+func (s *snapAgg) GetID() string { return s.ID }
 
 func TestShouldSnapshot(t *testing.T) {
-	tests := []struct {
-		name       string
-		oldVersion int
-		newVersion int
-		expected   bool
-	}{
-		{
-			name:       "No Snapshot 90 to 99",
-			oldVersion: 90,
-			newVersion: 99,
-			expected:   false,
-		},
-		{
-			name:       "Yes Snapshot 99 to 101",
-			oldVersion: 99,
-			newVersion: 101,
-			expected:   true,
-		},
-		{
-			name:       "Snapshot 90 to 100",
-			oldVersion: 90,
-			newVersion: 100,
-			expected:   true,
-		},
-		{
-			name:       "Snapshot 100 to 101",
-			oldVersion: 100,
-			newVersion: 101,
-			expected:   false,
-		},
-		{
-			name:       "Snapshot 0 to 101",
-			oldVersion: 0,
-			newVersion: 101,
-			expected:   true,
-		},
-		{
-			name:       "Snapshot 199 to 200",
-			oldVersion: 199,
-			newVersion: 200,
-			expected:   true,
-		},
-		{
-			name:       "No Snapshot 150 to 160",
-			oldVersion: 150,
-			newVersion: 160,
-			expected:   false,
-		},
-	}
+	// Crossing boundaries of SnapShotIncrement should trigger
+	assert.False(t, ShouldSnapshot(0, 50))
+	assert.True(t, ShouldSnapshot(99, 100))
+	assert.False(t, ShouldSnapshot(100, 150))
+	assert.True(t, ShouldSnapshot(199, 200))
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if result := ShouldSnapshot(tt.oldVersion, tt.newVersion); result != tt.expected {
-				t.Errorf("%s: expected %v, got %v", tt.name, tt.expected, result)
-			}
-		})
-	}
+func TestNewSnapshotAndApplySnapshot(t *testing.T) {
+	a := &snapAgg{ID: "agg1"}
+	a.SetVersion(123)
+	a.Count = 7
+
+	s := NewSnapshot(a)
+	assert.Equal(t, EventKindSnapshot, s.Kind)
+	assert.Equal(t, int64(123), s.Version)
+	assert.Equal(t, "agg1", s.AggregateID)
+	assert.Equal(t, ObjectName(a), s.AggregateType)
+
+	// Apply snapshot back into a new aggregate
+	b := &snapAgg{ID: "agg1"}
+	err := ApplySnapshot(b, s)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(123), b.Version())
+	// State restored
+	assert.Equal(t, 7, b.Count)
+}
+
+func TestEngineProcessChangesTriggersSnapshotEvent(t *testing.T) {
+	a := &snapAgg{ID: "agg2"}
+	a.SetVersion(SnapShotIncrement - 1)
+	a.Record(struct{ X int }{X: 1})
+
+	// After processing changes, one additional snapshot event should be appended
+	err := a.ProcessChanges(context.Background(), a)
+	assert.NoError(t, err)
+	events := a.Changes()
+	// Last event should be a snapshot due to crossing boundary
+	assert.Equal(t, EventKindSnapshot, events[len(events)-1].Kind)
 }

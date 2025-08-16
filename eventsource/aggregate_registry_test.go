@@ -93,3 +93,23 @@ func TestGetAggregate(t *testing.T) {
 		})
 	}
 }
+
+type regAgg struct {
+	AggregateBase
+	id string
+}
+
+func (r *regAgg) GetID() string { return r.id }
+
+func TestAggregateRegistry_RegisterGet(t *testing.T) {
+	ar := NewAggregateRegistry()
+	a := &regAgg{id: "1"}
+	ar.Register(a, []any{"evt1", struct{}{}})
+
+	got, err := ar.Get(ObjectName(a))
+	assert.NoError(t, err)
+	assert.NotNil(t, got)
+
+	_, err = ar.Get("missing")
+	assert.Error(t, err)
+}

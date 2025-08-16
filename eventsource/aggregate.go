@@ -218,54 +218,6 @@ func ApplySnapshot(ag Aggregate, event Event) error {
 //			o.RatingUpdatedHandler(event)
 //		}
 //	}
-// func apply(ag Aggregate, event Event) error {
-// 	if event.Data == nil {
-// 		return errors.New("event data is nil")
-// 	}
-
-// 	defer ag.SetVersion(event.Version)
-
-// 	if app, ok := ag.(Applier); ok {
-// 		app.Apply(event)
-// 		return nil
-// 	}
-
-// 	name := golly.InfNameNoPackage(event.Data)
-
-// 	methodName := fmt.Sprintf("%sHandler", capitalizeFirstCharASCII(name))
-
-// 	methodValue := reflect.ValueOf(ag).MethodByName(methodName)
-// 	if !methodValue.IsValid() {
-// 		// Optionally log missing handler in dev/test
-// 		if golly.Env().IsDevelopmentOrTest() {
-// 			golly.Logger().Tracef("No handler for %s#%s (method not found)",
-// 				golly.TypeNoPtr(ag).String(), methodName)
-// 		}
-// 		return nil
-// 	}
-
-// 	methodType := methodValue.Type()
-// 	if methodType.NumIn() != 1 {
-// 		return fmt.Errorf("expected 1 param, got %d for %s#%s",
-// 			methodType.NumIn(), golly.TypeNoPtr(ag).String(), methodName)
-// 	}
-
-// 	// i really do not like this but it works for now (Its ugly and slightly magic)
-// 	// though i was really tired of the massiiiiiive switch statements for anything that was super
-// 	// large aggregation
-// 	// if you dont like this (It is slower use the Apply() method)
-// 	paramType := methodType.In(0)
-
-// 	if paramType == eventRType {
-// 		methodValue.Call([]reflect.Value{reflect.ValueOf(event)})
-// 		return nil
-// 	}
-
-// 	return fmt.Errorf("unexpected param type got %s for %s#%s",
-// 		paramType, golly.TypeNoPtr(ag).String(), methodName)
-
-// }
-
 func apply(ag Aggregate, event Event) error {
 	if event.Data == nil {
 		return fmt.Errorf("event data is nil")

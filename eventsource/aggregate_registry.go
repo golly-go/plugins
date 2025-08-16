@@ -118,6 +118,14 @@ func (r *AggregateRegistry) GetAggregate(aggName string) (Aggregate, bool) {
 	return agg, ok
 }
 
+// Get provides a compatibility helper returning an aggregate or error.
+func (r *AggregateRegistry) Get(aggName string) (Aggregate, error) {
+	if agg, ok := r.GetAggregate(aggName); ok {
+		return agg, nil
+	}
+	return nil, fmt.Errorf("aggregate %s not found", aggName)
+}
+
 // GetEventCodec retrieves the EventCodec for (aggregateName, eventName).
 func (r *AggregateRegistry) GetEventCodec(aggName, evtName string) *EventCodec {
 	r.mu.RLock()
@@ -127,8 +135,8 @@ func (r *AggregateRegistry) GetEventCodec(aggName, evtName string) *EventCodec {
 	if !ok {
 		return nil
 	}
-	codec, ok := regItem.Events[evtName]
-	return codec
+
+	return regItem.Events[evtName]
 }
 
 // Clear removes all aggregates and event codecs from the registry (helpful in tests).
