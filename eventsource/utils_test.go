@@ -19,6 +19,7 @@ func Test_capitalizeFirstCharASCII(t *testing.T) {
 		{"A", "A"},
 		{"abc", "Abc"},
 		{"z9", "Z9"},
+		{"Z9", "Z9"},
 	}
 	for _, tt := range tests {
 		got := capitalizeFirstCharASCII(tt.in)
@@ -69,21 +70,12 @@ func Test_resolveName(t *testing.T) {
 	// non-string -> ObjectName
 	prev := legacy
 	legacy = false
-	t.Cleanup(func() { legacy = prev })
+	teardown := func() { legacy = prev }
+	defer teardown()
 	var v testType
 	want := ObjectName(v)
 	if got := resolveName(v); got != want {
 		t.Fatalf("resolveName(testType) = %q, want %q", got, want)
-	}
-}
-
-func Test_streamName(t *testing.T) {
-	if got := streamName(nil); got != DefaultStreamName {
-		t.Fatalf("streamName(nil) = %q, want %q", got, DefaultStreamName)
-	}
-	cfg := &StreamOptions{Name: "orders"}
-	if got := streamName(cfg); got != "orders" {
-		t.Fatalf("streamName(cfg) = %q, want %q", got, "orders")
 	}
 }
 

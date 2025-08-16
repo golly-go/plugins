@@ -73,7 +73,7 @@ func TestEngine_LoadEvents(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			ctx := context.Background()
 			mockStore := &MockStore{}
-			eng := NewEngine(mockStore)
+			eng := NewEngine(WithStore(mockStore))
 
 			// Store successfully returns events in a single batch
 			mockStore.On("LoadEventsInBatches", ctx, c.batchSize, mock.Anything, []EventFilter(nil)).
@@ -122,37 +122,13 @@ func TestEngine_LoadEvents(t *testing.T) {
 func TestEngine_RegisterProjection(t *testing.T) {
 	tests := []struct {
 		name    string
-		setup   func(*Engine) (Projection, []Option)
+		setup   func(*Engine) Projection
 		wantErr bool
 	}{
 		{
-			name: "NoStreamConfig",
-			setup: func(e *Engine) (Projection, []Option) {
-				return &noOpProjection{}, nil
-			},
-			wantErr: false, // No error should use the default stream
-		},
-		{
-			name: "StreamNotExist",
-			setup: func(e *Engine) (Projection, []Option) {
-				// Under new behavior, streams are not auto-created without config.
-				// Pre-register the stream to satisfy this test case.
-				e.streams.RegisterStream(NewStream(StreamOptions{Name: "nonexistent"}))
-				return &noOpProjection{}, []Option{
-					WithStreamName("nonexistent"),
-				}
-			},
-			wantErr: false, // Stream will be auto-created
-		},
-		{
-			name: "ExistingStream",
-			setup: func(e *Engine) (Projection, []Option) {
-				e.streams.RegisterStream(NewStream(StreamOptions{
-					Name: "existing",
-				}))
-				return &noOpProjection{}, []Option{
-					WithStreamName("existing"),
-				}
+			name: "Register no-op projection",
+			setup: func(e *Engine) Projection {
+				return &noOpProjection{}
 			},
 			wantErr: false,
 		},
@@ -160,45 +136,35 @@ func TestEngine_RegisterProjection(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			engine := NewEngine(&InMemoryStore{})
-			proj, opts := tt.setup(engine)
+			engine := NewEngine(WithStore(NewInMemoryStore()))
+			proj := tt.setup(engine)
 
 			err := engine.RegisterProjection(proj)
-			cfg := Options{}
-			for _, opt := range opts {
-				opt(&cfg)
-			}
 
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
-
-				stream := engine.Stream(streamName(cfg.Stream))
-
-				assert.NotNil(t, stream)
 			}
 		})
 	}
 }
 
 func TestEngine_Subscribe(t *testing.T) {
-	engine := NewEngine(&InMemoryStore{})
+	engine := NewEngine(WithStore(NewInMemoryStore()), WithBus(NewSyncBus()))
 
 	tests := []struct {
-		name       string
-		eventType  string
-		streamName string
-		wantErr    bool
+		name    string
+		topic   string
+		wantErr bool
 	}{
-		{"SubscribeToOrderCreated", "OrderCreated", DefaultStreamName, false},
-		{"SubscribeToOrderUpdated", "OrderUpdated", DefaultStreamName, false},
-		{"SubscribeToOrderUpdated", "OrderUpdated", "orders", true},
+		{"SubscribeToOrderCreated", "OrderCreated", false},
+		{"SubscribeToOrderUpdated", "OrderUpdated", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := engine.Subscribe(tt.eventType, func(ctx context.Context, evt Event) {}, WithStreamName(tt.streamName))
+			err := engine.Subscribe(tt.topic, func(ctx context.Context, evt Event) error { return nil })
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
@@ -209,7 +175,7 @@ func TestEngine_Subscribe(t *testing.T) {
 }
 
 func TestEngine_ExecuteCommand(t *testing.T) {
-	engine := NewEngine(&InMemoryStore{})
+	engine := NewEngine(WithStore(NewInMemoryStore()))
 	ctx := golly.NewContext(context.Background())
 
 	agg := TestAggregate{ID: "123"}
@@ -231,7 +197,7 @@ func BenchmarkEngine_LoadEvents(b *testing.B) {
 	ctx := context.Background()
 
 	mockStore := &MockStore{}
-	eng := NewEngine(mockStore)
+	eng := NewEngine(WithStore(mockStore))
 
 	// Suppose each batch has 100 events
 	peEvents := make([]PersistedEvent, 100)

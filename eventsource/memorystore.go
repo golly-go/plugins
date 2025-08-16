@@ -229,3 +229,7 @@ func applyInMemoryFilters(events []Event, f EventFilter) []Event {
 	}
 	return out
 }
+
+func NewInMemoryStore(data ...Event) *InMemoryStore {
+	return &InMemoryStore{data: data}
+}

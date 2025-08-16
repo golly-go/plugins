@@ -29,9 +29,10 @@ type TestEventData struct {
 // NewInMemoryEngine creates a new in-memory engine with the given options.
 // for testing purposes.
 func NewInMemoryEngine(opts TestEngineOptions) *Engine {
-	engine := NewEngine(&InMemoryStore{
-		data: buildInMemoryEvents(opts.Data),
-	})
+	engine := NewEngine(
+		WithStore(&InMemoryStore{data: buildInMemoryEvents(opts.Data)}),
+		WithBus(NewSyncBus()),
+	)
 
 	for _, agg := range opts.Aggregates {
 		engine.RegisterAggregate(agg.Aggregate, agg.Events)

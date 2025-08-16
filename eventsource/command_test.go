@@ -57,7 +57,7 @@ func TestExecute(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			repo := NewEngine(&InMemoryStore{})
+			repo := NewEngine(WithStore(NewInMemoryStore()))
 
 			repo.aggregates.Register(&TestAggregate{}, []any{})
 

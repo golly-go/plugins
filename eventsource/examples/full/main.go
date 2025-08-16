@@ -80,8 +80,11 @@ func (c CreateOrder) Perform(ctx context.Context, agg eventsource.Aggregate) err
 }
 
 func main() {
-	// Create engine with in-memory store
-	engine := eventsource.NewEngine(&eventsource.InMemoryStore{})
+	// Create engine with in-memory store and sync bus
+	engine := eventsource.NewEngine(
+		eventsource.WithStore(&eventsource.InMemoryStore{}),
+		eventsource.WithBus(eventsource.NewSyncBus()),
+	)
 
 	engine.Start()
 	defer engine.Stop()

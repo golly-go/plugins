@@ -36,7 +36,7 @@ type TestEvent struct {
 func TestGormRepository_Save(t *testing.T) {
 	store := Store{}
 
-	engine := eventsource.NewEngine(&store)
+	engine := eventsource.NewEngine(eventsource.WithStore(&store))
 	engine.
 		Aggregates().
 		Register(&TestAggregate{}, []any{&TestEvent{}})

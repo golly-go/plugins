@@ -68,7 +68,7 @@ func TestEvent_Hydrate(t *testing.T) {
 		Age  int    `json:"age"`
 	}
 
-	engine := NewEngine(&InMemoryStore{})
+	engine := NewEngine(WithStore(&InMemoryStore{}))
 	engine.aggregates.Register(&TestAggregate{}, []any{TestEvent{}})
 
 	tests := []struct {
@@ -137,7 +137,7 @@ func TestEvent_Hydrate(t *testing.T) {
 
 func setupTestEngine() *Engine {
 	// Create a registry
-	engine := NewEngine(&InMemoryStore{})
+	engine := NewEngine(WithStore(&InMemoryStore{}))
 
 	// Register an aggregate + events
 	// (If your real code uses the “codec” approach, adapt accordingly)

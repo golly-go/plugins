@@ -85,7 +85,8 @@ func NewPlugin(opts ...PluginOption) *EventsourcePlugin {
 	}
 
 	if cfg.engine == nil {
-		cfg.engine = NewEngine(cfg.store)
+		// default engine with store and a synchronous in-memory bus suitable for tests/dev
+		cfg.engine = NewEngine(WithStore(cfg.store), WithBus(NewSyncBus()))
 	}
 
 	return &EventsourcePlugin{

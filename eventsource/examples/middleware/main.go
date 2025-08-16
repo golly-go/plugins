@@ -9,11 +9,14 @@ import (
 )
 
 func main() {
-	// Create engine with store
-	engine := eventsource.NewEngine(&eventsource.InMemoryStore{})
+	// Create engine with store and sync bus
+	engine := eventsource.NewEngine(
+		eventsource.WithStore(&eventsource.InMemoryStore{}),
+		eventsource.WithBus(eventsource.NewSyncBus()),
+	)
 
-	// Add error handling middleware using the default stream
-	engine.Subscribe("UserAction", func(ctx context.Context, evt eventsource.Event) {
+	// Add middleware-like subscription on topic
+	engine.Subscribe("UserAction", func(ctx context.Context, evt eventsource.Event) error {
 		defer func() {
 			if r := recover(); r != nil {
 				log.Printf("Recovered from panic: %v", r)
@@ -25,6 +28,7 @@ func main() {
 		defer func() {
 			log.Printf("Event processed in %v", time.Since(start))
 		}()
+		return nil
 	})
 
 	engine.Send(context.TODO(), eventsource.Event{

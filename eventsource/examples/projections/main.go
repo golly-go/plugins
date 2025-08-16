@@ -37,13 +37,12 @@ func (os *OrderSummary) HandleEvent(ctx context.Context, evt eventsource.Event) 
 	return nil
 }
 
-func (*OrderSummary) EventTypes() []any {
-	return []any{eventsource.AllEvents}
-}
-
 func main() {
-	// Create engine with in-memory store
-	engine := eventsource.NewEngine(&eventsource.InMemoryStore{})
+	// Create engine with in-memory store and sync bus
+	engine := eventsource.NewEngine(
+		eventsource.WithStore(eventsource.NewInMemoryStore()),
+		eventsource.WithBus(eventsource.NewSyncBus()),
+	)
 
 	engine.Start()
 	defer engine.Stop()
@@ -55,7 +54,7 @@ func main() {
 	engine.RegisterProjection(summary)
 
 	// Send some events
-	events := make([]eventsource.Event, 10)
+	events := make([]eventsource.Event, 0, 30)
 
 	for i := 1; i <= 30; i++ {
 		aggID, _ := uuid.NewV7()
@@ -77,9 +76,7 @@ func main() {
 	engine.Send(golly.NewContext(nil), events...)
 
 	// Wait for the projection to process the events
-	// we could just call stop and let the engine handle it
-	// but this is just an example
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 
 	// Print the projection state
 	log.Printf("Total Orders: %d", summary.TotalOrders)

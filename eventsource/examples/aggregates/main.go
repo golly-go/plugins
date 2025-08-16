@@ -37,8 +37,11 @@ func (c *Customer) HandleEvent(ctx *golly.Context, evt eventsource.Event) error 
 }
 
 func main() {
-	// Create engine with store
-	engine := eventsource.NewEngine(&eventsource.InMemoryStore{})
+	// Create engine with store and sync bus
+	engine := eventsource.NewEngine(
+		eventsource.WithStore(eventsource.NewInMemoryStore()),
+		eventsource.WithBus(eventsource.NewSyncBus()),
+	)
 
 	// Register aggregate with domain event types
 	engine.RegisterAggregate(&Customer{}, []any{

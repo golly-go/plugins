@@ -9,20 +9,14 @@ import (
 	"github.com/google/uuid"
 )
 
-var (
-	defaultStreamOptions = StreamOptions{
-		Name: DefaultStreamName,
-	}
-)
-
 // Engine is the main entry point for your event-sourced system.
 // It contains:
 //   - An EventStore for persistence
-//   - A StreamManager for live pub-sub
+//   - A Bus for pub-sub
 //   - A ProjectionManager for building read models
 type Engine struct {
 	store       EventStore
-	streams     *StreamManager
+	bus         Bus
 	projections *ProjectionManager
 	aggregates  *AggregateRegistry
 
@@ -30,30 +24,27 @@ type Engine struct {
 	running bool
 }
 
-// NewEngine initializes everything
-func NewEngine(store EventStore) *Engine {
+// NewEngine allows configuring the engine via Option by building a config first.
+func NewEngine(opts ...Option) *Engine {
+	cfg := handleOptions(opts...)
 	eng := &Engine{
-		store:       store,
-		streams:     NewStreamManager(),
+		store:       cfg.Store,
+		bus:         cfg.Bus,
 		projections: NewProjectionManager(),
 		aggregates:  NewAggregateRegistry(),
 	}
-	// Register the default stream
-	eng.streams.RegisterStream(NewStream(defaultStreamOptions))
 	return eng
-}
-
-// Stream returns the named stream or nil if not found
-func (eng *Engine) Stream(name string) *Stream {
-	s, _ := eng.streams.Get(name)
-	return s
 }
 
 // Store returns the underlying event store (if you need direct access)
 func (eng *Engine) Store() EventStore { return eng.store }
 
-// Streams returns the underlying stream manager
-func (eng *Engine) Streams() *StreamManager { return eng.streams }
+// UseBus configures the Engine to use a pluggable Bus for pub/sub.
+func (eng *Engine) UseBus(bus Bus) {
+	eng.mu.Lock()
+	defer eng.mu.Unlock()
+	eng.bus = bus
+}
 
 // Projections returns the underlying projection manager
 func (eng *Engine) Projections() *ProjectionManager { return eng.projections }
@@ -74,20 +65,6 @@ func (eng *Engine) nextGlobalVersion(ctx context.Context) (int64, error) {
 
 func (eng *Engine) RegisterAggregate(agg Aggregate, events []any, opts ...Option) error {
 	eng.aggregates.Register(agg, events)
-
-	options := handleOptions(opts...)
-
-	options.Stream.Name = resolveName(agg)
-
-	stream, err := eng.streams.GetOrCreateStream(*options.Stream)
-	if err != nil {
-		return err
-	}
-
-	if eng.IsRunning() {
-		stream.Start()
-	}
-
 	return nil
 }
 
@@ -106,48 +83,16 @@ func (eng *Engine) RunProjectionOnce(ctx context.Context, projection any) error 
 	return eng.projections.RunOnce(ctx, eng, resolveInterfaceName(projection))
 }
 
-// RegisterProjection registers a projection and attaches it to per-aggregate streams
-// declared by the projection. If no aggregates are declared, it attaches to the default stream.
+// RegisterProjection registers a projection
 func (eng *Engine) RegisterProjection(proj Projection) error {
 	eng.projections.Register(proj)
-
-	// Determine aggregates and events declared by the projection
-	aggs, _ := projectionSteamConfig(proj)
-
-	// If projection declares aggregates, attach to each aggregate-named stream
-	if len(aggs) > 0 {
-		isRunning := eng.IsRunning()
-
-		for _, a := range aggs {
-			name := resolveName(a)
-
-			stream, ok := eng.streams.Get(name)
-			if !ok {
-				return fmt.Errorf("stream %s not found", name)
-			}
-
-			stream.Project(proj)
-			if isRunning {
-				stream.Start()
-			}
-
-		}
-		return nil
-	}
-
-	// Fallback: no aggregates declared → attach to default stream
-	stream, ok := eng.streams.Get(DefaultStreamName)
-	if !ok {
-		return fmt.Errorf("default stream not found")
-	}
-	stream.Project(proj)
 	return nil
 }
 
 // CommitAggregateChanges applies a series of new events from an aggregate:
-//  1. Optionally increments a global version (if you track that in memory or in store).
+//  1. Increments a global version.
 //  2. Saves the events to the event store.
-//  3. Publishes them to the stream manageeng.
+//  3. Publishes them to the bus.
 //  4. Marks the aggregate's changes as complete.
 func (eng *Engine) CommitAggregateChanges(ctx context.Context, agg Aggregate) error {
 	changes := agg.Changes().Uncommitted()
@@ -319,52 +264,26 @@ func handleExecutionError(ctx context.Context, agg Aggregate, cmd Command, err e
 	return err
 }
 
-// Subscribe with stream configuration
-func (eng *Engine) Subscribe(eventType string, handler StreamHandler, opts ...Option) error {
-	options := &Options{}
-	for _, opt := range opts {
-		opt(options)
+// Subscribe subscribes to a topic on the bus.
+func (eng *Engine) Subscribe(topic string, handler Handler) error {
+	if eng.bus == nil {
+		return fmt.Errorf("bus is not configured")
 	}
-
-	streamName := DefaultStreamName
-	if options.Stream != nil && options.Stream.Name != "" {
-		streamName = options.Stream.Name
-	}
-
-	return eng.SubscribeToStream(streamName, eventType, handler)
-}
-
-func (eng *Engine) SubscribeToStream(streamName, eventType string, handler StreamHandler) error {
-	stream, ok := eng.streams.Get(streamName)
-	if !ok {
-		return fmt.Errorf("stream %s not found", streamName)
-	}
-
-	stream.Subscribe(eventType, handler)
+	eng.bus.Subscribe(topic, handler)
 	return nil
 }
 
-// deprecated: use Subscribe or SubscribeToStream instead
-func (eng *Engine) SubscribeAggregate(aggregateType string, handler StreamHandler, opts ...Option) error {
-	cfg := handleOptions(opts...)
-
-	WithStreamName(aggregateType)(cfg)
-
-	stream, err := eng.streams.GetOrCreateStream(*cfg.Stream)
-	if err != nil {
-		return err
-	}
-
-	stream.Aggregate(aggregateType, handler)
-	return nil
-}
-
-// Send dispatches events to the appropriate stream
+// Send publishes events to the bus. The topic defaults to event.Type or Go type name of Data.
 func (eng *Engine) Send(ctx context.Context, events ...Event) {
-	eng.streams.Send(ctx, events...)
+	if eng.bus == nil {
+		return
+	}
+	for i := range events {
+		eng.bus.Publish(ctx, resolveNameOrEventType(events[i]), events[i])
+	}
 }
 
-// Start starts all streams and begins processing events
+// Start starts the bus and projections
 func (eng *Engine) Start() {
 	golly.Logger().Tracef("Starting engine")
 
@@ -372,11 +291,12 @@ func (eng *Engine) Start() {
 	eng.running = true
 	eng.mu.Unlock()
 
-	eng.streams.Start()
-
+	if eng.bus != nil {
+		eng.bus.Start()
+	}
 }
 
-// Stop gracefully shuts down all streams
+// Stop stops the bus
 func (eng *Engine) Stop() {
 	golly.Logger().Tracef("Stopping engine")
 
@@ -384,5 +304,15 @@ func (eng *Engine) Stop() {
 	eng.running = false
 	eng.mu.Unlock()
 
-	eng.streams.Stop()
+	if eng.bus != nil {
+		eng.bus.Stop()
+	}
+}
+
+// resolveNameOrEventType returns the event's type string, falling back to the Go type name of Data
+func resolveNameOrEventType(evt Event) string {
+	if evt.Type != "" {
+		return evt.Type
+	}
+	return resolveName(evt.Data)
 }

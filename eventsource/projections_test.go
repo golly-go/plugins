@@ -163,7 +163,7 @@ func TestProjectionManager_RunToEnd(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pm := NewProjectionManager()
-			eng := NewEngine(&InMemoryStore{})
+			eng := NewEngine(WithStore(&InMemoryStore{}))
 
 			projID := tt.setup(pm, eng)
 			ctx := golly.NewContext(context.Background())
@@ -237,7 +237,7 @@ func TestProjectionManager_RunOnce(t *testing.T) {
 			for _, evt := range c.events {
 				_ = store.Save(context.Background(), &evt)
 			}
-			eng := NewEngine(store)
+			eng := NewEngine(WithStore(store))
 
 			// 2) ProjectionManager + register if not missing
 			pm := NewProjectionManager()
@@ -324,7 +324,7 @@ func TestProjectionManager_Rebuild(t *testing.T) {
 			for _, evt := range c.events {
 				_ = store.Save(context.Background(), &evt)
 			}
-			eng := NewEngine(store)
+			eng := NewEngine(WithStore(store))
 
 			// 2) ProjectionManager + optional registration
 			pm := NewProjectionManager()
