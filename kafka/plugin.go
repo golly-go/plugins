@@ -11,6 +11,7 @@ const pluginName = "kafka"
 
 const (
 	publisherCtxKey golly.ContextKey = "kafka-publisher"
+	consumerCtxKey  golly.ContextKey = "kafka-consumer"
 )
 
 // Plugin wires a Kafka Publisher into the app and optionally exposes the consumer Service.
@@ -83,7 +84,7 @@ func (p *Plugin) Publisher() PublisherAPI { return p.publisher }
 
 // Services returns the consumer service so it can be run by the app when desired.
 func (p *Plugin) Services() []golly.Service {
-	return []golly.Service{NewService()}
+	return []golly.Service{p.service}
 }
 
 // Helper accessor to fetch the publisher from context or plugin manager
@@ -95,6 +96,20 @@ func GetPublisher(ctx context.Context) PublisherAPI {
 	if pm := golly.CurrentPlugins(); pm != nil {
 		if p, ok := pm.Get(pluginName).(*Plugin); ok {
 			return p.publisher
+		}
+	}
+
+	return nil
+}
+
+func GetConsumer(ctx context.Context) *Consumers {
+	if c, ok := ctx.Value(consumerCtxKey).(*Consumers); ok {
+		return c
+	}
+
+	if pm := golly.CurrentPlugins(); pm != nil {
+		if p, ok := pm.Get(pluginName).(*Plugin); ok {
+			return p.service.Bus()
 		}
 	}
 
