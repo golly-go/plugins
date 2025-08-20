@@ -1,6 +1,10 @@
 package eventsource
 
-import "time"
+import (
+	"time"
+
+	"github.com/golly-go/golly"
+)
 
 // Option is a function that configures a projection registration or other engine-related setup.
 type Option func(*Options)
@@ -24,6 +28,10 @@ type Options struct {
 func WithBus(bus Bus) Option {
 	return func(o *Options) {
 		o.Bus = bus
+		if o.Bus == nil {
+			golly.Logger().Warn("no bus provided, using in-memory bus")
+			o.Bus = NewSyncBus()
+		}
 	}
 }
 

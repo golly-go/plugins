@@ -40,6 +40,7 @@ var (
 type PluginOptions struct {
 	store  EventStore
 	engine *Engine
+	bus    Bus
 
 	userInfoFunc func(context.Context) UserInfo
 }
@@ -61,6 +62,12 @@ func PluginWithStore(store EventStore) PluginOption {
 func PluginWithEngine(engine *Engine) PluginOption {
 	return func(opt *PluginOptions) {
 		opt.engine = engine
+	}
+}
+
+func PluginWithBus(bus Bus) PluginOption {
+	return func(opt *PluginOptions) {
+		opt.bus = bus
 	}
 }
 
@@ -86,7 +93,7 @@ func NewPlugin(opts ...PluginOption) *EventsourcePlugin {
 
 	if cfg.engine == nil {
 		// default engine with store and a synchronous in-memory bus suitable for tests/dev
-		cfg.engine = NewEngine(WithStore(cfg.store), WithBus(NewSyncBus()))
+		cfg.engine = NewEngine(WithStore(cfg.store), WithBus(cfg.bus))
 	}
 
 	return &EventsourcePlugin{
