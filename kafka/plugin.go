@@ -105,11 +105,7 @@ func GetPublisher(ctx context.Context) PublisherAPI {
 	return nil
 }
 
-func GetConsumer(ctx context.Context) *Consumers {
-	if c, ok := ctx.Value(consumerCtxKey).(*Consumers); ok {
-		return c
-	}
-
+func GetConsumer() *Consumers {
 	if pm := golly.CurrentPlugins(); pm != nil {
 		if p, ok := pm.Get(pluginName).(*Plugin); ok {
 			return p.service.Bus()
@@ -120,8 +116,8 @@ func GetConsumer(ctx context.Context) *Consumers {
 }
 
 // Subscribe registers a handler
-func Subscribe(ctx context.Context, topic string, handler Handler) *Consumers {
-	consumer := GetConsumer(ctx)
+func Subscribe(topic string, handler Handler) *Consumers {
+	consumer := GetConsumer()
 	if consumer == nil {
 		return nil
 	}
