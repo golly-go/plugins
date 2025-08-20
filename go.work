@@ -1,7 +1,6 @@
 go 1.24.1
 
-// use ./kafka
-
+use ./kafka
 use ./orm
 
 // use ./orm/drivers/postgres
@@ -20,4 +19,3 @@ use ./vectordb
 use ./eventsource
 
 use ./eventsource/eventstores/gormstore
-use ./eventsource/buses/kafkabus
