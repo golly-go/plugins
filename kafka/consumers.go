@@ -190,7 +190,23 @@ func (b *Consumers) runReader(sub *subscription) {
 	}
 	defer reader.Close()
 
+	golly.Logger().Debugf("kafka: starting reader for %s", sub.topic)
+
 	var backoff time.Duration = 200 * time.Millisecond
+
+	handler := func(sub *subscription, m kafka.Message) (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("kafka: handler panic recovered: %v", r)
+			}
+		}()
+
+		if err := sub.handler(sub.ctx, m.Value); err != nil {
+			// do not commit on failure; leave message for retry. Consider DLQ here.
+			return err
+		}
+		return nil
+	}
 
 	for {
 		select {
@@ -198,34 +214,26 @@ func (b *Consumers) runReader(sub *subscription) {
 			return
 		default:
 		}
+
 		m, err := reader.FetchMessage(sub.ctx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
 			}
+
 			// exponential backoff with cap
 			backoff = time.Duration(math.Min(float64(backoff*2), float64(5*time.Second)))
+			trace("kafka: fetch message error: %v, retrying in %s", err, backoff)
+
 			time.Sleep(backoff)
 			continue
 		}
+
 		backoff = 200 * time.Millisecond
 
-		success := false
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					golly.Logger().Errorf("kafka: handler panic recovered: %v", r)
-				}
-			}()
-			if err := sub.handler(sub.ctx, m.Value); err != nil {
-				// do not commit on failure; leave message for retry. Consider DLQ here.
-				golly.Logger().Warnf("kafka: handler error on %s: %v", sub.topic, err)
-				return
-			}
-			success = true
-		}()
-
-		if !success {
+		err = handler(sub, m)
+		if err != nil {
+			golly.Logger().Errorf("kafka: handler error on %s: %v", sub.topic, err)
 			continue
 		}
 
@@ -305,4 +313,8 @@ func max[T constraints.Ordered](a, b T) T {
 		return a
 	}
 	return b
+}
+
+func trace(message string, args ...interface{}) {
+	golly.Logger().Tracef("[KAFKA] "+message, args...)
 }
