@@ -10,9 +10,12 @@ import (
 type Service struct {
 	consumers *Consumers
 	running   bool
+	cfgFunc   func(app *golly.Application) Config
 }
 
-func NewService() *Service { return &Service{} }
+func NewService(opts ...Option) *Service {
+	return &Service{consumers: NewConsumers(opts...)}
+}
 
 // Bus returns the underlying event bus (consumers implement Bus)
 func (s *Service) Bus() *Consumers { return s.consumers }
@@ -66,7 +69,18 @@ func (s *Service) Initialize(app *golly.Application) error {
 		opts = append(opts, WithUserName(u), WithPassword(p))
 	}
 
-	s.consumers = NewConsumers(opts...)
+	// Merge into existing consumers instead of recreating so subscriptions persist
+	if s.consumers == nil {
+		s.consumers = NewConsumers()
+	}
+	if len(opts) > 0 {
+		s.consumers.ApplyOptions(opts...)
+	}
+
+	// Allow dynamic config override (e.g., generate signer tokens)
+	if s.cfgFunc != nil {
+		s.consumers.cfg = s.cfgFunc(app)
+	}
 	return nil
 }
 
@@ -89,3 +103,6 @@ func (s *Service) Stop() error {
 }
 
 func (s *Service) IsRunning() bool { return s.running }
+
+// Configure sets a function to produce a Config at Initialize time.
+func (s *Service) Configure(f func(app *golly.Application) Config) { s.cfgFunc = f }

@@ -21,7 +21,8 @@ type Plugin struct {
 	publisher *Publisher
 	service   *Service
 
-	opts []Option
+	opts    []Option
+	cfgFunc func(app *golly.Application) Config
 }
 
 type PluginOption func(*Plugin)
@@ -32,17 +33,26 @@ func WithOptions(opts ...Option) PluginOption {
 }
 
 func NewPlugin(opts ...PluginOption) *Plugin {
-	p := &Plugin{service: NewService()}
+	p := &Plugin{}
 	for _, o := range opts {
 		o(p)
 	}
 
+	p.service = NewService(p.opts...)
 	p.publisher = NewPublisher(p.opts...)
 
 	return p
 }
 
 func (p *Plugin) Name() string { return pluginName }
+
+func (p *Plugin) Configure(f func(app *golly.Application) Config) error {
+	p.cfgFunc = f
+	if p.service != nil {
+		p.service.Configure(f)
+	}
+	return nil
+}
 
 // Initialize configures and starts the publisher. Consumers are configured in Service.Initialize.
 func (p *Plugin) Initialize(app *golly.Application) error {
@@ -71,6 +81,14 @@ func (p *Plugin) Initialize(app *golly.Application) error {
 	if len(opts) > 0 {
 		p.publisher = NewPublisher(append(p.opts, opts...)...)
 	}
+
+	if p.cfgFunc != nil {
+		kCfg := p.cfgFunc(app)
+		p.publisher.cfg = kCfg
+
+		// service will apply cfgFunc in its Initialize; avoid touching internals here
+	}
+
 	p.publisher.Start()
 	return nil
 }
@@ -90,6 +108,26 @@ func (p *Plugin) Services() []golly.Service {
 	return []golly.Service{p.service}
 }
 
+// High-level instance API to avoid reaching into internal structs
+func (p *Plugin) Subscribe(topic string, handler Handler) {
+	if p.service != nil && p.service.Bus() != nil {
+		p.service.Bus().Subscribe(topic, handler)
+	}
+}
+
+func (p *Plugin) Unsubscribe(topic string, handler Handler) {
+	if p.service != nil && p.service.Bus() != nil {
+		p.service.Bus().Unsubscribe(topic, handler)
+	}
+}
+
+func (p *Plugin) Publish(ctx context.Context, topic string, payload []byte) error {
+	if p.publisher == nil {
+		return fmt.Errorf("kafka publisher not found")
+	}
+	return p.publisher.Publish(ctx, topic, payload)
+}
+
 // Helper accessor to fetch the publisher from context or plugin manager
 func GetPublisher(ctx context.Context) PublisherAPI {
 	if p, ok := ctx.Value(publisherCtxKey).(PublisherAPI); ok {
@@ -105,13 +143,19 @@ func GetPublisher(ctx context.Context) PublisherAPI {
 	return nil
 }
 
-func GetConsumer() *Consumers {
+func GetPlugin() *Plugin {
 	if pm := golly.CurrentPlugins(); pm != nil {
 		if p, ok := pm.Get(pluginName).(*Plugin); ok {
-			return p.service.Bus()
+			return p
 		}
 	}
+	return nil
+}
 
+func GetConsumer() *Consumers {
+	if p := GetPlugin(); p != nil {
+		return p.service.Bus()
+	}
 	return nil
 }
 

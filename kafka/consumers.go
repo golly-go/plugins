@@ -78,6 +78,13 @@ func NewConsumers(opts ...Option) *Consumers {
 	return c
 }
 
+// ApplyOptions merges the provided options into the existing consumer configuration.
+func (b *Consumers) ApplyOptions(opts ...Option) {
+	for _, o := range opts {
+		o(&b.cfg)
+	}
+}
+
 func (b *Consumers) Start() {
 	if !b.started.CompareAndSwap(false, true) {
 		return
