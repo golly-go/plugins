@@ -4,11 +4,13 @@ import (
 	"context"
 	"testing"
 
+	"github.com/segmentio/encoding/json"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestSyncBus(t *testing.T) {
 	bus := NewSyncBus()
-	err := bus.Publish(context.Background(), "t", Event{Type: "E"})
+	b, _ := json.Marshal(Event{Type: "E"})
+	err := bus.Publish(context.Background(), "t", b)
 	assert.NoError(t, err)
 }

@@ -5,7 +5,7 @@ import "context"
 // Bus is a pluggable publisher for events. Consumers are managed separately.
 // Topic semantics are backend-defined; by default we use event type as the topic.
 type Bus interface {
-	Publish(ctx context.Context, topic string, evt Event) error
+	Publish(ctx context.Context, topic string, payload []byte) error
 }
 
 // BusRouter maps an event to a topic name for Publish when using the Bus.

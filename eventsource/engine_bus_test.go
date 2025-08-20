@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/segmentio/encoding/json"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,7 +17,9 @@ func newCaptureBus() *captureBus {
 	return &captureBus{}
 }
 
-func (c *captureBus) Publish(ctx context.Context, topic string, evt Event) error {
+func (c *captureBus) Publish(ctx context.Context, topic string, payload []byte) error {
+	var evt Event
+	_ = json.Unmarshal(payload, &evt)
 	c.published = append(c.published, topic+":"+evt.Type)
 	return nil
 }

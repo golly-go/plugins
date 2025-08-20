@@ -7,6 +7,7 @@ import (
 
 	"github.com/golly-go/golly"
 	"github.com/google/uuid"
+	"github.com/segmentio/encoding/json"
 )
 
 // Engine is the main entry point for your event-sourced system.
@@ -269,7 +270,12 @@ func (eng *Engine) Send(ctx context.Context, events ...Event) {
 		return
 	}
 	for i := range events {
-		eng.bus.Publish(ctx, resolveNameOrEventType(events[i]), events[i])
+		payload, err := json.Marshal(events[i])
+		if err != nil {
+			golly.Logger().Warnf("bus marshal failed for %s: %v", resolveNameOrEventType(events[i]), err)
+			continue
+		}
+		_ = eng.bus.Publish(ctx, resolveNameOrEventType(events[i]), payload)
 	}
 }
 
