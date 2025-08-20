@@ -177,3 +177,62 @@ func BenchmarkHydrateData(b *testing.B) {
 		}
 	}
 }
+
+type evtX struct {
+	A int `json:"a"`
+}
+
+type aggX struct {
+	AggregateBase
+	id string
+}
+
+func (a *aggX) GetID() string { return a.id }
+
+func Test_unmarshal_SupportsRawMessageStringBytes(t *testing.T) {
+	t.Run("json.RawMessage", func(t *testing.T) {
+		var v evtX
+		raw := json.RawMessage(`{"a":5}`)
+		assert.NoError(t, unmarshal(&v, raw))
+		assert.Equal(t, 5, v.A)
+	})
+
+	t.Run("string", func(t *testing.T) {
+		var v evtX
+		assert.NoError(t, unmarshal(&v, `{"a":7}`))
+		assert.Equal(t, 7, v.A)
+	})
+
+	t.Run("bytes", func(t *testing.T) {
+		var v evtX
+		assert.NoError(t, unmarshal(&v, []byte(`{"a":9}`)))
+		assert.Equal(t, 9, v.A)
+	})
+
+	t.Run("unsupported", func(t *testing.T) {
+		var v evtX
+		err := unmarshal(&v, 123)
+		assert.Error(t, err)
+	})
+}
+
+func Test_EventDataToMap(t *testing.T) {
+	m, err := EventDataToMap(evtX{A: 42})
+	assert.NoError(t, err)
+	assert.Equal(t, "42", m["a"].(json.Number).String())
+}
+
+func Test_Event_Hydrate_WithRegistryCodec(t *testing.T) {
+	// Setup engine with registry codec for (aggX, evtX)
+	eng := NewEngine(WithStore(NewInMemoryStore()))
+	eng.aggregates.Register(&aggX{}, []any{evtX{}})
+
+	e := &Event{Type: ObjectName(evtX{}), AggregateType: ObjectName(&aggX{}), Kind: EventKindEvent}
+	// Hydrate with raw JSON
+	raw := json.RawMessage(`{"a":11}`)
+	assert.NoError(t, e.Hydrate(eng, raw, nil))
+
+	data, ok := e.Data.(evtX)
+	assert.True(t, ok)
+	assert.Equal(t, 11, data.A)
+}

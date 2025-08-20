@@ -18,6 +18,7 @@ type EventFilter struct {
 	AggregateID    string   // Filter by a specific aggregate ID
 	AggregateTypes []string // Filter by multiple aggregate types
 	EventType      []string // Filter by event type (e.g., "OrderCreated", "UserUpdated")
+	Topics         []string // Filter by topics (e.g., "order", "user")
 
 	FromVersion int // Minimum event version to load
 	ToVersion   int // Maximum event version to load

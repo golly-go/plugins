@@ -20,3 +20,4 @@ use ./vectordb
 use ./eventsource
 
 use ./eventsource/eventstores/gormstore
+use ./eventsource/buses/kafkabus

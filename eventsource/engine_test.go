@@ -150,30 +150,6 @@ func TestEngine_RegisterProjection(t *testing.T) {
 	}
 }
 
-func TestEngine_Subscribe(t *testing.T) {
-	engine := NewEngine(WithStore(NewInMemoryStore()), WithBus(NewSyncBus()))
-
-	tests := []struct {
-		name    string
-		topic   string
-		wantErr bool
-	}{
-		{"SubscribeToOrderCreated", "OrderCreated", false},
-		{"SubscribeToOrderUpdated", "OrderUpdated", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := engine.Subscribe(tt.topic, func(ctx context.Context, evt Event) error { return nil })
-			if tt.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
-}
-
 func TestEngine_ExecuteCommand(t *testing.T) {
 	engine := NewEngine(WithStore(NewInMemoryStore()))
 	ctx := golly.NewContext(context.Background())

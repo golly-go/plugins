@@ -27,6 +27,7 @@ type TestProjection struct {
 
 func (tp *TestProjection) AggregateTypes() []string { return tp.aggregates }
 func (tp *TestProjection) EventTypes() []string     { return tp.events }
+func (tp *TestProjection) Topics() []string         { return tp.events }
 
 func (tp *TestProjection) HandleEvent(ctx context.Context, evt Event) error {
 	current := atomic.AddInt64(&tp.eventCounter, 1)
@@ -44,6 +45,7 @@ type noOpProjection struct {
 
 func (p *noOpProjection) HandleEvent(ctx context.Context, evt Event) error { return nil }
 func (p *noOpProjection) Reset(ctx context.Context) error                  { return nil }
+func (p *noOpProjection) Topics() []string                                 { return nil }
 
 var _ Projection = (*TestProjection)(nil)
 

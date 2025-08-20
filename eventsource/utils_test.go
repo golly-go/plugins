@@ -61,24 +61,6 @@ func Test_ObjectName_LegacyAndNew(t *testing.T) {
 	}
 }
 
-func Test_resolveName(t *testing.T) {
-	// string passthrough
-	if got := resolveName("orders"); got != "orders" {
-		t.Fatalf("resolveName(string) = %q, want %q", got, "orders")
-	}
-
-	// non-string -> ObjectName
-	prev := legacy
-	legacy = false
-	teardown := func() { legacy = prev }
-	defer teardown()
-	var v testType
-	want := ObjectName(v)
-	if got := resolveName(v); got != want {
-		t.Fatalf("resolveName(testType) = %q, want %q", got, want)
-	}
-}
-
 func Test_fileInfo(t *testing.T) {
 	pc, file, line := fileInfo(0)
 	if pc == 0 {
@@ -101,4 +83,37 @@ func Test_trace_NoPanic(t *testing.T) {
 
 	// Ensure no panic
 	trace("testing trace %s", "message")
+}
+
+func Test_NameToTopicUnicode(t *testing.T) {
+	// Dots and slashes replaced with hyphens; case folded
+	cases := []struct{ in, out string }{
+		{"eventsource.TestEvent", "eventsource-testevent"},
+		{"pkg/path.Event", "pkg-path-event"},
+		{"Already-Lower", "already-lower"},
+	}
+	for _, c := range cases {
+		if got := NameToTopicUnicode(c.in); got != c.out {
+			t.Fatalf("NameToTopicUnicode(%q) = %q, want %q", c.in, got, c.out)
+		}
+	}
+}
+
+func Test_resolveInterfaceName(t *testing.T) {
+	p := &noOpProjection{}
+	key := projectionKey(p)
+	if got := resolveInterfaceName(p); got != key {
+		t.Fatalf("resolveInterfaceName(projection) = %q, want %q", got, key)
+	}
+
+	if got := resolveInterfaceName("topic-name"); got != "topic-name" {
+		t.Fatalf("resolveInterfaceName(string) = %q, want %q", got, "topic-name")
+	}
+
+	// Non-string -> ObjectName
+	var v testType
+	want := ObjectName(v)
+	if got := resolveInterfaceName(v); got != want {
+		t.Fatalf("resolveInterfaceName(testType) = %q, want %q", got, want)
+	}
 }

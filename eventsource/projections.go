@@ -13,18 +13,16 @@ const (
 	projectionBatchSize = 100
 )
 
-type AggregateProjection interface {
-	AggregateTypes() []any
-}
-
-// EventProjection must be used with AggregateProjection this just allows
-// additonal event filtering (TBD if we keep this)
-type EventProjection interface {
-	EventTypes() []any
-}
-
 type IDdProjection interface {
 	ID() string
+}
+
+type TopicsProjection interface {
+	Topics() []string
+}
+
+type AggregateProjection interface {
+	AggregateTypes() []any
 }
 
 type Projection interface {
@@ -176,23 +174,9 @@ func (pm *ProjectionManager) processProjection(
 	fromGlobalVersion int,
 	batchSize int,
 ) error {
-	// Add context cancellation checks
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-		// Continue processing
-	}
 
 	golly.Logger().Tracef("Processing projection %s", resolveInterfaceName(p))
-	aggregateTypes, eventTypes := projectionSteamConfig(p)
-
-	// Build the filter from projection
-	filter := EventFilter{
-		AggregateTypes:    aggregateTypes,
-		EventType:         eventTypes,
-		FromGlobalVersion: fromGlobalVersion,
-	}
+	filter := projectionFilters(p, fromGlobalVersion)
 
 	return eng.LoadEvents(ctx, batchSize, func(events []Event) error {
 		if len(events) == 0 {
@@ -200,10 +184,17 @@ func (pm *ProjectionManager) processProjection(
 		}
 
 		for i := range events {
-			e := events[i]
-			if err := p.HandleEvent(ctx, e); err != nil {
+			if err := p.HandleEvent(ctx, events[i]); err != nil {
 				return err
 			}
+		}
+
+		// Add context cancellation checks
+		select {
+		case <-ctx.Done():
+			return p.SetPosition(ctx, events[len(events)-1].GlobalVersion)
+		default:
+			// Continue processing
 		}
 
 		return p.SetPosition(ctx, events[len(events)-1].GlobalVersion)
@@ -217,24 +208,30 @@ func projectionKey(p Projection) string {
 	return ObjectPath(p)
 }
 
-func projectionSteamConfig(p Projection) (aggs []string, evts []string) {
-	if at, ok := p.(AggregateProjection); ok {
-		aggs = golly.Map(at.AggregateTypes(), resolveInterfaceName)
+func projectionFilters(p Projection, fromGlobalVersion int) EventFilter {
+	filter := EventFilter{
+		FromGlobalVersion: fromGlobalVersion,
 	}
 
-	return
+	if tp, ok := p.(TopicsProjection); ok {
+		filter.Topics = tp.Topics()
+	}
+
+	if ap, ok := p.(AggregateProjection); ok {
+		filter.AggregateTypes = golly.Map(ap.AggregateTypes(), ObjectName)
+	}
+	return filter
 }
 
-func resolveInterfaceName(obj any) string {
-
-	if i, ok := obj.(Projection); ok {
-		return projectionKey(i)
+func projectionTopics(p Projection) []string {
+	var topics []string
+	if tp, ok := p.(TopicsProjection); ok {
+		topics = append(topics, tp.Topics()...)
 	}
 
-	switch o := obj.(type) {
-	case string:
-		return o
-	default:
-		return ObjectName(o)
+	if ap, ok := p.(AggregateProjection); ok {
+		topics = append(topics, golly.Map(ap.AggregateTypes(), NameToTopicUnicode)...)
 	}
+
+	return topics
 }

@@ -55,6 +55,10 @@ func applyFilters(query *gorm.DB, filters ...eventsource.EventFilter) *gorm.DB {
 			query = query.Where("aggregate_type IN ?", filter.AggregateTypes)
 		}
 
+		if len(filter.Topics) > 0 {
+			query = query.Where("topic IN ?", filter.Topics)
+		}
+
 		if len(filter.EventType) > 0 {
 			query = query.Where("type IN ?", filter.EventType)
 		}

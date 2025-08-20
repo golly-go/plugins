@@ -69,27 +69,19 @@ func (r *AggregateRegistry) Register(agg Aggregate, eventSamples []any) *Aggrega
 
 		eventName := ObjectName(evtSample)
 
-		unmarshalFn := func(raw any) (any, error) {
-			newVal := reflect.New(evtType.Elem())
-
-			if err := unmarshal(newVal.Interface(), raw); err != nil {
-				return nil, err
-			}
-
-			return newVal.Elem().Interface(), nil
-		}
-
-		marshalFn := func(obj any) ([]byte, error) {
-			// Optional: type-check to ensure correct type
-			if reflect.TypeOf(obj) != evtType {
-				return nil, fmt.Errorf("expected type %v, got %v", evtType, reflect.TypeOf(obj))
-			}
-			return json.Marshal(obj)
-		}
-
 		regItem.Events[eventName] = &EventCodec{
-			UnmarshalFn: unmarshalFn,
-			MarshalFn:   marshalFn,
+			UnmarshalFn: func(raw any) (any, error) {
+				newVal := reflect.New(evtType.Elem())
+
+				if err := unmarshal(newVal.Interface(), raw); err != nil {
+					return nil, err
+				}
+
+				return newVal.Elem().Interface(), nil
+			},
+			MarshalFn: func(obj any) ([]byte, error) {
+				return json.Marshal(obj)
+			},
 		}
 	}
 

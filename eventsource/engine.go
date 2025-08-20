@@ -12,7 +12,6 @@ import (
 // Engine is the main entry point for your event-sourced system.
 // It contains:
 //   - An EventStore for persistence
-//   - A Bus for pub-sub
 //   - A ProjectionManager for building read models
 type Engine struct {
 	store       EventStore
@@ -264,15 +263,6 @@ func handleExecutionError(ctx context.Context, agg Aggregate, cmd Command, err e
 	return err
 }
 
-// Subscribe subscribes to a topic on the bus.
-func (eng *Engine) Subscribe(topic string, handler Handler) error {
-	if eng.bus == nil {
-		return fmt.Errorf("bus is not configured")
-	}
-	eng.bus.Subscribe(topic, handler)
-	return nil
-}
-
 // Send publishes events to the bus. The topic defaults to event.Type or Go type name of Data.
 func (eng *Engine) Send(ctx context.Context, events ...Event) {
 	if eng.bus == nil {
@@ -283,30 +273,22 @@ func (eng *Engine) Send(ctx context.Context, events ...Event) {
 	}
 }
 
-// Start starts the bus and projections
+// Start marks the engine running
 func (eng *Engine) Start() {
 	golly.Logger().Tracef("Starting engine")
 
 	eng.mu.Lock()
 	eng.running = true
 	eng.mu.Unlock()
-
-	if eng.bus != nil {
-		eng.bus.Start()
-	}
 }
 
-// Stop stops the bus
+// Stop marks the engine stopped
 func (eng *Engine) Stop() {
 	golly.Logger().Tracef("Stopping engine")
 
 	eng.mu.Lock()
 	eng.running = false
 	eng.mu.Unlock()
-
-	if eng.bus != nil {
-		eng.bus.Stop()
-	}
 }
 
 // resolveNameOrEventType returns the event's type string, falling back to the Go type name of Data
@@ -314,5 +296,5 @@ func resolveNameOrEventType(evt Event) string {
 	if evt.Type != "" {
 		return evt.Type
 	}
-	return resolveName(evt.Data)
+	return resolveInterfaceName(evt.Data)
 }

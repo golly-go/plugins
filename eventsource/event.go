@@ -45,6 +45,7 @@ type Event struct {
 	Metadata      Metadata    `json:"metadata" gorm:"-"`
 	TenantID      string      `json:"tenantID"`
 	UserID        string      `json:"userID"`
+	Topic         string      `json:"topic"`
 }
 
 type PersistedEvent interface {
