@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/golly-go/golly"
@@ -35,7 +36,9 @@ func NewPlugin(opts ...PluginOption) *Plugin {
 	for _, o := range opts {
 		o(p)
 	}
+
 	p.publisher = NewPublisher(p.opts...)
+
 	return p
 }
 
@@ -114,6 +117,25 @@ func GetConsumer(ctx context.Context) *Consumers {
 	}
 
 	return nil
+}
+
+// Subscribe registers a handler
+func Subscribe(ctx context.Context, topic string, handler Handler) *Consumers {
+	consumer := GetConsumer(ctx)
+	if consumer == nil {
+		return nil
+	}
+
+	consumer.Subscribe(topic, handler)
+	return consumer
+}
+
+func Publish(ctx context.Context, topic string, payload []byte) error {
+	publisher := GetPublisher(ctx)
+	if publisher == nil {
+		return fmt.Errorf("kafka publisher not found")
+	}
+	return publisher.Publish(ctx, topic, payload)
 }
 
 var _ golly.Plugin = (*Plugin)(nil)
