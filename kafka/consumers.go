@@ -2,13 +2,12 @@ package kafka
 
 import (
 	"context"
-	"crypto/sha1"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"math"
+	"math/rand"
 	"reflect"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -158,7 +157,7 @@ func (b *Consumers) Subscribe(handler Handler, opts ...SubOption) error {
 	}
 
 	b.mu.Lock()
-	sub := &subscription{topics: sc.Topics, groupID: sc.GroupID, handler: handler}
+	sub := &subscription{topics: append([]string(nil), sc.Topics...), groupID: sc.GroupID, handler: handler}
 	for _, t := range sc.Topics {
 		b.subs[t] = append(b.subs[t], sub)
 	}
@@ -224,7 +223,7 @@ func (b *Consumers) runReader(sub *subscription) {
 		return
 	}
 	if b.cfg.ReaderFunc != nil {
-		reader = b.cfg.ReaderFunc(strings.Join(sub.topics, ","), sub.groupID)
+		reader = b.cfg.ReaderFunc(sub.topics, sub.groupID)
 	} else {
 		reader = b.newReader(sub.topics, sub.groupID)
 	}
@@ -263,9 +262,11 @@ func (b *Consumers) runReader(sub *subscription) {
 
 			// exponential backoff with cap
 			backoff = time.Duration(math.Min(float64(backoff*2), float64(5*time.Second)))
-			trace("kafka: fetch message error: %v, retrying in %s", err, backoff)
+			jitter := time.Duration(rand.Int63n(int64(backoff / 2)))
+			delay := backoff/2 + jitter
+			trace("kafka: fetch message error: %v, retrying in %s", err, delay)
 
-			time.Sleep(backoff)
+			time.Sleep(delay)
 			continue
 		}
 
@@ -337,21 +338,6 @@ func (b *Consumers) newReader(topics []string, groupID string) readerIface {
 		rc.CommitInterval = b.cfg.CommitInterval
 	}
 	return kafka.NewReader(rc)
-}
-
-func (b *Consumers) deriveGroupID(topic string, handler Handler) string {
-	base := b.cfg.GroupID
-	if base == "" {
-		base = "consumer"
-	}
-	ptr := reflect.ValueOf(handler).Pointer()
-	fn := runtime.FuncForPC(ptr)
-	name := "unknown"
-	if fn != nil {
-		name = fn.Name()
-	}
-	sum := sha1.Sum([]byte(name))
-	return fmt.Sprintf("%s:%s:%x", base, topic, sum[:6])
 }
 
 func max[T constraints.Ordered](a, b T) T {

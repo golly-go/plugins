@@ -32,7 +32,7 @@ type Config struct {
 
 type Option func(*Config)
 
-type ReaderFunc func(topic, groupID string) readerIface
+type ReaderFunc func(topics []string, groupID string) readerIface
 
 type WriterFunc func() writerIface
 

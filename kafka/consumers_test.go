@@ -64,12 +64,12 @@ func TestConsumers_Subscribe_Publish_SuccessCommits(t *testing.T) {
 
 	c := NewConsumers(
 		WithBrokers([]string{"test"}),
-		WithReaderFunc(func(topic, groupID string) readerIface { return fr }),
+		WithReaderFunc(func(topics []string, groupID string) readerIface { return fr }),
 		WithWriterFunc(func() writerIface { return fw }),
 	)
 
 	done := make(chan struct{})
-	c.Subscribe("t", func(ctx context.Context, payload []byte) error { close(done); return nil })
+	c.Subscribe(func(ctx context.Context, payload []byte) error { close(done); return nil }, SubscribeWithTopic("t"))
 	c.Start()
 	defer c.Stop()
 
@@ -89,12 +89,12 @@ func TestConsumers_Subscribe_HandlerErrorNoCommit(t *testing.T) {
 
 	c := NewConsumers(
 		WithBrokers([]string{"test"}),
-		WithReaderFunc(func(topic, groupID string) readerIface { return fr }),
+		WithReaderFunc(func(topics []string, groupID string) readerIface { return fr }),
 		WithWriterFunc(func() writerIface { return fw }),
 	)
 
 	done := make(chan struct{})
-	c.Subscribe("t", func(ctx context.Context, payload []byte) error { close(done); return assert.AnError })
+	c.Subscribe(func(ctx context.Context, payload []byte) error { close(done); return assert.AnError }, SubscribeWithTopic("t"))
 	c.Start()
 	defer c.Stop()
 
@@ -127,7 +127,7 @@ func TestConsumers_UnsubscribeStopsHandler(t *testing.T) {
 	ri := 0
 	c := NewConsumers(
 		WithBrokers([]string{"test"}),
-		WithReaderFunc(func(topic, groupID string) readerIface {
+		WithReaderFunc(func(topics []string, groupID string) readerIface {
 			if ri == 0 {
 				ri++
 				return fr1
@@ -139,8 +139,8 @@ func TestConsumers_UnsubscribeStopsHandler(t *testing.T) {
 
 	h1 := func(ctx context.Context, payload []byte) error { return nil }
 	h2 := func(ctx context.Context, payload []byte) error { return nil }
-	c.Subscribe("t", h1)
-	c.Subscribe("t", h2)
+	c.Subscribe(h1, SubscribeWithTopic("t"))
+	c.Subscribe(h2, SubscribeWithTopic("t"))
 	c.Start()
 	defer c.Stop()
 
@@ -157,11 +157,11 @@ func TestConsumers_HandlerPanic_NoCommit(t *testing.T) {
 	fr := &fakeReader{msgs: []kafka.Message{{Topic: "t", Value: []byte(`E`)}}, ctx: context.Background()}
 	c := NewConsumers(
 		WithBrokers([]string{"test"}),
-		WithReaderFunc(func(topic, groupID string) readerIface { return fr }),
+		WithReaderFunc(func(topics []string, groupID string) readerIface { return fr }),
 		WithWriterFunc(func() writerIface { return &fakeWriter{} }),
 	)
 
-	c.Subscribe("t", func(ctx context.Context, payload []byte) error { panic("boom") })
+	c.Subscribe(func(ctx context.Context, payload []byte) error { panic("boom") }, SubscribeWithTopic("t"))
 	c.Start()
 	defer c.Stop()
 

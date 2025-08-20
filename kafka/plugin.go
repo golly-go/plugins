@@ -66,9 +66,20 @@ func (p *Plugin) Initialize(app *golly.Application) error {
 	// Minimal env driven config; callers may also pass options at construction time
 	opts := make([]Option, 0, 8)
 
-	brokers := strings.Split(cfg.GetString("kafka.brokers"), ",")
+	// Gather brokers from both slice and comma-separated string
+	var brokers []string
+
+	if s := cfg.GetString("kafka.brokers"); s != "" {
+		parts := strings.Split(s, ",")
+		for _, p := range parts {
+			if v := strings.TrimSpace(p); v != "" {
+				brokers = append(brokers, v)
+			}
+		}
+	}
+
 	if len(brokers) == 0 {
-		return fmt.Errorf("kafka: no brokers configured")
+		return fmt.Errorf("kafka: no brokers configured; set kafka.brokers in config or configure the plugin")
 	}
 
 	opts = append(opts, WithBrokers(brokers))

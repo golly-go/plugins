@@ -74,6 +74,9 @@ func (p *Publisher) Publish(ctx context.Context, topic string, payload []byte) e
 		key = p.cfg.KeyFunc(topic, payload)
 	}
 	msg := kafka.Message{Topic: topic, Key: key, Value: payload}
+
+	trace("kafka: publishing %s (%#v)", msg.Topic, msg)
+
 	return p.writer.WriteMessages(ctx, msg)
 }
 
