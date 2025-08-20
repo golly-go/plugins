@@ -112,10 +112,11 @@ func (p *Plugin) Services() []golly.Service {
 }
 
 // High-level instance API to avoid reaching into internal structs
-func (p *Plugin) Subscribe(topic string, handler Handler) {
-	if p.service != nil && p.service.Bus() != nil {
-		p.service.Bus().Subscribe(topic, handler)
+func (p *Plugin) Subscribe(handler Handler, opts ...SubOption) error {
+	if p.service == nil || p.service.Bus() == nil {
+		return fmt.Errorf("kafka: consumer bus not available")
 	}
+	return p.service.Bus().Subscribe(handler, opts...)
 }
 
 func (p *Plugin) Consumers() *Consumers {
@@ -170,13 +171,13 @@ func GetConsumer() *Consumers {
 }
 
 // Subscribe registers a handler
-func Subscribe(topic string, handler Handler) *Consumers {
+func Subscribe(handler Handler, opts ...SubOption) *Consumers {
 	consumer := GetConsumer()
 	if consumer == nil {
 		return nil
 	}
 
-	consumer.Subscribe(topic, handler)
+	_ = consumer.Subscribe(handler, opts...)
 	return consumer
 }
 

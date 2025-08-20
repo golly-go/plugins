@@ -32,12 +32,30 @@ type Config struct {
 
 type Option func(*Config)
 
-// ReaderFunc returns a kafka reader-like interface bound to topic/group
-// WriterFunc returns a kafka writer-like interface
-
 type ReaderFunc func(topic, groupID string) readerIface
 
 type WriterFunc func() writerIface
+
+// Subscription options
+
+type SubConfig struct {
+	Topics  []string
+	GroupID string
+}
+
+type SubOption func(*SubConfig)
+
+func SubscribeWithTopic(topic string) SubOption {
+	return func(sc *SubConfig) { sc.Topics = []string{topic} }
+}
+
+func SubscribeWithTopics(topics ...string) SubOption {
+	return func(sc *SubConfig) { sc.Topics = append([]string(nil), topics...) }
+}
+
+func SubscribeWithGroupID(groupID string) SubOption {
+	return func(sc *SubConfig) { sc.GroupID = groupID }
+}
 
 func WithBrokers(brokers []string) Option {
 	return func(cfg *Config) { cfg.Brokers = brokers }

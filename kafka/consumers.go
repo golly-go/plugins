@@ -2,11 +2,14 @@ package kafka
 
 import (
 	"context"
+	"crypto/sha1"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"math"
 	"reflect"
+	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,6 +21,7 @@ import (
 )
 
 // minimal interfaces for testability
+
 type readerIface interface {
 	FetchMessage(context.Context) (kafka.Message, error)
 	CommitMessages(context.Context, ...kafka.Message) error
@@ -52,7 +56,7 @@ type Consumers struct {
 }
 
 type subscription struct {
-	topic   string
+	topics  []string
 	groupID string
 	handler Handler
 	ctx     context.Context
@@ -140,16 +144,31 @@ func (b *Consumers) Stop() {
 	}
 }
 
-func (b *Consumers) Subscribe(topic string, handler Handler) {
+// Subscribe requires an explicit groupID, and supports either a single topic or multiple topics via SubOption.
+func (b *Consumers) Subscribe(handler Handler, opts ...SubOption) error {
+	sc := SubConfig{}
+	for _, o := range opts {
+		o(&sc)
+	}
+	if len(sc.Topics) == 0 {
+		return fmt.Errorf("kafka: subscribe requires at least one topic")
+	}
+	if sc.GroupID == "" {
+		return fmt.Errorf("kafka: subscribe requires a groupID")
+	}
+
 	b.mu.Lock()
-	sub := &subscription{topic: topic, groupID: b.deriveGroupID(topic, handler), handler: handler}
-	b.subs[topic] = append(b.subs[topic], sub)
+	sub := &subscription{topics: sc.Topics, groupID: sc.GroupID, handler: handler}
+	for _, t := range sc.Topics {
+		b.subs[t] = append(b.subs[t], sub)
+	}
 	started := b.started.Load()
 	b.mu.Unlock()
 
 	if started {
 		b.startSubLocked(sub)
 	}
+	return nil
 }
 
 func (b *Consumers) Unsubscribe(topic string, handler Handler) {
@@ -161,7 +180,16 @@ func (b *Consumers) Unsubscribe(topic string, handler Handler) {
 			if list[i].cancel != nil {
 				list[i].cancel()
 			}
-			b.subs[topic] = append(list[:i], list[i+1:]...)
+			// remove this subscription from all topic indices
+			for _, t := range list[i].topics {
+				cur := b.subs[t]
+				for j := range cur {
+					if cur[j] == list[i] {
+						b.subs[t] = append(cur[:j], cur[j+1:]...)
+						break
+					}
+				}
+			}
 			break
 		}
 	}
@@ -192,17 +220,17 @@ func (b *Consumers) runReader(sub *subscription) {
 	defer b.wg.Done()
 	var reader readerIface
 	if b.cfg.ReaderFunc == nil && len(b.cfg.Brokers) == 0 {
-		golly.Logger().Errorf("kafka: consumers: no brokers configured; cannot start reader for %s; set kafka.brokers or configure plugin", sub.topic)
+		golly.Logger().Errorf("kafka: consumers: no brokers configured; cannot start reader for %s; set kafka.brokers or configure plugin", strings.Join(sub.topics, ","))
 		return
 	}
 	if b.cfg.ReaderFunc != nil {
-		reader = b.cfg.ReaderFunc(sub.topic, sub.groupID)
+		reader = b.cfg.ReaderFunc(strings.Join(sub.topics, ","), sub.groupID)
 	} else {
-		reader = b.newReader(sub.topic, sub.groupID)
+		reader = b.newReader(sub.topics, sub.groupID)
 	}
 	defer reader.Close()
 
-	golly.Logger().Debugf("kafka: starting reader for %s", sub.topic)
+	golly.Logger().Debugf("kafka: starting reader for %s", strings.Join(sub.topics, ","))
 
 	var backoff time.Duration = 200 * time.Millisecond
 
@@ -245,12 +273,12 @@ func (b *Consumers) runReader(sub *subscription) {
 
 		err = handler(sub, m)
 		if err != nil {
-			golly.Logger().Errorf("kafka: handler error on %s: %v", sub.topic, err)
+			golly.Logger().Errorf("kafka: handler error on %s: %v", m.Topic, err)
 			continue
 		}
 
 		if err := reader.CommitMessages(sub.ctx, m); err != nil {
-			golly.Logger().Warnf("kafka: commit failed on %s: %v", sub.topic, err)
+			golly.Logger().Warnf("kafka: commit failed on %s: %v", m.Topic, err)
 		}
 	}
 }
@@ -278,7 +306,7 @@ func (b *Consumers) newWriter() writerIface {
 	return w
 }
 
-func (b *Consumers) newReader(topic, groupID string) readerIface {
+func (b *Consumers) newReader(topics []string, groupID string) readerIface {
 	dialer := &kafka.Dialer{Timeout: 10 * time.Second, DualStack: true, KeepAlive: 15 * time.Second, ClientID: b.cfg.ClientID}
 	if b.cfg.UserName != "" && b.cfg.Password != "" {
 		dialer.TLS = &tls.Config{MinVersion: tls.VersionTLS12}
@@ -288,7 +316,7 @@ func (b *Consumers) newReader(topic, groupID string) readerIface {
 	rc := kafka.ReaderConfig{
 		Brokers:               b.cfg.Brokers,
 		GroupID:               groupID,
-		GroupTopics:           []string{topic},
+		GroupTopics:           topics,
 		MinBytes:              max(1, b.cfg.ReadMinBytes),
 		MaxBytes:              max(1, b.cfg.ReadMaxBytes),
 		MaxWait:               b.cfg.ReadMaxWait,
@@ -314,10 +342,16 @@ func (b *Consumers) newReader(topic, groupID string) readerIface {
 func (b *Consumers) deriveGroupID(topic string, handler Handler) string {
 	base := b.cfg.GroupID
 	if base == "" {
-		base = "eventsource"
+		base = "consumer"
 	}
 	ptr := reflect.ValueOf(handler).Pointer()
-	return fmt.Sprintf("%s:%s:%x", base, topic, ptr)
+	fn := runtime.FuncForPC(ptr)
+	name := "unknown"
+	if fn != nil {
+		name = fn.Name()
+	}
+	sum := sha1.Sum([]byte(name))
+	return fmt.Sprintf("%s:%s:%x", base, topic, sum[:6])
 }
 
 func max[T constraints.Ordered](a, b T) T {
