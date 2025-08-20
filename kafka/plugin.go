@@ -115,6 +115,13 @@ func (p *Plugin) Subscribe(topic string, handler Handler) {
 	}
 }
 
+func (p *Plugin) Consumers() *Consumers {
+	if p.service != nil {
+		return p.service.Bus()
+	}
+	return nil
+}
+
 func (p *Plugin) Unsubscribe(topic string, handler Handler) {
 	if p.service != nil && p.service.Bus() != nil {
 		p.service.Bus().Unsubscribe(topic, handler)
