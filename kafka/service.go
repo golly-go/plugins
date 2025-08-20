@@ -1,6 +1,8 @@
 package kafka
 
 import (
+	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/golly-go/golly"
@@ -9,7 +11,7 @@ import (
 // Service composes Kafka consumers and implements golly.Service lifecycle.
 type Service struct {
 	consumers *Consumers
-	running   bool
+	running   atomic.Bool
 	cfgFunc   func(app *golly.Application) Config
 }
 
@@ -81,28 +83,39 @@ func (s *Service) Initialize(app *golly.Application) error {
 	if s.cfgFunc != nil {
 		s.consumers.cfg = s.cfgFunc(app)
 	}
+
+	if len(s.consumers.cfg.Brokers) == 0 {
+		return fmt.Errorf("kafka: no brokers configured; set kafka.brokers in config or configure the plugin")
+	}
 	return nil
 }
 
 func (s *Service) Start() error {
-	if s.running {
+	if s.running.Load() {
 		return nil
 	}
-	s.consumers.Start()
-	s.running = true
+
+	err := s.consumers.Start()
+	if err != nil {
+		return err
+	}
+
+	s.running.Store(true)
 	return nil
 }
 
 func (s *Service) Stop() error {
-	if !s.running {
+	if !s.running.Load() {
 		return nil
 	}
+
 	s.consumers.Stop()
-	s.running = false
+
+	s.running.Store(false)
 	return nil
 }
 
-func (s *Service) IsRunning() bool { return s.running }
+func (s *Service) IsRunning() bool { return s.running.Load() }
 
 // Configure sets a function to produce a Config at Initialize time.
 func (s *Service) Configure(f func(app *golly.Application) Config) { s.cfgFunc = f }

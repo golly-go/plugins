@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golly-go/golly"
@@ -64,9 +65,14 @@ func (p *Plugin) Initialize(app *golly.Application) error {
 	cfg := app.Config()
 	// Minimal env driven config; callers may also pass options at construction time
 	opts := make([]Option, 0, 8)
-	if bs := cfg.GetStringSlice("kafka.brokers"); len(bs) > 0 {
-		opts = append(opts, func(c *Config) { c.Brokers = bs })
+
+	brokers := strings.Split(cfg.GetString("kafka.brokers"), ",")
+	if len(brokers) == 0 {
+		return fmt.Errorf("kafka: no brokers configured")
 	}
+
+	opts = append(opts, WithBrokers(brokers))
+
 	if d := cfg.GetDuration("kafka.write_timeout"); d > 0 {
 		opts = append(opts, WithWriteTimeout(d))
 	} else {
@@ -85,12 +91,9 @@ func (p *Plugin) Initialize(app *golly.Application) error {
 	if p.cfgFunc != nil {
 		kCfg := p.cfgFunc(app)
 		p.publisher.cfg = kCfg
-
-		// service will apply cfgFunc in its Initialize; avoid touching internals here
 	}
 
-	p.publisher.Start()
-	return nil
+	return p.publisher.Start()
 }
 
 func (p *Plugin) Deinitialize(app *golly.Application) error {

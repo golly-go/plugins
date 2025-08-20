@@ -38,15 +38,21 @@ func NewPublisher(opts ...Option) *Publisher {
 }
 
 // Start initializes the underlying writer.
-func (p *Publisher) Start() {
+func (p *Publisher) Start() error {
 	if p.writer != nil {
-		return
+		return nil
 	}
+	if len(p.cfg.Brokers) == 0 {
+		return fmt.Errorf("kafka: no brokers configured; set kafka.brokers in config or configure the plugin")
+	}
+
 	if p.cfg.WriterFunc != nil {
 		p.writer = p.cfg.WriterFunc()
-	} else {
-		p.writer = p.newWriter()
+		return nil
 	}
+
+	p.writer = p.newWriter()
+	return nil
 }
 
 // Stop closes the underlying writer.

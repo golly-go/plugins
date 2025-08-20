@@ -85,17 +85,24 @@ func (b *Consumers) ApplyOptions(opts ...Option) {
 	}
 }
 
-func (b *Consumers) Start() {
+func (b *Consumers) Start() error {
 	if !b.started.CompareAndSwap(false, true) {
-		return
+		return nil
 	}
+
 	b.ctx, b.cancel = context.WithCancel(context.Background())
 	if b.cfg.WriterFunc != nil {
 		b.writer = b.cfg.WriterFunc()
-	} else {
-		b.writer = b.newWriter()
+		goto start
 	}
 
+	if len(b.cfg.Brokers) == 0 {
+		return fmt.Errorf("kafka: no brokers configured; set kafka.brokers in config or configure the plugin")
+	}
+
+	b.writer = b.newWriter()
+
+start:
 	// snapshot current subs and start each
 	b.mu.RLock()
 	for _, list := range b.subs {
@@ -104,6 +111,7 @@ func (b *Consumers) Start() {
 		}
 	}
 	b.mu.RUnlock()
+	return nil
 }
 
 func (b *Consumers) Stop() {
@@ -183,6 +191,10 @@ func (b *Consumers) startSubLocked(sub *subscription) {
 func (b *Consumers) runReader(sub *subscription) {
 	defer b.wg.Done()
 	var reader readerIface
+	if b.cfg.ReaderFunc == nil && len(b.cfg.Brokers) == 0 {
+		golly.Logger().Errorf("kafka: consumers: no brokers configured; cannot start reader for %s; set kafka.brokers or configure plugin", sub.topic)
+		return
+	}
 	if b.cfg.ReaderFunc != nil {
 		reader = b.cfg.ReaderFunc(sub.topic, sub.groupID)
 	} else {
