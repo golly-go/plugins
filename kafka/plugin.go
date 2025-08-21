@@ -143,7 +143,7 @@ func (p *Plugin) Unsubscribe(topic string, handler Handler) {
 	}
 }
 
-func (p *Plugin) Publish(ctx context.Context, topic string, payload []byte) error {
+func (p *Plugin) Publish(ctx context.Context, topic string, payload any) error {
 	if p.publisher == nil {
 		return fmt.Errorf("kafka publisher not found")
 	}
@@ -182,13 +182,26 @@ func GetConsumer() *Consumers {
 }
 
 // Subscribe registers a handler
-func Subscribe(handler Handler, opts ...SubOption) *Consumers {
+func Subscribe[T any](topic T, handler Handler, opts ...SubOption) *Consumers {
+	topics := []string{}
+	switch any(topic).(type) {
+	case string:
+		topics = []string{any(topic).(string)}
+	case []string:
+		topics = any(topic).([]string)
+	}
+
 	consumer := GetConsumer()
 	if consumer == nil {
+		trace("kafka: no consumer struct found")
 		return nil
 	}
 
-	_ = consumer.Subscribe(handler, opts...)
+	opts = append(opts, SubscribeWithTopics(topics...))
+	if err := consumer.Subscribe(handler, opts...); err != nil {
+		golly.Logger().Errorf("kafka: subscribe error: %v", err)
+	}
+
 	return consumer
 }
 

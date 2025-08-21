@@ -2,8 +2,6 @@ package eventsource
 
 import (
 	"time"
-
-	"github.com/golly-go/golly"
 )
 
 // Option is a function that configures a projection registration or other engine-related setup.
@@ -18,21 +16,9 @@ type StreamOptions struct {
 
 // Options holds all possible configuration parameters that can be adjusted via Option functions.
 type Options struct {
-	Bus   Bus
-	Store EventStore
-
-	Stream *StreamOptions
-}
-
-// WithBus configures the Engine to use the provided Bus for pub/sub
-func WithBus(bus Bus) Option {
-	return func(o *Options) {
-		o.Bus = bus
-		if o.Bus == nil {
-			golly.Logger().Warn("no bus provided, using in-memory bus")
-			o.Bus = NewSyncBus()
-		}
-	}
+	Store   EventStore
+	Stream  *StreamOptions
+	Streams []StreamPublisher
 }
 
 // WithStore configures the Engine to use the provided EventStore
@@ -60,6 +46,12 @@ func WithStreamPartitions(n uint32) Option {
 // deprecated: bus defined options
 func WithStreamBufferSize(size int) Option {
 	return func(o *Options) {}
+}
+
+func WithStreams(streams ...StreamPublisher) Option {
+	return func(o *Options) {
+		o.Streams = streams
+	}
 }
 
 func handleOptions(opts ...Option) *Options {

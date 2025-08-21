@@ -31,7 +31,6 @@ type TestEventData struct {
 func NewInMemoryEngine(opts TestEngineOptions) *Engine {
 	engine := NewEngine(
 		WithStore(&InMemoryStore{data: buildInMemoryEvents(opts.Data)}),
-		WithBus(NewSyncBus()),
 	)
 
 	for _, agg := range opts.Aggregates {
@@ -50,7 +49,10 @@ func buildInMemoryEvents(data []any) []Event {
 	for i, evt := range data {
 		if data, ok := evt.(TestEventData); ok {
 			events[i] = testEventToEvent(data, int64(i+1))
-		} else if data, ok := evt.(Event); ok {
+			continue
+		}
+
+		if data, ok := evt.(Event); ok {
 			events[i] = data
 
 			if events[i].GlobalVersion == 0 {

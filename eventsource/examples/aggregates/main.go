@@ -37,10 +37,9 @@ func (c *Customer) HandleEvent(ctx *golly.Context, evt eventsource.Event) error 
 }
 
 func main() {
-	// Create engine with store and sync bus
+	// Create engine with store only; internal streams handle projections
 	engine := eventsource.NewEngine(
 		eventsource.WithStore(eventsource.NewInMemoryStore()),
-		eventsource.WithBus(eventsource.NewSyncBus()),
 	)
 
 	// Register aggregate with domain event types

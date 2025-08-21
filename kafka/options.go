@@ -4,7 +4,7 @@ import (
 	"time"
 )
 
-type KeyFunc func(topic string, payload []byte) []byte
+type KeyFunc func(topic string, payload any) []byte
 
 type Config struct {
 	Brokers        []string
@@ -28,6 +28,10 @@ type Config struct {
 
 	UserName string
 	Password string
+
+	// Publish retry policy
+	PublishMaxRetries int
+	PublishBackoff    time.Duration
 }
 
 type Option func(*Config)
@@ -39,8 +43,10 @@ type WriterFunc func() writerIface
 // Subscription options
 
 type SubConfig struct {
-	Topics  []string
-	GroupID string
+	Topics       []string
+	GroupID      string
+	DeriveGroup  bool
+	DerivePrefix string
 }
 
 type SubOption func(*SubConfig)
@@ -55,6 +61,15 @@ func SubscribeWithTopics(topics ...string) SubOption {
 
 func SubscribeWithGroupID(groupID string) SubOption {
 	return func(sc *SubConfig) { sc.GroupID = groupID }
+}
+
+// SubscribeWithDerivedGroupID requests deriving a stable group ID from handler and topics
+// Optional prefix lets teams namescape their groups (e.g., "billing").
+func SubscribeWithDerivedGroupID(prefix string) SubOption {
+	return func(sc *SubConfig) {
+		sc.DeriveGroup = true
+		sc.DerivePrefix = prefix
+	}
 }
 
 func WithBrokers(brokers []string) Option {
@@ -135,4 +150,20 @@ func WithCooperativeBalancing() Option {
 	return func(cfg *Config) {
 		cfg.CooperativeBalancing = true
 	}
+}
+
+func WithoutAutoTopic() Option {
+	return func(cfg *Config) {
+		cfg.AllowAutoTopic = false
+	}
+}
+
+// WithPublishRetries sets the maximum number of retries for transient publish errors
+func WithPublishRetries(maxRetries int) Option {
+	return func(cfg *Config) { cfg.PublishMaxRetries = maxRetries }
+}
+
+// WithPublishBackoff sets the initial backoff used for publish retries
+func WithPublishBackoff(backoff time.Duration) Option {
+	return func(cfg *Config) { cfg.PublishBackoff = backoff }
 }

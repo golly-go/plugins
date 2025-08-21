@@ -3,9 +3,13 @@ package kafka
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
+	"math"
+	"math/rand"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/sasl/plain"
 )
@@ -13,7 +17,7 @@ import (
 // PublisherAPI is the minimal interface used by application code.
 // Returning this interface from GetPublisher allows easy test stubbing.
 type PublisherAPI interface {
-	Publish(ctx context.Context, topic string, payload []byte) error
+	Publish(ctx context.Context, topic string, payload any) error
 }
 
 // Publisher provides a lightweight Kafka producer.
@@ -25,8 +29,10 @@ type Publisher struct {
 
 func NewPublisher(opts ...Option) *Publisher {
 	cfg := Config{
-		WriteTimeout:   5 * time.Second,
-		AllowAutoTopic: true,
+		WriteTimeout:      5 * time.Second,
+		AllowAutoTopic:    true,
+		PublishBackoff:    100 * time.Millisecond,
+		PublishMaxRetries: 3,
 	}
 
 	for _, o := range opts {
@@ -65,19 +71,58 @@ func (p *Publisher) Stop() {
 
 // Publish sends a message to the given topic.
 // Requires Start() to have been called.
-func (p *Publisher) Publish(ctx context.Context, topic string, payload []byte) error {
+func (p *Publisher) Publish(ctx context.Context, topic string, payload any) error {
 	if p.writer == nil {
 		return fmt.Errorf("kafka publisher: writer not initialized (call Start first)")
 	}
-	var key []byte
+	var key []byte = []byte(uuid.New().String())
 	if p.cfg.KeyFunc != nil {
 		key = p.cfg.KeyFunc(topic, payload)
 	}
-	msg := kafka.Message{Topic: topic, Key: key, Value: payload}
+	topics := sanitizeTopics(topic)
+	if len(topics) == 0 {
+		return fmt.Errorf("kafka: publish requires a topic")
+	}
 
-	trace("kafka: publishing %s (%#v)", msg.Topic, msg)
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("kafka: publish: %w", err)
+	}
 
-	return p.writer.WriteMessages(ctx, msg)
+	msg := kafka.Message{Topic: topics[0], Key: key, Value: payloadBytes}
+
+	// Retry loop for transient errors (e.g., leader not available)
+	var attempt int
+	var backoff = p.cfg.PublishBackoff
+	if backoff <= 0 {
+		backoff = 100 * time.Millisecond
+	}
+	maxRetries := p.cfg.PublishMaxRetries
+	for {
+		err = p.writer.WriteMessages(ctx, msg)
+		if err == nil {
+			return nil
+		}
+
+		attempt++
+		if attempt > maxRetries || ctx.Err() != nil {
+			trace("kafka: publish error (giving up): %v", err)
+			return err
+		}
+
+		// jittered exponential backoff up to 5s
+		backoff = time.Duration(math.Min(float64(backoff*2), float64(5*time.Second)))
+		jitter := time.Duration(rand.Int63n(int64(backoff / 2)))
+		delay := backoff/2 + jitter
+		trace("kafka: publish retry %d in %s: %v", attempt, delay, err)
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func (p *Publisher) newWriter() writerIface {

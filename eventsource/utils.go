@@ -86,20 +86,20 @@ func NameToTopicUnicode(obj any) string {
 	case string:
 		s = o
 	default:
-		s = golly.TypeNoPtr(obj).String()
+		s = golly.InfNameNoPackage(obj)
 	}
 
 	var b strings.Builder
 	b.Grow(len(s)) // lower bound; may grow if case fold expands
 	for _, r := range s {
 		switch r {
-		case '/', '.':
+		case '/':
 			b.WriteByte('-')
 		default:
 			b.WriteRune(unicode.ToLower(r))
 		}
 	}
-	return b.String()
+	return "events." + b.String()
 }
 
 func resolveInterfaceName(obj any) string {

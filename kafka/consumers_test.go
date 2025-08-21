@@ -173,7 +173,7 @@ func TestConsumers_HandlerPanic_NoCommit(t *testing.T) {
 func TestConsumers_Publish_UsesKeyFunc(t *testing.T) {
 	fw := &fakeWriter{}
 	c := NewConsumers(
-		WithKeyFunc(func(topic string, payload []byte) []byte { return []byte("key-") }),
+		WithKeyFunc(func(topic string, payload any) []byte { return []byte("key-") }),
 		WithWriterFunc(func() writerIface { return fw }),
 	)
 

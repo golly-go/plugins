@@ -28,6 +28,7 @@ func NewSnapshot(aggregate Aggregate) Event {
 
 	event.AggregateID = aggregate.GetID()
 	event.AggregateType = ObjectName(aggregate)
+	event.Topic = NameToTopicUnicode(aggregate)
 
 	event.Kind = EventKindSnapshot
 	event.Version = aggregate.Version()

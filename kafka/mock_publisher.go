@@ -11,7 +11,7 @@ type MockPublisher struct {
 	mock.Mock
 }
 
-func (m *MockPublisher) Publish(ctx context.Context, topic string, payload []byte) error {
+func (m *MockPublisher) Publish(ctx context.Context, topic string, payload any) error {
 	return m.Called(ctx, topic, payload).Error(0)
 }
 

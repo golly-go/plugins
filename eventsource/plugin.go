@@ -38,9 +38,9 @@ var (
 )
 
 type PluginOptions struct {
-	store  EventStore
-	engine *Engine
-	bus    Bus
+	store   EventStore
+	engine  *Engine
+	streams []StreamPublisher
 
 	userInfoFunc func(context.Context) UserInfo
 }
@@ -48,27 +48,19 @@ type PluginOptions struct {
 type PluginOption func(*PluginOptions)
 
 func PluginWithUserInfoFunc(fnc func(context.Context) UserInfo) PluginOption {
-	return func(opt *PluginOptions) {
-		opt.userInfoFunc = fnc
-	}
+	return func(opt *PluginOptions) { opt.userInfoFunc = fnc }
 }
 
 func PluginWithStore(store EventStore) PluginOption {
-	return func(opt *PluginOptions) {
-		opt.store = store
-	}
+	return func(opt *PluginOptions) { opt.store = store }
 }
 
 func PluginWithEngine(engine *Engine) PluginOption {
-	return func(opt *PluginOptions) {
-		opt.engine = engine
-	}
+	return func(opt *PluginOptions) { opt.engine = engine }
 }
 
-func PluginWithBus(bus Bus) PluginOption {
-	return func(opt *PluginOptions) {
-		opt.bus = bus
-	}
+func PluginWithStreams(streams ...StreamPublisher) PluginOption {
+	return func(opt *PluginOptions) { opt.streams = append(opt.streams, streams...) }
 }
 
 const (
@@ -76,9 +68,7 @@ const (
 )
 
 // Plugin implements the Plugin interface for the eventsource
-type EventsourcePlugin struct {
-	engine *Engine
-}
+type EventsourcePlugin struct{ engine *Engine }
 
 // NewPlugin creates a new Plugin with the given store
 func NewPlugin(opts ...PluginOption) *EventsourcePlugin {
@@ -92,13 +82,11 @@ func NewPlugin(opts ...PluginOption) *EventsourcePlugin {
 	}
 
 	if cfg.engine == nil {
-		// default engine with store and a synchronous in-memory bus suitable for tests/dev
-		cfg.engine = NewEngine(WithStore(cfg.store), WithBus(cfg.bus))
+		// default engine with store only (in-memory stream for projections)
+		cfg.engine = NewEngine(WithStore(cfg.store), WithStreams(cfg.streams...))
 	}
 
-	return &EventsourcePlugin{
-		engine: cfg.engine,
-	}
+	return &EventsourcePlugin{engine: cfg.engine}
 }
 
 // Name returns the name of the plugin
@@ -126,9 +114,7 @@ func (p *EventsourcePlugin) Deinitialize(app *golly.Application) error {
 }
 
 // Commands returns the list of CLI commands provided by the plugin
-func (p *EventsourcePlugin) Commands() []*cobra.Command {
-	return []*cobra.Command{}
-}
+func (p *EventsourcePlugin) Commands() []*cobra.Command { return []*cobra.Command{} }
 
 // Ensure Plugin implements the Plugin interface
 var _ golly.Plugin = (*EventsourcePlugin)(nil)
@@ -147,7 +133,6 @@ func DefaultEngine() *Engine {
 	if plugin := Plugin(); plugin != nil {
 		return plugin.engine
 	}
-
 	return nil
 }
 
@@ -155,7 +140,6 @@ func GetEngine(ctx context.Context) *Engine {
 	if engine, ok := ctx.Value(engineKey).(*Engine); ok {
 		return engine
 	}
-
 	return DefaultEngine()
 }
 

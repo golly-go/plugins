@@ -165,6 +165,29 @@ func TestEngine_ExecuteCommand(t *testing.T) {
 	assert.Equal(t, "test", agg.Name)
 }
 
+func TestEngine_Send_ResolvesTopic(t *testing.T) {
+	eng := NewEngine(WithStore(NewInMemoryStore()))
+	defer eng.Stop()
+	eng.Start()
+
+	var seen []string
+	_ = eng.On(func(ctx context.Context, evt Event) { seen = append(seen, evt.Topic+":"+evt.Type) })
+
+	eng.Send(context.Background(), Event{Type: "X"}, Event{Data: struct{}{}}, Event{Type: "Y"})
+
+	foundX, foundY := false, false
+	for _, s := range seen {
+		if s == "X:X" {
+			foundX = true
+		}
+		if s == "Y:Y" {
+			foundY = true
+		}
+	}
+	assert.True(t, foundX)
+	assert.True(t, foundY)
+}
+
 // ************************************************
 // * Benchmarks
 // ************************************************
@@ -194,8 +217,6 @@ func BenchmarkEngine_LoadEvents(b *testing.B) {
 
 	// Benchmark
 	for i := 0; i < b.N; i++ {
-		_ = eng.LoadEvents(ctx, 100, func(events []Event) error {
-			return nil
-		})
+		_ = eng.LoadEvents(ctx, 100, func(events []Event) error { return nil })
 	}
 }

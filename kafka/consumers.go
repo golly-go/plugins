@@ -8,10 +8,12 @@ import (
 	"math"
 	"math/rand"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/golly-go/golly"
 	"github.com/segmentio/kafka-go"
@@ -143,24 +145,33 @@ func (b *Consumers) Stop() {
 	}
 }
 
-// Subscribe requires an explicit groupID, and supports either a single topic or multiple topics via SubOption.
+// Subscribe requires topics and groupID; when groupID is omitted we derive a readable, stable value from the handler path and topics.
 func (b *Consumers) Subscribe(handler Handler, opts ...SubOption) error {
 	sc := SubConfig{}
 	for _, o := range opts {
 		o(&sc)
 	}
-	if len(sc.Topics) == 0 {
+
+	topics := sanitizeTopics(sc.Topics)
+	if len(topics) == 0 {
 		return fmt.Errorf("kafka: subscribe requires at least one topic")
 	}
+	if sc.GroupID == "" {
+		sc.GroupID = deriveGroupID(sc.Topics, handler)
+	}
+
 	if sc.GroupID == "" {
 		return fmt.Errorf("kafka: subscribe requires a groupID")
 	}
 
+	trace("kafka: subscribing to %#v", sc)
+
 	b.mu.Lock()
-	sub := &subscription{topics: append([]string(nil), sc.Topics...), groupID: sc.GroupID, handler: handler}
-	for _, t := range sc.Topics {
+	sub := &subscription{topics: topics, groupID: sc.GroupID, handler: handler}
+	for _, t := range topics {
 		b.subs[t] = append(b.subs[t], sub)
 	}
+
 	started := b.started.Load()
 	b.mu.Unlock()
 
@@ -212,16 +223,25 @@ func (b *Consumers) startSubLocked(sub *subscription) {
 	}
 	sub.ctx, sub.cancel = context.WithCancel(b.ctx)
 	b.wg.Add(1)
+
 	go b.runReader(sub)
 }
 
 func (b *Consumers) runReader(sub *subscription) {
 	defer b.wg.Done()
+	defer func() {
+		if r := recover(); r != nil {
+			golly.Logger().Errorf("kafka: consumer panic recovered: %v", r)
+		}
+		trace("Kafka %s consumer stopped", strings.Join(sub.topics, ","))
+	}()
+
 	var reader readerIface
 	if b.cfg.ReaderFunc == nil && len(b.cfg.Brokers) == 0 {
 		golly.Logger().Errorf("kafka: consumers: no brokers configured; cannot start reader for %s; set kafka.brokers or configure plugin", strings.Join(sub.topics, ","))
 		return
 	}
+
 	if b.cfg.ReaderFunc != nil {
 		reader = b.cfg.ReaderFunc(sub.topics, sub.groupID)
 	} else {
@@ -229,7 +249,7 @@ func (b *Consumers) runReader(sub *subscription) {
 	}
 	defer reader.Close()
 
-	golly.Logger().Debugf("kafka: starting reader for %s", strings.Join(sub.topics, ","))
+	golly.Logger().Debugf("[KAFKA]: starting consumer for %s", strings.Join(sub.topics, ","))
 
 	var backoff time.Duration = 200 * time.Millisecond
 
@@ -340,6 +360,39 @@ func (b *Consumers) newReader(topics []string, groupID string) readerIface {
 	return kafka.NewReader(rc)
 }
 
+// sanitizeGroupID keeps only Kafka-safe characters and compresses whitespace
+func sanitizeGroupID(s string) string {
+	b := strings.Builder{}
+	b.Grow(len(s))
+	lastDash := false
+	for _, r := range s {
+		if r == '/' || r == ':' || r == '.' || r == '-' || r == '_' || r == '@' || r == '+' {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		// normalize others to single dash
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	res := b.String()
+	res = strings.Trim(res, "-")
+	if res == "" {
+		return "consumer"
+	}
+	if len(res) > 255 {
+		return res[:255]
+	}
+	return res
+}
+
 func max[T constraints.Ordered](a, b T) T {
 	if a > b {
 		return a
@@ -349,4 +402,16 @@ func max[T constraints.Ordered](a, b T) T {
 
 func trace(message string, args ...interface{}) {
 	golly.Logger().Tracef("[KAFKA] "+message, args...)
+}
+
+func deriveGroupID(topics []string, handler Handler) string {
+	// default derivation: function name path + topics (sanitized)
+	ptr := reflect.ValueOf(handler).Pointer()
+	fn := runtime.FuncForPC(ptr)
+
+	if fn == nil {
+		return ""
+	}
+
+	return sanitizeGroupID(fn.Name())
 }

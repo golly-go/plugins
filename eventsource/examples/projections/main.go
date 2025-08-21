@@ -41,7 +41,6 @@ func main() {
 	// Create engine with in-memory store and sync bus
 	engine := eventsource.NewEngine(
 		eventsource.WithStore(eventsource.NewInMemoryStore()),
-		eventsource.WithBus(eventsource.NewSyncBus()),
 	)
 
 	engine.Start()

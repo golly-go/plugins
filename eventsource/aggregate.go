@@ -156,6 +156,7 @@ func (ab *AggregateBase) ProcessChanges(ctx context.Context, ag Aggregate) error
 
 		change.AggregateID = ag.GetID()
 		change.AggregateType = ObjectName(ag)
+		change.Topic = NameToTopicUnicode(ag)
 
 		change.SetState(EventStateApplied)
 		changes[pos] = change

@@ -7,7 +7,6 @@ import (
 
 	"github.com/golly-go/golly"
 	"github.com/google/uuid"
-	"github.com/segmentio/encoding/json"
 )
 
 // Engine is the main entry point for your event-sourced system.
@@ -16,35 +15,38 @@ import (
 //   - A ProjectionManager for building read models
 type Engine struct {
 	store       EventStore
-	bus         Bus
 	projections *ProjectionManager
 	aggregates  *AggregateRegistry
+
+	streams *StreamManager
 
 	mu      sync.RWMutex
 	running bool
 }
+
+var defaultStream = NewStream(StreamOptions{Name: DefaultStreamName})
 
 // NewEngine allows configuring the engine via Option by building a config first.
 func NewEngine(opts ...Option) *Engine {
 	cfg := handleOptions(opts...)
 	eng := &Engine{
 		store:       cfg.Store,
-		bus:         cfg.Bus,
 		projections: NewProjectionManager(),
 		aggregates:  NewAggregateRegistry(),
+		streams:     NewStreamManager(),
 	}
+	// Always include a default in-memory stream
+	eng.streams.Add(defaultStream)
+
+	for i := range cfg.Streams {
+		eng.streams.Add(cfg.Streams[i])
+	}
+
 	return eng
 }
 
 // Store returns the underlying event store (if you need direct access)
 func (eng *Engine) Store() EventStore { return eng.store }
-
-// UseBus configures the Engine to use a pluggable Bus for pub/sub.
-func (eng *Engine) UseBus(bus Bus) {
-	eng.mu.Lock()
-	defer eng.mu.Unlock()
-	eng.bus = bus
-}
 
 // Projections returns the underlying projection manager
 func (eng *Engine) Projections() *ProjectionManager { return eng.projections }
@@ -56,6 +58,25 @@ func (eng *Engine) IsRunning() bool {
 	eng.mu.RLock()
 	defer eng.mu.RUnlock()
 	return eng.running
+}
+
+// WithStream adds external streams for outbound publish.
+func (eng *Engine) WithStream(streams ...StreamPublisher) *Engine {
+	eng.streams.Add(streams...)
+	return eng
+}
+
+// On subscribes a handler to the first subscribable stream (default in-memory) to receive all events.
+func (eng *Engine) On(handler StreamHandler) error {
+	if ok := eng.streams.Subscribe(AllEvents, handler); !ok {
+		return fmt.Errorf("no subscribable streams available")
+	}
+	return nil
+}
+
+// Subscribe Deprecated: Use On instead
+func (eng *Engine) Subscribe(handler StreamHandler) error {
+	return eng.On(handler)
 }
 
 // nextGlobalVersion returns the next global version
@@ -86,6 +107,24 @@ func (eng *Engine) RunProjectionOnce(ctx context.Context, projection any) error 
 // RegisterProjection registers a projection
 func (eng *Engine) RegisterProjection(proj Projection) error {
 	eng.projections.Register(proj)
+
+	handler := func(ctx context.Context, evt Event) {
+		defer func() {
+			if r := recover(); r != nil {
+				golly.Logger().Errorf("panic in projection %s: %v", resolveInterfaceName(proj), r)
+			}
+		}()
+
+		err := proj.HandleEvent(ctx, evt)
+		if err != nil {
+			golly.Logger().Errorf("error in projection %s: %v", resolveInterfaceName(proj), err)
+		}
+	}
+
+	if ok := eng.streams.Subscribe(AllEvents, handler); !ok {
+		return fmt.Errorf("no subscribable streams available")
+	}
+
 	return nil
 }
 
@@ -264,18 +303,14 @@ func handleExecutionError(ctx context.Context, agg Aggregate, cmd Command, err e
 	return err
 }
 
-// Send publishes events to the bus. The topic defaults to event.Type or Go type name of Data.
+// Send publishes events to all configured streams.
 func (eng *Engine) Send(ctx context.Context, events ...Event) {
-	if eng.bus == nil {
-		return
-	}
 	for i := range events {
-		payload, err := json.Marshal(events[i])
-		if err != nil {
-			golly.Logger().Warnf("bus marshal failed for %s: %v", resolveNameOrEventType(events[i]), err)
-			continue
+		if topic := events[i].Topic; topic != "" {
+			eng.streams.Publish(ctx, topic, events[i])
+		} else {
+			trace("No topic for event aggregate=%s aggregateID=%s version=%d", events[i].AggregateType, events[i].AggregateID, events[i].Version)
 		}
-		_ = eng.bus.Publish(ctx, resolveNameOrEventType(events[i]), payload)
 	}
 }
 
@@ -286,6 +321,10 @@ func (eng *Engine) Start() {
 	eng.mu.Lock()
 	eng.running = true
 	eng.mu.Unlock()
+
+	if eng.streams != nil {
+		eng.streams.Start()
+	}
 }
 
 // Stop marks the engine stopped
@@ -295,6 +334,10 @@ func (eng *Engine) Stop() {
 	eng.mu.Lock()
 	eng.running = false
 	eng.mu.Unlock()
+
+	if eng.streams != nil {
+		eng.streams.Stop()
+	}
 }
 
 // resolveNameOrEventType returns the event's type string, falling back to the Go type name of Data

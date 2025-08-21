@@ -41,10 +41,9 @@ func (c CreateUser) Perform(ctx context.Context, agg eventsource.Aggregate) erro
 }
 
 func main() {
-	// Create engine with in-memory store and sync bus
+	// Create engine with in-memory store; no external bus
 	engine := eventsource.NewEngine(
 		eventsource.WithStore(&eventsource.InMemoryStore{}),
-		eventsource.WithBus(eventsource.NewSyncBus()),
 	)
 
 	engine.Start()

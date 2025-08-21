@@ -8,10 +8,9 @@ import (
 )
 
 func main() {
-	// Create engine with store and sync bus
+	// Create engine with store only
 	engine := eventsource.NewEngine(
 		eventsource.WithStore(&eventsource.InMemoryStore{}),
-		eventsource.WithBus(eventsource.NewSyncBus()),
 	)
 
 	// Publish an example event
