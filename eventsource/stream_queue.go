@@ -160,6 +160,8 @@ func (pw *partitionWorker) processJob(job Job) {
 		agg.nextVersion = 1
 	}
 
+	trace("processing job aggregate=%s aggregateID=%s version=%d", evt.AggregateType, evt.AggregateID, evt.Version)
+
 	agg.buffered[evt.Version] = job
 	pw.flushAggregator(agg)
 }
@@ -219,73 +221,73 @@ func (pw *partitionWorker) flushAggregator(agg *aggregatorState) {
 // 	}
 // }
 
-// func (pw *partitionWorker) checkBlockedAggregators() {
-// 	now := time.Now()
-// 	for ag, agg := range pw.aggregatorMap {
-// 		if agg.blockedSince.IsZero() || now.Sub(agg.blockedSince) <= pw.blockedTimeout {
-// 			golly.Logger().Tracef("skipping blocked aggregator %s (blockedSince=%s, blockedTimeout=%s)", ag, agg.blockedSince, pw.blockedTimeout)
-// 			continue
-// 		}
-
-// 		if len(agg.buffered) == 0 {
-// 			continue
-// 		}
-
-// 		agg.skips++
-// 		agg.nextVersion++ // advance once
-// 		// TODO: metrics: projection_event_skipped_total{partition=..., next_version=...}
-
-// 		pw.flushAggregator(agg) // resume if next is available
-// 	}
-// }
-
 func (pw *partitionWorker) checkBlockedAggregators() {
 	now := time.Now()
-
-	for aggID, agg := range pw.aggregatorMap {
-		// Only act if we've actually been blocked longer than the timeout.
+	for _, agg := range pw.aggregatorMap {
 		if agg.blockedSince.IsZero() || now.Sub(agg.blockedSince) <= pw.blockedTimeout {
 			continue
 		}
 
 		if len(agg.buffered) == 0 {
-			// Nothing buffered to advance to; keep waiting.
 			continue
 		}
 
-		// Find the smallest buffered version >= nextVersion.
-		var candidate int64 = -1
-		for v := range agg.buffered {
-			if v >= agg.nextVersion && (candidate == -1 || v < candidate) {
-				candidate = v
-			}
-		}
+		agg.blockedSince = time.Time{}
+		agg.skips++
+		agg.nextVersion++ // advance once
+		// TODO: metrics: projection_event_skipped_total{partition=..., next_version=...}
 
-		if candidate == -1 {
-			// All buffered versions are < nextVersion (late arrivals).
-			// Clear blockedSince to avoid repeated spammy checks; we'll
-			// deliver these at drain or when state realigns.
-			agg.blockedSince = time.Time{}
-			continue
-		}
-
-		skipped := candidate - agg.nextVersion
-		if skipped > 0 {
-			agg.skips += int(skipped)
-		}
-
-		agg.nextVersion = candidate
-		agg.blockedSince = time.Time{} // no longer "blocked" after the jump
-
-		// Try to resume processing from the new nextVersion immediately.
-		pw.flushAggregator(agg)
-
-		trace(
-			"fast-forwarded aggregate %s to nextVersion=%d (skipped=%d, buffered=%d)",
-			aggID, agg.nextVersion, skipped, len(agg.buffered),
-		)
+		pw.flushAggregator(agg) // resume if next is available
 	}
 }
+
+// func (pw *partitionWorker) checkBlockedAggregators() {
+// 	now := time.Now()
+
+// 	for aggID, agg := range pw.aggregatorMap {
+// 		// Only act if we've actually been blocked longer than the timeout.
+// 		if agg.blockedSince.IsZero() || now.Sub(agg.blockedSince) <= pw.blockedTimeout {
+// 			continue
+// 		}
+
+// 		if len(agg.buffered) == 0 {
+// 			// Nothing buffered to advance to; keep waiting.
+// 			continue
+// 		}
+
+// 		// Find the smallest buffered version >= nextVersion.
+// 		var candidate int64 = -1
+// 		for v := range agg.buffered {
+// 			if v >= agg.nextVersion && (candidate == -1 || v < candidate) {
+// 				candidate = v
+// 			}
+// 		}
+
+// 		if candidate == -1 {
+// 			// All buffered versions are < nextVersion (late arrivals).
+// 			// Clear blockedSince to avoid repeated spammy checks; we'll
+// 			// deliver these at drain or when state realigns.
+// 			agg.blockedSince = time.Time{}
+// 			continue
+// 		}
+
+// 		skipped := candidate - agg.nextVersion
+// 		if skipped > 0 {
+// 			agg.skips += int(skipped)
+// 		}
+
+// 		agg.nextVersion = candidate
+// 		agg.blockedSince = time.Time{} // no longer "blocked" after the jump
+
+// 		// Try to resume processing from the new nextVersion immediately.
+// 		pw.flushAggregator(agg)
+
+// 		trace(
+// 			"fast-forwarded aggregate %s to nextVersion=%d (skipped=%d, buffered=%d)",
+// 			aggID, agg.nextVersion, skipped, len(agg.buffered),
+// 		)
+// 	}
+// }
 
 // cleanupEmptyAggregators removes aggregator states that have no buffered items & are not blocked
 func (pw *partitionWorker) cleanupEmptyAggregators() {
@@ -413,8 +415,6 @@ func (sq *StreamQueue) Enqueue(ctx context.Context, evt Event) error {
 	case <-time.After(250 * time.Millisecond):
 		return errors.New("queue full: backpressure on partition")
 	}
-
-	return nil
 }
 
 func (sq *StreamQueue) getPartition(aggID string) uint32 {

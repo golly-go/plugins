@@ -161,6 +161,8 @@ func (eng *Engine) Execute(ctx context.Context, agg Aggregate, cmd Command) (err
 		return fmt.Errorf("engine is nil")
 	}
 
+	trace("executing command %s aggregate=%s aggregateID=%s", golly.TypeNoPtr(cmd).Name(), golly.TypeNoPtr(agg).Name(), agg.GetID())
+
 	if err = eng.Replay(ctx, agg); err != nil {
 		return handleExecutionError(ctx, agg, cmd, err)
 	}
@@ -338,12 +340,4 @@ func (eng *Engine) Stop() {
 	if eng.streams != nil {
 		eng.streams.Stop()
 	}
-}
-
-// resolveNameOrEventType returns the event's type string, falling back to the Go type name of Data
-func resolveNameOrEventType(evt Event) string {
-	if evt.Type != "" {
-		return evt.Type
-	}
-	return resolveInterfaceName(evt.Data)
 }
