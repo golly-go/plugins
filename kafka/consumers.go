@@ -156,11 +156,12 @@ func (b *Consumers) Subscribe(handler Handler, opts ...SubOption) error {
 	if len(topics) == 0 {
 		return fmt.Errorf("kafka: subscribe requires at least one topic")
 	}
-	if sc.GroupID == "" {
-		sc.GroupID = deriveGroupID(sc.Topics, handler)
-	}
 
-	if sc.GroupID == "" {
+	// if sc.GroupID == "" {
+	// sc.GroupID = deriveGroupID(sc.Topics, handler)
+	// }
+
+	if sc.GroupID == "" && len(topics) > 1 {
 		return fmt.Errorf("kafka: subscribe requires a groupID")
 	}
 
@@ -333,11 +334,24 @@ func (b *Consumers) newReader(topics []string, groupID string) readerIface {
 		dialer.TLS = &tls.Config{MinVersion: tls.VersionTLS12}
 		dialer.SASLMechanism = plain.Mechanism{Username: b.cfg.UserName, Password: b.cfg.Password}
 	}
+
+	var gtopics []string
+	if groupID != "" {
+		groupID = sanitizeGroupID(groupID)
+		gtopics = topics
+	}
+
+	var topic string
+	if groupID == "" {
+		topic = topics[0]
+	}
+
 	balancer := kafka.RangeGroupBalancer{}
 	rc := kafka.ReaderConfig{
 		Brokers:               b.cfg.Brokers,
 		GroupID:               groupID,
-		GroupTopics:           topics,
+		GroupTopics:           gtopics,
+		Topic:                 topic,
 		MinBytes:              max(1, b.cfg.ReadMinBytes),
 		MaxBytes:              max(1, b.cfg.ReadMaxBytes),
 		MaxWait:               b.cfg.ReadMaxWait,
