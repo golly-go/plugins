@@ -10,27 +10,24 @@ import (
 
 // This plugins provides golly wrappers to allow easy to use GQL integration
 
-type HandlerFunc func(*golly.WebContext, Params) (interface{}, error)
+type HandlerFunc func(*golly.WebContext, graphql.ResolveParams) (interface{}, error)
+
+type Option func(*Options)
 
 type Options struct {
 	Public bool
-
-	Roles  []string
-	Scopes []string
-
-	Handler HandlerFunc
 }
 
-type Params struct {
-	graphql.ResolveParams
-
-	Identity golly.Identity
+func WithPublic(public bool) Option {
+	return func(options *Options) {
+		options.Public = public
+	}
 }
 
-func (p Params) Metadata() map[string]interface{} {
+func metadata(p graphql.ResolveParams) map[string]interface{} {
 	var name string
 
-	switch definition := p.ResolveParams.Info.Operation.(type) {
+	switch definition := p.Info.Operation.(type) {
 	case *ast.OperationDefinition:
 		if definition.Name != nil {
 			name = definition.GetName().Value
@@ -40,13 +37,19 @@ func (p Params) Metadata() map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"gql.operation.type": p.ResolveParams.Info.Operation.GetOperation(),
+		"gql.operation.type": p.Info.Operation.GetOperation(),
 		"gql.operation.name": name,
 	}
 }
 
 // NewHandler creates a GraphQL field resolver with WebContext and identity handling.
-func NewHandler(options Options) graphql.FieldResolveFn {
+func NewHandler(handler HandlerFunc, options ...Option) graphql.FieldResolveFn {
+
+	cfg := &Options{}
+	for _, option := range options {
+		option(cfg)
+	}
+
 	return func(p graphql.ResolveParams) (interface{}, error) {
 		// Ensure the context is of type WebContext
 		wctx, ok := p.Context.(*golly.WebContext)
@@ -55,20 +58,30 @@ func NewHandler(options Options) graphql.FieldResolveFn {
 		}
 
 		// Retrieve identity from context
-		ident := golly.IdentityFromContext[golly.Identity](wctx.Context)
+		if identityFunc == nil {
+			if !cfg.Public {
+				wctx.Logger().Warn("identity function not skipping - skipping auth check for non-public handler")
+			}
 
-		// Prepare GraphQL parameters
-		params := Params{ResolveParams: p, Identity: ident}
+			result, err := handler(wctx, p)
+			if err != nil {
+				wctx.Logger().Errorf("error in GQL handler: %v", err)
+				return nil, err
+			}
+			return result, nil
+		}
+
+		ident := identityFunc(wctx.Context)
 
 		// Enrich logging with metadata
-		wctx.Context = golly.WithLoggerFields(wctx.Context, params.Metadata())
+		wctx.Context = golly.WithLoggerFields(wctx.Context, metadata(p))
 
-		if !options.Public && (ident == nil || ident.IsValid() != nil) {
+		if !cfg.Public && (ident == nil || ident.IsValid() != nil) {
 			return nil, fmt.Errorf("authentication required for this action")
 		}
 
 		// Execute the handler
-		result, err := options.Handler(wctx, params)
+		result, err := handler(wctx, p)
 		if err != nil {
 			wctx.Logger().Errorf("error in GQL handler: %v", err)
 			return nil, err

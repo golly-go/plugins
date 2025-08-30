@@ -273,6 +273,7 @@ func (b *Consumers) runReader(sub *subscription) {
 
 		m, err := reader.FetchMessage(sub.ctx)
 		if err != nil {
+
 			if errors.Is(err, context.Canceled) {
 				return
 			}
@@ -281,7 +282,8 @@ func (b *Consumers) runReader(sub *subscription) {
 			backoff = time.Duration(math.Min(float64(backoff*2), float64(5*time.Second)))
 			jitter := time.Duration(rand.Int63n(int64(backoff / 2)))
 			delay := backoff/2 + jitter
-			trace("kafka: fetch message error: %v, retrying in %s", err, delay)
+
+			trace("kafka %#v fetch message error: %v, retrying in %s (%#v)", sub.topics, err, delay, m)
 
 			time.Sleep(delay)
 			continue
@@ -348,6 +350,7 @@ func (b *Consumers) newReader(topics []string, groupID string) readerIface {
 
 	balancer := kafka.RangeGroupBalancer{}
 	rc := kafka.ReaderConfig{
+		WatchPartitionChanges: true,
 		Brokers:               b.cfg.Brokers,
 		GroupID:               groupID,
 		GroupTopics:           gtopics,
@@ -356,13 +359,13 @@ func (b *Consumers) newReader(topics []string, groupID string) readerIface {
 		MaxBytes:              max(1, b.cfg.ReadMaxBytes),
 		MaxWait:               b.cfg.ReadMaxWait,
 		Dialer:                dialer,
-		WatchPartitionChanges: true,
 		JoinGroupBackoff:      5 * time.Second,
 		ReadBackoffMin:        250 * time.Millisecond,
 		ReadBackoffMax:        10 * time.Second,
 		ReadBatchTimeout:      max(b.cfg.ReadMaxWait, 1*time.Second),
 		GroupBalancers:        []kafka.GroupBalancer{balancer},
 		StartOffset:           kafka.FirstOffset,
+		MaxAttempts:           5,
 	}
 	if b.cfg.StartFromLatest {
 		rc.StartOffset = kafka.LastOffset

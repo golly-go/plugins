@@ -1,11 +1,16 @@
 package gql
 
 import (
+	"context"
 	"net/http"
 	"sync"
 
 	"github.com/golly-go/golly"
 	"github.com/graphql-go/graphql"
+)
+
+var (
+	identityFunc func(ctx context.Context) golly.Identity
 )
 
 type gqlHandler struct {
@@ -38,7 +43,22 @@ func RegisterMutation(fields graphql.Fields) {
 }
 
 // NewGraphQL initializes a new GraphQL handler with the current registry.
-func NewGraphQL() gqlHandler {
+func NewGraphQL(opts ...ConfigOption) gqlHandler {
+	config := &Config{}
+	for _, opt := range opts {
+		opt(config)
+	}
+
+	identityFunc = config.identityFunc
+
+	if len(mutationRegistry) == 0 {
+		mutationRegistry = emptyField()
+	}
+
+	if len(queryRegistry) == 0 {
+		queryRegistry = emptyField()
+	}
+
 	schema, err := graphql.NewSchema(graphql.SchemaConfig{
 		Query:    graphql.NewObject(graphql.ObjectConfig{Name: "Query", Fields: queryRegistry}),
 		Mutation: graphql.NewObject(graphql.ObjectConfig{Name: "Mutation", Fields: mutationRegistry}),
@@ -99,4 +119,10 @@ func ExecuteGraphQL(gctx *golly.Context, sc graphql.SchemaConfig, query string, 
 	}
 
 	return graphql.Do(params), nil
+}
+
+func emptyField() graphql.Fields {
+	return graphql.Fields{"empty": &graphql.Field{Type: graphql.String, Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+		return "empty", nil
+	}}}
 }
