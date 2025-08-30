@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -69,7 +70,7 @@ func TestConsumers_Subscribe_Publish_SuccessCommits(t *testing.T) {
 	)
 
 	done := make(chan struct{})
-	c.Subscribe(func(ctx context.Context, payload []byte) error { close(done); return nil }, SubscribeWithTopic("t"))
+	c.Subscribe(func(ctx context.Context, payload []byte) error { close(done); return nil }, SubscribeWithTopic("t"), SubscribeWithGroupID("g"))
 	c.Start()
 	defer c.Stop()
 
@@ -139,8 +140,8 @@ func TestConsumers_UnsubscribeStopsHandler(t *testing.T) {
 
 	h1 := func(ctx context.Context, payload []byte) error { return nil }
 	h2 := func(ctx context.Context, payload []byte) error { return nil }
-	c.Subscribe(h1, SubscribeWithTopic("t"))
-	c.Subscribe(h2, SubscribeWithTopic("t"))
+	c.Subscribe(h1, SubscribeWithTopic("t"), SubscribeWithGroupID("g"))
+	c.Subscribe(h2, SubscribeWithTopic("t"), SubscribeWithGroupID("x"))
 	c.Start()
 	defer c.Stop()
 
@@ -153,6 +154,33 @@ func TestConsumers_UnsubscribeStopsHandler(t *testing.T) {
 	assert.GreaterOrEqual(t, fr2.committed, 1, "second reader continues committing")
 }
 
+func TestConsumersNoGroupID(t *testing.T) {
+	var tests = []struct {
+		topics  []string
+		wantErr bool
+	}{
+		{topics: []string{"t"}, wantErr: false},
+		{topics: []string{"t", "t2"}, wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(fmt.Sprintf("topics: %v", test.topics), func(t *testing.T) {
+			c := NewConsumers(WithBrokers([]string{"test"}), WithReaderFunc(func(topics []string, groupID string) readerIface { return &fakeReader{} }), WithWriterFunc(func() writerIface { return &fakeWriter{} }))
+			err := c.Subscribe(
+				func(ctx context.Context, payload []byte) error { return nil },
+				SubscribeWithTopics(test.topics...),
+			)
+
+			if test.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+
+		})
+	}
+}
+
 func TestConsumers_HandlerPanic_NoCommit(t *testing.T) {
 	fr := &fakeReader{msgs: []kafka.Message{{Topic: "t", Value: []byte(`E`)}}, ctx: context.Background()}
 	c := NewConsumers(
@@ -161,7 +189,7 @@ func TestConsumers_HandlerPanic_NoCommit(t *testing.T) {
 		WithWriterFunc(func() writerIface { return &fakeWriter{} }),
 	)
 
-	c.Subscribe(func(ctx context.Context, payload []byte) error { panic("boom") }, SubscribeWithTopic("t"))
+	c.Subscribe(func(ctx context.Context, payload []byte) error { panic("boom") }, SubscribeWithTopic("t"), SubscribeWithGroupID("g"))
 	c.Start()
 	defer c.Stop()
 

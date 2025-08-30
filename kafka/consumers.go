@@ -157,12 +157,8 @@ func (b *Consumers) Subscribe(handler Handler, opts ...SubOption) error {
 		return fmt.Errorf("kafka: subscribe requires at least one topic")
 	}
 
-	// if sc.GroupID == "" {
-	// sc.GroupID = deriveGroupID(sc.Topics, handler)
-	// }
-
 	if sc.GroupID == "" && len(topics) > 1 {
-		return fmt.Errorf("kafka: subscribe requires a groupID")
+		return fmt.Errorf("kafka: subscribe requires a groupID to have multiple topics")
 	}
 
 	trace("kafka: subscribing to %#v", sc)
@@ -296,6 +292,10 @@ func (b *Consumers) runReader(sub *subscription) {
 		err = handler(sub, m)
 		if err != nil {
 			golly.Logger().Errorf("kafka: handler error on %s: %v", m.Topic, err)
+			continue
+		}
+
+		if sub.groupID == "" {
 			continue
 		}
 
