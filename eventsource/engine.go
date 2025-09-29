@@ -163,8 +163,10 @@ func (eng *Engine) Execute(ctx context.Context, agg Aggregate, cmd Command) (err
 
 	trace("executing command %s aggregate=%s aggregateID=%s", golly.TypeNoPtr(cmd).Name(), golly.TypeNoPtr(agg).Name(), agg.GetID())
 
-	if err = eng.Replay(ctx, agg); err != nil {
-		return handleExecutionError(ctx, agg, cmd, err)
+	if HasValidID(agg) {
+		if err = eng.Replay(ctx, agg); err != nil {
+			return handleExecutionError(ctx, agg, cmd, err)
+		}
 	}
 
 	if v, ok := cmd.(CommandValidator); ok {
@@ -340,4 +342,8 @@ func (eng *Engine) Stop() {
 	if eng.streams != nil {
 		eng.streams.Stop()
 	}
+}
+
+func HasValidID(agg Aggregate) bool {
+	return agg.GetID() != "" && agg.GetID() != uuid.Nil.String() && agg.GetID() != "0"
 }

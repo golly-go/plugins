@@ -18,6 +18,7 @@ import (
 	"github.com/golly-go/golly"
 	"github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/sasl/plain"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/exp/constraints"
 )
 
@@ -338,41 +339,58 @@ func (b *Consumers) newReader(topics []string, groupID string) readerIface {
 	}
 
 	var gtopics []string
+
 	if groupID != "" {
 		groupID = sanitizeGroupID(groupID)
 		gtopics = topics
 	}
 
 	var topic string
+	var balancers []kafka.GroupBalancer
 	if groupID == "" {
 		topic = topics[0]
 	}
 
-	balancer := kafka.RangeGroupBalancer{}
+	if groupID != "" {
+		balancers = []kafka.GroupBalancer{kafka.RangeGroupBalancer{}}
+	}
+
 	rc := kafka.ReaderConfig{
-		WatchPartitionChanges: true,
-		Brokers:               b.cfg.Brokers,
-		GroupID:               groupID,
-		GroupTopics:           gtopics,
-		Topic:                 topic,
-		MinBytes:              max(1, b.cfg.ReadMinBytes),
-		MaxBytes:              max(1, b.cfg.ReadMaxBytes),
-		MaxWait:               b.cfg.ReadMaxWait,
-		Dialer:                dialer,
-		JoinGroupBackoff:      5 * time.Second,
-		ReadBackoffMin:        250 * time.Millisecond,
-		ReadBackoffMax:        10 * time.Second,
-		ReadBatchTimeout:      max(b.cfg.ReadMaxWait, 1*time.Second),
-		GroupBalancers:        []kafka.GroupBalancer{balancer},
-		StartOffset:           kafka.FirstOffset,
-		MaxAttempts:           5,
+		WatchPartitionChanges:  true,
+		PartitionWatchInterval: 10 * time.Second,
+		Brokers:                b.cfg.Brokers,
+		GroupID:                groupID,
+		GroupTopics:            gtopics,
+		Topic:                  topic,
+		MinBytes:               max(1, b.cfg.ReadMinBytes),
+		MaxBytes:               max(1, b.cfg.ReadMaxBytes),
+		MaxWait:                b.cfg.ReadMaxWait,
+		Dialer:                 dialer,
+		JoinGroupBackoff:       5 * time.Second,
+		ReadBackoffMin:         250 * time.Millisecond,
+		ReadBackoffMax:         10 * time.Second,
+		ReadBatchTimeout:       max(b.cfg.ReadMaxWait, 1*time.Second),
+		GroupBalancers:         balancers,
+		QueueCapacity:          100,
+		MaxAttempts:            5,
+		// Logger: &KafkaLogger{Logger: golly.Logger().WithFields(logrus.Fields{
+		// 	"component": "kafka",
+		// 	"consumer":  "consumer",
+		// 	"topics":    strings.Join(topics, ","),
+		// 	"groupID":   groupID,
+		// })},
 	}
-	if b.cfg.StartFromLatest {
-		rc.StartOffset = kafka.LastOffset
+
+	if groupID != "" {
+		rc.StartOffset = kafka.FirstOffset
+		if b.cfg.StartFromLatest {
+			rc.StartOffset = kafka.LastOffset
+		}
 	}
+
 	// manual commit: keep default CommitInterval (1s) only if user explicitly requests auto-commit
 	if b.cfg.CommitInterval > 0 {
-		rc.CommitInterval = b.cfg.CommitInterval
+		// rc.CommitInterval = b.cfg.CommitInterval
 	}
 	return kafka.NewReader(rc)
 }
@@ -431,4 +449,12 @@ func deriveGroupID(topics []string, handler Handler) string {
 	}
 
 	return sanitizeGroupID(fn.Name())
+}
+
+type KafkaLogger struct {
+	Logger *logrus.Entry
+}
+
+func (l *KafkaLogger) Printf(message string, args ...interface{}) {
+	l.Logger.Tracef("[KAFKA] "+message, args...)
 }
