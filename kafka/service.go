@@ -15,6 +15,8 @@ type Service struct {
 }
 
 func NewService(config Config) *Service {
+	fmt.Printf("kafka: initializing service with config: %+v\n", config)
+
 	return &Service{config: config, consumers: NewConsumers(config)}
 }
 
@@ -22,8 +24,15 @@ func NewService(config Config) *Service {
 func (s *Service) Bus() *Consumers { return s.consumers }
 func (s *Service) Name() string    { return "kafka-consumers" }
 
+func (s *Service) ApplyConfig(config Config) {
+	s.config = config
+	s.consumers.ApplyConfig(config)
+}
+
 // Initialize builds consumers from app.Config(). Services and plugins are guaranteed to run before app initializers.
 func (s *Service) Initialize(app *golly.Application) error {
+	fmt.Printf("kafka: initializing service with config: %+v\n", s.config)
+
 	if len(s.config.Brokers) == 0 {
 		return fmt.Errorf("kafka: no brokers configured; set kafka.brokers in config or configure the plugin")
 	}

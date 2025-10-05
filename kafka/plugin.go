@@ -11,7 +11,6 @@ const pluginName = "kafka"
 
 const (
 	publisherCtxKey golly.ContextKey = "kafka-publisher"
-	consumerCtxKey  golly.ContextKey = "kafka-consumer"
 )
 
 // Plugin wires a Kafka Publisher into the app and optionally exposes the consumer Service.
@@ -31,10 +30,16 @@ func WithOptions(opts ...Option) PluginOption {
 	return func(p *Plugin) { p.opts = append(p.opts, opts...) }
 }
 
-func NewPlugin(fnc func(app *golly.Application) Config) *Plugin {
-	p := &Plugin{}
-	p.cfgFunc = fnc
-	return p
+func NewPlugin(fnc ...func(app *golly.Application) Config) *Plugin {
+	var f func(app *golly.Application) Config
+	if len(fnc) > 0 {
+		f = fnc[0]
+	}
+
+	return &Plugin{
+		service: NewService(Config{}),
+		cfgFunc: f,
+	}
 }
 
 func (p *Plugin) Name() string { return pluginName }
@@ -52,7 +57,7 @@ func (p *Plugin) Initialize(app *golly.Application) error {
 		return fmt.Errorf("kafka: no brokers configured; set kafka.brokers in config or configure the plugin")
 	}
 
-	p.service = NewService(config)
+	p.service.ApplyConfig(config)
 	p.publisher = NewPublisher(config)
 
 	return p.publisher.Start()
