@@ -7,6 +7,14 @@ import (
 	"github.com/golly-go/golly"
 )
 
+type SASLMechanism string
+
+const (
+	PLAIN       SASLMechanism = "PLAIN"
+	SCRAM       SASLMechanism = "SCRAM"
+	OAUTHBEARER SASLMechanism = "OAUTHBEARER"
+)
+
 type KeyFunc func(topic string, payload any) []byte
 
 type Config struct {
@@ -26,6 +34,8 @@ type Config struct {
 	CooperativeBalancing bool // reserved for future
 
 	KeyFunc KeyFunc // optional
+
+	SASLMechanism SASLMechanism
 
 	// Optional constructor hooks
 	ReaderFunc ReaderFunc
@@ -145,6 +155,12 @@ func WithCredentials(userName string, password string) Option {
 	return func(cfg *Config) {
 		cfg.UserName = userName
 		cfg.Password = password
+	}
+}
+
+func WithSASLMechanism(mechanism SASLMechanism) Option {
+	return func(cfg *Config) {
+		cfg.SASLMechanism = mechanism
 	}
 }
 

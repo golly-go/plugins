@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/segmentio/kafka-go"
-	"github.com/segmentio/kafka-go/sasl/plain"
 )
 
 // PublisherAPI is the minimal interface used by application code.
@@ -107,6 +106,7 @@ func (p *Publisher) Publish(ctx context.Context, topic string, payload any) erro
 		jitter := time.Duration(rand.Int63n(int64(backoff / 2)))
 		delay := backoff/2 + jitter
 		trace("kafka: publish retry %d in %s: %v", attempt, delay, err)
+
 		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
@@ -127,17 +127,18 @@ func (p *Publisher) newWriter() writerIface {
 		RequiredAcks:           kafka.RequireAll,
 	}
 
-	if p.cfg.UserName != "" && p.cfg.Password != "" {
-		w.Transport = &kafka.Transport{
-			DialTimeout: 20 * time.Second,
-			IdleTimeout: 45 * time.Second,
-			TLS:         &tls.Config{MinVersion: tls.VersionTLS12},
-			SASL: plain.Mechanism{
-				Username: p.cfg.UserName,
-				Password: p.cfg.Password,
-			},
-		}
+	var tlsConfig *tls.Config
+	if p.cfg.TLSEnabled {
+		tlsConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 	}
+
+	w.Transport = &kafka.Transport{
+		DialTimeout: 20 * time.Second,
+		IdleTimeout: 45 * time.Second,
+		TLS:         tlsConfig,
+		SASL:        createSASLMechanism(p.cfg.SASLMechanism, p.cfg.UserName, p.cfg.Password),
+	}
+
 	return w
 }
 

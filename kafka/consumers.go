@@ -17,7 +17,9 @@ import (
 
 	"github.com/golly-go/golly"
 	"github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go/sasl"
 	"github.com/segmentio/kafka-go/sasl/plain"
+	"github.com/segmentio/kafka-go/sasl/scram"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/exp/constraints"
 )
@@ -316,11 +318,9 @@ func (b *Consumers) newWriter() writerIface {
 		transport.TLS = &tls.Config{MinVersion: tls.VersionTLS12}
 	}
 
-	if b.cfg.UserName != "" && b.cfg.Password != "" {
-		transport.SASL = plain.Mechanism{
-			Username: b.cfg.UserName,
-			Password: b.cfg.Password,
-		}
+	mechanism := createSASLMechanism(b.cfg.SASLMechanism, b.cfg.UserName, b.cfg.Password)
+	if mechanism != nil {
+		transport.SASL = mechanism
 	}
 
 	w.Transport = transport
@@ -329,9 +329,9 @@ func (b *Consumers) newWriter() writerIface {
 
 func (b *Consumers) newReader(topics []string, groupID string) readerIface {
 	dialer := &kafka.Dialer{Timeout: 10 * time.Second, DualStack: true, KeepAlive: 15 * time.Second, ClientID: b.cfg.ClientID}
-
-	if b.cfg.UserName != "" && b.cfg.Password != "" {
-		dialer.SASLMechanism = plain.Mechanism{Username: b.cfg.UserName, Password: b.cfg.Password}
+	mechanism := createSASLMechanism(b.cfg.SASLMechanism, b.cfg.UserName, b.cfg.Password)
+	if mechanism != nil {
+		dialer.SASLMechanism = mechanism
 	}
 
 	if b.cfg.TLSEnabled {
@@ -339,20 +339,15 @@ func (b *Consumers) newReader(topics []string, groupID string) readerIface {
 	}
 
 	var gtopics []string
+	var topic string
+	var balancers []kafka.GroupBalancer
 
 	if groupID != "" {
 		groupID = sanitizeGroupID(groupID)
 		gtopics = topics
-	}
-
-	var topic string
-	var balancers []kafka.GroupBalancer
-	if groupID == "" {
-		topic = topics[0]
-	}
-
-	if groupID != "" {
 		balancers = []kafka.GroupBalancer{kafka.RangeGroupBalancer{}}
+	} else {
+		topic = topics[0]
 	}
 
 	rc := kafka.ReaderConfig{
@@ -362,23 +357,17 @@ func (b *Consumers) newReader(topics []string, groupID string) readerIface {
 		GroupID:                groupID,
 		GroupTopics:            gtopics,
 		Topic:                  topic,
-		MinBytes:               max(1, b.cfg.ReadMinBytes),
-		MaxBytes:               max(1, b.cfg.ReadMaxBytes),
+		MinBytes:               b.cfg.ReadMinBytes,
+		MaxBytes:               b.cfg.ReadMaxBytes,
 		MaxWait:                b.cfg.ReadMaxWait,
 		Dialer:                 dialer,
 		JoinGroupBackoff:       5 * time.Second,
 		ReadBackoffMin:         250 * time.Millisecond,
 		ReadBackoffMax:         10 * time.Second,
-		ReadBatchTimeout:       max(b.cfg.ReadMaxWait, 1*time.Second),
+		ReadBatchTimeout:       max(b.cfg.ReadMaxWait, 30*time.Second),
 		GroupBalancers:         balancers,
 		QueueCapacity:          100,
 		MaxAttempts:            5,
-		// Logger: &KafkaLogger{Logger: golly.Logger().WithFields(logrus.Fields{
-		// 	"component": "kafka",
-		// 	"consumer":  "consumer",
-		// 	"topics":    strings.Join(topics, ","),
-		// 	"groupID":   groupID,
-		// })},
 	}
 
 	if groupID != "" {
@@ -388,10 +377,6 @@ func (b *Consumers) newReader(topics []string, groupID string) readerIface {
 		}
 	}
 
-	// manual commit: keep default CommitInterval (1s) only if user explicitly requests auto-commit
-	if b.cfg.CommitInterval > 0 {
-		// rc.CommitInterval = b.cfg.CommitInterval
-	}
 	return kafka.NewReader(rc)
 }
 
@@ -457,4 +442,27 @@ type KafkaLogger struct {
 
 func (l *KafkaLogger) Printf(message string, args ...interface{}) {
 	l.Logger.Tracef("[KAFKA] "+message, args...)
+}
+
+func createSASLMechanism(mechanism SASLMechanism, userName string, password string) sasl.Mechanism {
+	switch mechanism {
+	case PLAIN:
+		if userName == "" || password == "" {
+			return nil
+		}
+		return plain.Mechanism{Username: userName, Password: password}
+	case SCRAM:
+		if userName == "" || password == "" {
+			return nil
+		}
+		// SCRAM-SHA-256 is the most commonly supported variant
+		m, err := scram.Mechanism(scram.SHA256, userName, password)
+		if err != nil {
+			// Fallback to PLAIN if SCRAM fails
+			return plain.Mechanism{Username: userName, Password: password}
+		}
+		return m
+	default:
+		return nil
+	}
 }
