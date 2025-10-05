@@ -1,7 +1,10 @@
 package kafka
 
 import (
+	"strings"
 	"time"
+
+	"github.com/golly-go/golly"
 )
 
 type KeyFunc func(topic string, payload any) []byte
@@ -16,6 +19,8 @@ type Config struct {
 	CommitInterval time.Duration // default: 0 (manual)
 	WriteTimeout   time.Duration // default: 5s
 	AllowAutoTopic bool          // if your cluster auto-creates topics
+
+	TLSEnabled bool
 
 	StartFromLatest      bool // if true, use kafka.LastOffset for new groups
 	CooperativeBalancing bool // reserved for future
@@ -50,6 +55,14 @@ type SubConfig struct {
 }
 
 type SubOption func(*SubConfig)
+
+func WithTLSEnabled() Option {
+	return func(cfg *Config) { cfg.TLSEnabled = true }
+}
+
+func WithAllowAutoTopic() Option {
+	return func(cfg *Config) { cfg.AllowAutoTopic = true }
+}
 
 func SubscribeWithTopic(topic string) SubOption {
 	return func(sc *SubConfig) { sc.Topics = []string{topic} }
@@ -128,14 +141,9 @@ func WithWriteTimeout(writeTimeout time.Duration) Option {
 	}
 }
 
-func WithUserName(userName string) Option {
+func WithCredentials(userName string, password string) Option {
 	return func(cfg *Config) {
 		cfg.UserName = userName
-	}
-}
-
-func WithPassword(password string) Option {
-	return func(cfg *Config) {
 		cfg.Password = password
 	}
 }
@@ -166,4 +174,75 @@ func WithPublishRetries(maxRetries int) Option {
 // WithPublishBackoff sets the initial backoff used for publish retries
 func WithPublishBackoff(backoff time.Duration) Option {
 	return func(cfg *Config) { cfg.PublishBackoff = backoff }
+}
+
+func ConfigFromApp(app *golly.Application) Config {
+
+	var opts []Option
+
+	cfg := app.Config()
+	if s := cfg.GetString("kafka.brokers"); s != "" {
+		parts := strings.Split(s, ",")
+
+		brokers := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if v := strings.TrimSpace(p); v != "" {
+				brokers = append(brokers, v)
+			}
+		}
+
+		opts = append(opts, WithBrokers(brokers))
+	}
+
+	if g := cfg.GetString("kafka.group_id"); g != "" {
+		opts = append(opts, func(c *Config) { c.GroupID = g })
+	}
+	if id := cfg.GetString("kafka.client_id"); id != "" {
+		opts = append(opts, func(c *Config) { c.ClientID = id })
+	}
+
+	// Behavior flags
+	if cfg.GetBool("kafka.cooperative") {
+		opts = append(opts, WithCooperativeBalancing())
+	}
+	if cfg.GetBool("kafka.start_latest") {
+		opts = append(opts, WithStartFromLatest())
+	}
+	// Tuning
+	if n := cfg.GetInt("kafka.read_min_bytes"); n > 0 {
+		opts = append(opts, WithReadMinBytes(n))
+	}
+	if n := cfg.GetInt("kafka.read_max_bytes"); n > 0 {
+		opts = append(opts, WithReadMaxBytes(n))
+	}
+	if d := cfg.GetDuration("kafka.read_max_wait"); d > 0 {
+		opts = append(opts, WithReadMaxWait(d))
+	}
+	if d := cfg.GetDuration("kafka.commit_interval"); d > 0 {
+		opts = append(opts, WithCommitInterval(d))
+	}
+	if d := cfg.GetDuration("kafka.write_timeout"); d > 0 {
+		opts = append(opts, WithWriteTimeout(d))
+	} else {
+		opts = append(opts, WithWriteTimeout(5*time.Second))
+	}
+
+	if d := cfg.GetDuration("kafka.write_timeout"); d > 0 {
+		opts = append(opts, WithWriteTimeout(d))
+	} else {
+		opts = append(opts, WithWriteTimeout(5*time.Second))
+	}
+
+	// Auth
+	if u := cfg.GetString("kafka.username"); u != "" {
+		p := cfg.GetString("kafka.password")
+		opts = append(opts, WithCredentials(u, p))
+	}
+
+	config := Config{}
+	for _, o := range opts {
+		o(&config)
+	}
+
+	return config
 }

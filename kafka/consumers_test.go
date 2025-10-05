@@ -63,7 +63,7 @@ func TestConsumers_Subscribe_Publish_SuccessCommits(t *testing.T) {
 	fr := &fakeReader{msgs: []kafka.Message{{Topic: "t", Value: []byte(`{"eventType":"E"}`)}}, ctx: context.Background()}
 	fw := &fakeWriter{}
 
-	c := NewConsumers(
+	c := NewConsumers(Config{},
 		WithBrokers([]string{"test"}),
 		WithReaderFunc(func(topics []string, groupID string) readerIface { return fr }),
 		WithWriterFunc(func() writerIface { return fw }),
@@ -88,7 +88,7 @@ func TestConsumers_Subscribe_HandlerErrorNoCommit(t *testing.T) {
 	fr := &fakeReader{msgs: []kafka.Message{{Topic: "t", Value: []byte(`{"eventType":"E"}`)}}, ctx: context.Background()}
 	fw := &fakeWriter{}
 
-	c := NewConsumers(
+	c := NewConsumers(Config{},
 		WithBrokers([]string{"test"}),
 		WithReaderFunc(func(topics []string, groupID string) readerIface { return fr }),
 		WithWriterFunc(func() writerIface { return fw }),
@@ -110,7 +110,7 @@ func TestConsumers_Subscribe_HandlerErrorNoCommit(t *testing.T) {
 }
 
 func TestConsumers_PublishBeforeStartErrors(t *testing.T) {
-	c := NewConsumers()
+	c := NewConsumers(Config{})
 	err := c.Publish(context.Background(), "t", []byte("x"))
 	assert.Error(t, err)
 }
@@ -126,7 +126,7 @@ func TestConsumers_UnsubscribeStopsHandler(t *testing.T) {
 	}, ctx: context.Background()}
 
 	ri := 0
-	c := NewConsumers(
+	c := NewConsumers(Config{},
 		WithBrokers([]string{"test"}),
 		WithReaderFunc(func(topics []string, groupID string) readerIface {
 			if ri == 0 {
@@ -165,7 +165,7 @@ func TestConsumersNoGroupID(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(fmt.Sprintf("topics: %v", test.topics), func(t *testing.T) {
-			c := NewConsumers(WithBrokers([]string{"test"}), WithReaderFunc(func(topics []string, groupID string) readerIface { return &fakeReader{} }), WithWriterFunc(func() writerIface { return &fakeWriter{} }))
+			c := NewConsumers(Config{}, WithBrokers([]string{"test"}), WithReaderFunc(func(topics []string, groupID string) readerIface { return &fakeReader{} }), WithWriterFunc(func() writerIface { return &fakeWriter{} }))
 			err := c.Subscribe(
 				func(ctx context.Context, payload []byte) error { return nil },
 				SubscribeWithTopics(test.topics...),
@@ -183,7 +183,7 @@ func TestConsumersNoGroupID(t *testing.T) {
 
 func TestConsumers_HandlerPanic_NoCommit(t *testing.T) {
 	fr := &fakeReader{msgs: []kafka.Message{{Topic: "t", Value: []byte(`E`)}}, ctx: context.Background()}
-	c := NewConsumers(
+	c := NewConsumers(Config{},
 		WithBrokers([]string{"test"}),
 		WithReaderFunc(func(topics []string, groupID string) readerIface { return fr }),
 		WithWriterFunc(func() writerIface { return &fakeWriter{} }),
@@ -201,6 +201,7 @@ func TestConsumers_HandlerPanic_NoCommit(t *testing.T) {
 func TestConsumers_Publish_UsesKeyFunc(t *testing.T) {
 	fw := &fakeWriter{}
 	c := NewConsumers(
+		Config{},
 		WithKeyFunc(func(topic string, payload any) []byte { return []byte("key-") }),
 		WithWriterFunc(func() writerIface { return fw }),
 	)
@@ -226,7 +227,7 @@ func (w *errWriter) WriteMessages(context.Context, ...kafka.Message) error {
 func (w *errWriter) Close() error { return nil }
 
 func TestConsumers_Publish_WriterError(t *testing.T) {
-	c := NewConsumers(
+	c := NewConsumers(Config{},
 		WithBrokers([]string{"test"}),
 		WithWriterFunc(func() writerIface { return &errWriter{} }),
 	)
@@ -239,7 +240,7 @@ func TestConsumers_Publish_WriterError(t *testing.T) {
 
 func BenchmarkConsumers_Publish(b *testing.B) {
 	fw := &fakeWriter{}
-	c := NewConsumers(
+	c := NewConsumers(Config{},
 		WithBrokers([]string{"bench"}),
 		WithWriterFunc(func() writerIface { return fw }),
 	)

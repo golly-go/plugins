@@ -4,7 +4,7 @@ go 1.23.4
 
 require (
 	github.com/go-redis/redis/v8 v8.11.5
-	github.com/golly-go/golly v0.7.1-0.20250814060728-3e36afc099a0
+	github.com/golly-go/golly v0.7.1-0.20250929072316-7b76394ce147
 )
 
 require (

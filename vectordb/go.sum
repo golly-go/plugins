@@ -7,8 +7,8 @@ github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHk
 github.com/frankban/quicktest v1.14.6/go.mod h1:4ptaffx2x8+WTWXmUCuVU6aPUX1/Mz7zb5vbUoiM6w0=
 github.com/fsnotify/fsnotify v1.8.0 h1:dAwr6QBTBZIkG8roQaJjGof0pp0EeF+tNV7YBP3F/8M=
 github.com/fsnotify/fsnotify v1.8.0/go.mod h1:8jBTzvmWwFyi3Pb8djgCCO5IBqzKJ/Jwo8TRcHyHii0=
-github.com/golly-go/golly v0.7.1-0.20250814060728-3e36afc099a0 h1:zlQmyFTlNg1k4e7NAo9mMqBUTw0qJqGLhd0KymceDoE=
-github.com/golly-go/golly v0.7.1-0.20250814060728-3e36afc099a0/go.mod h1:d5ZWWaeQGFu59ju4Jy7tdh7vQ4WNRFz5Pd1J5Jhq3vI=
+github.com/golly-go/golly v0.7.1-0.20250929072316-7b76394ce147 h1:qL39/LpeOXZ3H/aekRF/HZ1Xu2L9YEFEN0frhTWeLNk=
+github.com/golly-go/golly v0.7.1-0.20250929072316-7b76394ce147/go.mod h1:d5ZWWaeQGFu59ju4Jy7tdh7vQ4WNRFz5Pd1J5Jhq3vI=
 github.com/golly-go/plugins/functional v0.0.0-20231119205746-8cf27e7fb893 h1:Ref+SDBGFEelS08uhuoBOqKGFQMukJRthLQF0ux7joA=
 github.com/golly-go/plugins/functional v0.0.0-20231119205746-8cf27e7fb893/go.mod h1:ghaMoZbihgNw4OXtnUg9lPklB3sHwsHmz1wqynFzf8k=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=

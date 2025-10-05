@@ -3,7 +3,7 @@ module github.com/golly-go/plugins/workers
 go 1.23.4
 
 require (
-	github.com/golly-go/golly v0.7.1-0.20250814060728-3e36afc099a0
+	github.com/golly-go/golly v0.7.1-0.20250929072316-7b76394ce147
 	github.com/google/uuid v1.6.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.10.0

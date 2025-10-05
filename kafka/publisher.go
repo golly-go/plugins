@@ -27,18 +27,10 @@ type Publisher struct {
 	writer writerIface
 }
 
-func NewPublisher(opts ...Option) *Publisher {
-	cfg := Config{
-		WriteTimeout:      5 * time.Second,
-		AllowAutoTopic:    true,
-		PublishBackoff:    100 * time.Millisecond,
-		PublishMaxRetries: 3,
-	}
-
+func NewPublisher(cfg Config, opts ...Option) *Publisher {
 	for _, o := range opts {
 		o(&cfg)
 	}
-
 	p := &Publisher{cfg: cfg}
 	return p
 }
@@ -134,6 +126,7 @@ func (p *Publisher) newWriter() writerIface {
 		WriteTimeout:           p.cfg.WriteTimeout,
 		RequiredAcks:           kafka.RequireAll,
 	}
+
 	if p.cfg.UserName != "" && p.cfg.Password != "" {
 		w.Transport = &kafka.Transport{
 			DialTimeout: 20 * time.Second,

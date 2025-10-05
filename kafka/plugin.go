@@ -3,8 +3,6 @@ package kafka
 import (
 	"context"
 	"fmt"
-	"strings"
-	"time"
 
 	"github.com/golly-go/golly"
 )
@@ -33,76 +31,29 @@ func WithOptions(opts ...Option) PluginOption {
 	return func(p *Plugin) { p.opts = append(p.opts, opts...) }
 }
 
-func NewPlugin(opts ...PluginOption) *Plugin {
+func NewPlugin(fnc func(app *golly.Application) Config) *Plugin {
 	p := &Plugin{}
-	for _, o := range opts {
-		o(p)
-	}
-
-	p.service = NewService(p.opts...)
-	p.publisher = NewPublisher(p.opts...)
-
+	p.cfgFunc = fnc
 	return p
 }
 
 func (p *Plugin) Name() string { return pluginName }
 
-func (p *Plugin) Configure(f func(app *golly.Application) Config) error {
-	p.cfgFunc = f
-	if p.service != nil {
-		p.service.Configure(f)
-	}
-	return nil
-}
-
 // Initialize configures and starts the publisher. Consumers are configured in Service.Initialize.
 func (p *Plugin) Initialize(app *golly.Application) error {
-	// Build publisher options from config if not passed explicitly
-	if p.publisher == nil {
-		p.publisher = NewPublisher()
+	var config Config
+	if p.cfgFunc != nil {
+		config = p.cfgFunc(app)
+	} else {
+		config = ConfigFromApp(app)
 	}
 
-	cfg := app.Config()
-	// Minimal env driven config; callers may also pass options at construction time
-	opts := make([]Option, 0, 8)
-
-	// Gather brokers from both slice and comma-separated string
-	var brokers []string
-
-	if s := cfg.GetString("kafka.brokers"); s != "" {
-		parts := strings.Split(s, ",")
-		for _, p := range parts {
-			if v := strings.TrimSpace(p); v != "" {
-				brokers = append(brokers, v)
-			}
-		}
-	}
-
-	if len(brokers) == 0 {
+	if len(config.Brokers) == 0 {
 		return fmt.Errorf("kafka: no brokers configured; set kafka.brokers in config or configure the plugin")
 	}
 
-	opts = append(opts, WithBrokers(brokers))
-
-	if d := cfg.GetDuration("kafka.write_timeout"); d > 0 {
-		opts = append(opts, WithWriteTimeout(d))
-	} else {
-		opts = append(opts, WithWriteTimeout(5*time.Second))
-	}
-	if u := cfg.GetString("kafka.username"); u != "" {
-		pw := cfg.GetString("kafka.password")
-		opts = append(opts, WithUserName(u), WithPassword(pw))
-	}
-
-	// Recreate publisher with merged options
-	if len(opts) > 0 {
-		p.publisher = NewPublisher(append(p.opts, opts...)...)
-	}
-
-	if p.cfgFunc != nil {
-		kCfg := p.cfgFunc(app)
-		p.publisher.cfg = kCfg
-	}
+	p.service = NewService(config)
+	p.publisher = NewPublisher(config)
 
 	return p.publisher.Start()
 }

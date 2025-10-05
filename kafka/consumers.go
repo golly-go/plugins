@@ -65,30 +65,19 @@ type subscription struct {
 	cancel  context.CancelFunc
 }
 
-func NewConsumers(opts ...Option) *Consumers {
-	cfg := Config{
-		ReadMinBytes:   1 << 10,
-		ReadMaxBytes:   1 << 20,
-		ReadMaxWait:    250 * time.Millisecond,
-		CommitInterval: 0, // manual commit
-		WriteTimeout:   5 * time.Second,
-		AllowAutoTopic: true,
-	}
+func NewConsumers(config Config, opts ...Option) *Consumers {
 	for _, o := range opts {
-		o(&cfg)
+		o(&config)
 	}
-	c := &Consumers{
-		cfg:  cfg,
+	return &Consumers{
+		cfg:  config,
 		subs: make(map[string][]*subscription),
 	}
-	return c
 }
 
 // ApplyOptions merges the provided options into the existing consumer configuration.
-func (b *Consumers) ApplyOptions(opts ...Option) {
-	for _, o := range opts {
-		o(&b.cfg)
-	}
+func (b *Consumers) ApplyConfig(cfg Config) {
+	b.cfg = cfg
 }
 
 func (b *Consumers) Start() error {
@@ -317,25 +306,36 @@ func (b *Consumers) newWriter() writerIface {
 		WriteTimeout:           b.cfg.WriteTimeout,
 		RequiredAcks:           kafka.RequireAll,
 	}
+
+	transport := &kafka.Transport{
+		DialTimeout: 20 * time.Second,
+		IdleTimeout: 45 * time.Second,
+	}
+
+	if b.cfg.TLSEnabled {
+		transport.TLS = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+
 	if b.cfg.UserName != "" && b.cfg.Password != "" {
-		w.Transport = &kafka.Transport{
-			DialTimeout: 20 * time.Second,
-			IdleTimeout: 45 * time.Second,
-			TLS:         &tls.Config{MinVersion: tls.VersionTLS12},
-			SASL: plain.Mechanism{
-				Username: b.cfg.UserName,
-				Password: b.cfg.Password,
-			},
+		transport.SASL = plain.Mechanism{
+			Username: b.cfg.UserName,
+			Password: b.cfg.Password,
 		}
 	}
+
+	w.Transport = transport
 	return w
 }
 
 func (b *Consumers) newReader(topics []string, groupID string) readerIface {
 	dialer := &kafka.Dialer{Timeout: 10 * time.Second, DualStack: true, KeepAlive: 15 * time.Second, ClientID: b.cfg.ClientID}
+
 	if b.cfg.UserName != "" && b.cfg.Password != "" {
-		dialer.TLS = &tls.Config{MinVersion: tls.VersionTLS12}
 		dialer.SASLMechanism = plain.Mechanism{Username: b.cfg.UserName, Password: b.cfg.Password}
+	}
+
+	if b.cfg.TLSEnabled {
+		dialer.TLS = &tls.Config{MinVersion: tls.VersionTLS12}
 	}
 
 	var gtopics []string
