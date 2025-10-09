@@ -47,14 +47,21 @@ func (s *Service) Start() error {
 	}
 
 	s.running.Store(true)
+
+	// Block until Stop() is called (context is cancelled)
+	<-s.consumers.ctx.Done()
+
 	return nil
 }
 
 func (s *Service) Stop() error {
+	fmt.Println("Stopping service")
 	if !s.running.Load() {
+		fmt.Println("Service is not running")
 		return nil
 	}
 
+	fmt.Println("Stopping consumers")
 	s.consumers.Stop()
 
 	s.running.Store(false)
