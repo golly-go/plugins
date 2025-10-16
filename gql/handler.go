@@ -5,6 +5,7 @@ import (
 
 	"github.com/golly-go/golly"
 	"github.com/graphql-go/graphql"
+	"github.com/graphql-go/graphql/gqlerrors"
 	"github.com/graphql-go/graphql/language/ast"
 )
 
@@ -51,40 +52,44 @@ func NewHandler(handler HandlerFunc, options ...Option) graphql.FieldResolveFn {
 	}
 
 	return func(p graphql.ResolveParams) (interface{}, error) {
+		var ident golly.Identity
+
 		// Ensure the context is of type WebContext
 		wctx, ok := p.Context.(*golly.WebContext)
 		if !ok {
-			return nil, fmt.Errorf("invalid context type")
+			return nil, BadUserInput(fmt.Errorf("invalid context type"))
 		}
 
 		// Retrieve identity from context
 		if identityFunc == nil {
 			if !cfg.Public {
-				wctx.Logger().Warn("identity function not skipping - skipping auth check for non-public handler")
+				// If identity function is not set and the handler is not public, return unauthenticated error
+				return nil, Unauthenticated(nil)
 			}
+			goto execute
 
-			result, err := handler(wctx, p)
-			if err != nil {
-				wctx.Logger().Errorf("error in GQL handler: %v", err)
-				return nil, err
-			}
-			return result, nil
 		}
 
-		ident := identityFunc(wctx.Context)
+		ident = identityFunc(wctx.Context)
 
 		// Enrich logging with metadata
-		wctx.Context = golly.WithLoggerFields(wctx.Context, metadata(p))
+		wctx = wctx.WithContext(golly.WithLoggerFields(wctx.Context, metadata(p)))
 
 		if !cfg.Public && (ident == nil || ident.IsValid() != nil) {
-			return nil, fmt.Errorf("authentication required for this action")
+			return nil, Unauthenticated(nil)
 		}
 
+		goto execute
+
+	execute:
 		// Execute the handler
 		result, err := handler(wctx, p)
 		if err != nil {
 			wctx.Logger().Errorf("error in GQL handler: %v", err)
-			return nil, err
+			if gqlErr, ok := err.(*gqlerrors.Error); ok {
+				return nil, gqlErr
+			}
+			return nil, InternalServerError(err)
 		}
 
 		// Ensure the modified context is passed back

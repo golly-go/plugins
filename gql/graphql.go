@@ -7,6 +7,7 @@ import (
 
 	"github.com/golly-go/golly"
 	"github.com/graphql-go/graphql"
+	"github.com/graphql-go/graphql/gqlerrors"
 )
 
 var (
@@ -25,20 +26,24 @@ var (
 )
 
 // RegisterQuery registers query fields to the schema.
-func RegisterQuery(fields graphql.Fields) {
+func RegisterQuery(flds ...graphql.Fields) {
 	lock.Lock()
 	defer lock.Unlock()
-	for name, field := range fields {
-		queryRegistry[name] = field
+	for _, fields := range flds {
+		for name, field := range fields {
+			queryRegistry[name] = field
+		}
 	}
 }
 
 // RegisterMutation registers mutation fields to the schema.
-func RegisterMutation(fields graphql.Fields) {
+func RegisterMutation(flds ...graphql.Fields) {
 	lock.Lock()
 	defer lock.Unlock()
-	for name, field := range fields {
-		mutationRegistry[name] = field
+	for _, fields := range flds {
+		for name, field := range fields {
+			mutationRegistry[name] = field
+		}
 	}
 }
 
@@ -125,4 +130,21 @@ func emptyField() graphql.Fields {
 	return graphql.Fields{"empty": &graphql.Field{Type: graphql.String, Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 		return "empty", nil
 	}}}
+}
+
+// ErrorWithCode creates a GraphQL error with an extension code
+func ErrorWithCode(message, code string, extensions ...map[string]interface{}) error {
+	var extension = map[string]interface{}{"code": code}
+
+	if len(extensions) > 0 {
+		for _, ext := range extensions {
+			for k, v := range ext {
+				extension[k] = v
+			}
+		}
+	}
+
+	err := gqlerrors.NewFormattedError(message)
+	err.Extensions = extension
+	return err
 }
