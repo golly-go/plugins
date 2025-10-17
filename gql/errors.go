@@ -2,6 +2,8 @@ package gql
 
 import (
 	"errors"
+
+	"github.com/graphql-go/graphql/gqlerrors"
 )
 
 // Codes (align with Apollo/GraphQL conventions)
@@ -23,8 +25,12 @@ const (
 type Error struct {
 	Message    string
 	Code       string
-	Extensions map[string]any
+	extensions map[string]any
 	cause      error
+}
+
+func (e *Error) Extensions() map[string]any {
+	return e.extensions
 }
 
 func (e *Error) Error() string {
@@ -42,8 +48,8 @@ func (e *Error) Unwrap() error { return e.cause }
 // WithMeta adds a single k/v to extensions (copy-on-write).
 func (e *Error) WithMeta(k string, v any) *Error {
 	cp := *e
-	cp.Extensions = copyExt(e.Extensions)
-	cp.Extensions[k] = v
+	cp.extensions = copyExt(e.extensions)
+	cp.extensions[k] = v
 	return &cp
 }
 
@@ -53,9 +59,9 @@ func (e *Error) WithExtensions(m map[string]any) *Error {
 		return e
 	}
 	cp := *e
-	cp.Extensions = copyExt(e.Extensions)
+	cp.extensions = copyExt(e.extensions)
 	for k, v := range m {
-		cp.Extensions[k] = v
+		cp.extensions[k] = v
 	}
 	return &cp
 }
@@ -63,10 +69,13 @@ func (e *Error) WithExtensions(m map[string]any) *Error {
 // New builds a GraphQL error with code/message, wrapping an optional cause.
 // NOTE: we intentionally DO NOT include the cause message in Extensions.
 func New(code, message string, cause error, ext map[string]any) *Error {
+	extensions := copyExt(ext)
+	extensions["code"] = code
+
 	return &Error{
 		Message:    message,
 		Code:       code,
-		Extensions: copyExt(ext),
+		extensions: extensions,
 		cause:      cause,
 	}
 }
@@ -134,3 +143,5 @@ func copyExt(in map[string]any) map[string]any {
 	}
 	return out
 }
+
+var _ gqlerrors.ExtendedError = &Error{}

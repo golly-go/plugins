@@ -97,6 +97,8 @@ func (b *Consumers) Start() error {
 		return fmt.Errorf("kafka: no brokers configured; set kafka.brokers in config or configure the plugin")
 	}
 
+	trace("kafka: starting consumers with brokers %v", b.cfg.Brokers)
+
 	b.writer = b.newWriter()
 
 start:

@@ -64,9 +64,10 @@ func (p *Plugin) Initialize(app *golly.Application) error {
 }
 
 func (p *Plugin) Deinitialize(app *golly.Application) error {
-	if p.publisher != nil {
-		p.publisher.Stop()
+	if p.publisher == nil {
+		return nil
 	}
+	p.publisher.Stop()
 	return nil
 }
 
