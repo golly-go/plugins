@@ -51,4 +51,4 @@ require (
 	modernc.org/sqlite v1.39.1 // indirect
 )
 
-replace github.com/golly-go/golly => ../../golly
+// replace github.com/golly-go/golly => ../../golly
