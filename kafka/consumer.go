@@ -15,7 +15,7 @@ type SubscribeOptions struct {
 	// GroupID is the consumer group ID. If empty, the consumer will not be part of a group
 	// and will start from the latest offset. For event sourcing, use a group ID to track offsets.
 	GroupID string
-	
+
 	// StartPosition determines where to start consuming from when there's no committed offset
 	StartPosition StartPosition
 }
@@ -24,22 +24,22 @@ type SubscribeOptions struct {
 type Message struct {
 	// Topic is the Kafka topic this message was received from
 	Topic string
-	
+
 	// Partition is the partition number within the topic
 	Partition int32
-	
+
 	// Offset is the message offset within the partition
 	Offset int64
-	
+
 	// Key is the message key (can be nil)
 	Key []byte
-	
+
 	// Value is the message payload
 	Value []byte
-	
+
 	// Headers contains additional metadata as key-value pairs
 	Headers map[string][]byte
-	
+
 	// Timestamp is when the message was produced to Kafka
 	Timestamp time.Time
 }
@@ -49,7 +49,7 @@ type Consumer interface {
 	// Handler processes a single Kafka message. If this returns an error,
 	// the message will be retried according to the retry policy.
 	Handler(ctx context.Context, msg *Message) error
-	
+
 	// SubscribeOptions returns the configuration for how this consumer
 	// should subscribe to topics (group ID, starting position, etc.)
 	SubscribeOptions() SubscribeOptions
@@ -59,16 +59,16 @@ type Consumer interface {
 type ConsumerBase struct {
 	// handler is the business logic consumer that processes messages
 	handler Consumer
-	
+
 	// client is the franz-go client for this consumer
 	client *kgo.Client
-	
+
 	// topic is the Kafka topic this consumer is subscribed to
 	topic string
-	
+
 	// opts contains the subscription configuration
 	opts SubscribeOptions
-	
+
 	// groupID is the consumer group ID (cached from opts for convenience)
 	groupID string
 }
@@ -137,19 +137,19 @@ func (cb *ConsumerBase) ProcessEvent(ctx context.Context) error {
 type ConsumerManager struct {
 	// client is the shared franz-go client for the manager
 	client *kgo.Client
-	
+
 	// consumers maps subscription IDs to their ConsumerBase instances
 	consumers map[string]*ConsumerBase
-	
+
 	// ctx is the context for all consumers (cancelled on Stop)
 	ctx context.Context
-	
+
 	// cancel is the cancel function for the context
 	cancel context.CancelFunc
-	
+
 	// wg tracks all running consumer goroutines
 	wg sync.WaitGroup
-	
+
 	// mu protects the consumers map from concurrent access
 	mu sync.RWMutex
 }

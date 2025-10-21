@@ -2,7 +2,7 @@ package eventsource
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"reflect"
 	"sync"
 
@@ -16,6 +16,13 @@ const (
 const (
 	DefaultStreamName = "default"
 )
+
+var ErrQueueDraining = errors.New("queue is draining and not accepting new events")
+
+type Job struct {
+	Ctx   context.Context
+	Event Event
+}
 
 // StreamNamed provides a debug/metrics-friendly name for a stream.
 type StreamNamed interface{ Name() string }
@@ -39,95 +46,69 @@ type StreamLifecycle interface {
 type StreamHandler func(context.Context, Event)
 
 // Stream represents a single in-memory event stream with subscriptions.
+// This is now just a wrapper around InternalStream for backward compatibility.
 type Stream struct {
-	name string
-	mu   sync.RWMutex
-
-	handlers map[string][]StreamHandler // topic -> handlers; supports "*"
-	queue    *StreamQueue               // Per-stream queue
-	started  bool
+	*InternalStream
 }
 
 // NewStream initializes a new Stream with options
 func NewStream(opts StreamOptions) *Stream {
-	s := &Stream{
-		name:     opts.Name,
-		handlers: make(map[string][]StreamHandler),
+	return &Stream{
+		InternalStream: NewInternalStream(opts.Name),
 	}
-
-	s.queue = NewStreamQueue(StreamQueueConfig{
-		Name:          streamName(&opts),
-		NumPartitions: opts.NumPartitions,
-		BufferSize:    opts.BufferSize,
-		Handler:       s.handleStreamEvent,
-	})
-
-	return s
 }
 
-// Name returns the name of the stream.
-func (s *Stream) Name() string { return s.name }
+// InternalStream is a simple stream for projections and in-memory subscriptions
+// No complex ordering - just process events as they arrive
+type InternalStream struct {
+	name     string
+	mu       sync.RWMutex
+	handlers map[string][]StreamHandler
+	jobs     chan Job
+	stop     chan struct{}
+	stopped  bool
+	wg       sync.WaitGroup
+}
 
-// Publish pushes a single event to a topic on this stream.
-func (s *Stream) Publish(ctx context.Context, topic string, evt any) error {
+// NewInternalStream creates a simple internal stream for projections
+func NewInternalStream(name string) *InternalStream {
+	return &InternalStream{
+		name:     name,
+		handlers: make(map[string][]StreamHandler),
+		jobs:     make(chan Job, 1000),
+		stop:     make(chan struct{}),
+	}
+}
+
+// Name returns the stream name
+func (s *InternalStream) Name() string { return s.name }
+
+// Publish enqueues an event for immediate processing
+func (s *InternalStream) Publish(ctx context.Context, topic string, evt any) error {
 	e := evt.(Event)
 
-	golly.Logger().Tracef("publish event to stream %s topic=%s", s.name, topic)
-	return s.queue.Enqueue(ctx, e)
-}
+	golly.Logger().Tracef("publish event to internal stream %s topic=%s", s.name, topic)
 
-// Send dispatches events to the stream's queue (kept for Engine bulk-send compatibility)
-func (s *Stream) Send(ctx context.Context, events ...Event) error {
-	for _, evt := range events {
-		if err := s.queue.Enqueue(ctx, evt); err != nil {
-			return fmt.Errorf("failed to enqueue event: %w", err)
-		}
-	}
-	return nil
-}
-
-// Start begins processing events in the stream
-func (s *Stream) Start() {
-	s.mu.Lock()
-	if s.started {
-		s.mu.Unlock()
-		return
-	}
-	s.started = true
-	s.mu.Unlock()
-	golly.Logger().Tracef("starting stream %s numPartitions=%d", s.name, s.queue.numParts)
-	s.queue.Start()
-}
-
-// Stop gracefully shuts down event processing
-func (s *Stream) Stop() { s.queue.Stop() }
-
-// handleStreamEvent processes events for this stream
-func (s *Stream) handleStreamEvent(ctx context.Context, event Event) {
-	s.mu.RLock()
-	hs := make([]StreamHandler, 0, 8)
-	if h, ok := s.handlers[event.Topic]; ok {
-		hs = append(hs, h...)
-	}
-	if h, ok := s.handlers[AllEvents]; ok {
-		hs = append(hs, h...)
-	}
-	s.mu.RUnlock()
-	for i := range hs {
-		hs[i](ctx, event)
+	select {
+	case s.jobs <- Job{Ctx: ctx, Event: e}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		return ErrQueueDraining
 	}
 }
 
-// Subscribe registers a handler to receive events for a topic ("*" for all).
-func (s *Stream) Subscribe(topic string, handler StreamHandler) {
+// Subscribe registers a handler for a topic
+func (s *InternalStream) Subscribe(topic string, handler StreamHandler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.handlers[topic] = append(s.handlers[topic], handler)
 }
 
-// Unsubscribe removes a handler for a topic.
-func (s *Stream) Unsubscribe(topic string, handler StreamHandler) {
+// Unsubscribe removes a handler for a topic
+func (s *InternalStream) Unsubscribe(topic string, handler StreamHandler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -140,26 +121,125 @@ func (s *Stream) Unsubscribe(topic string, handler StreamHandler) {
 	}
 }
 
-// Project subscribes the projection to this stream (all events).
-func (s *Stream) Project(proj Projection) {
-	logger := golly.NewLogger().WithField("stream", s.name)
-	h := func(ctx context.Context, evt Event) {
-		defer func() {
-			if r := recover(); r != nil {
-				logger.Dup().Errorf("Recovered from panic in projection %s: %v", projectionKey(proj), r)
-			}
-		}()
-		if err := proj.HandleEvent(ctx, evt); err != nil {
-			logger.Dup().Errorf("cannot process projection %s (%s)", projectionKey(proj), err)
-		}
-	}
-	logger.Tracef("registering projection %s stream=%s", projectionKey(proj), s.name)
-	s.Subscribe(AllEvents, h)
+// Start begins processing events
+func (s *InternalStream) Start() {
+	golly.Logger().Tracef("starting internal stream %s", s.name)
+	s.wg.Add(1)
+	go s.run()
 }
 
-func streamName(cfg *StreamOptions) string {
-	if cfg == nil {
-		return DefaultStreamName
+// Stop stops processing events
+func (s *InternalStream) Stop() {
+	s.mu.Lock()
+	if s.stopped {
+		s.mu.Unlock()
+		return
 	}
-	return cfg.Name
+	s.stopped = true
+	s.mu.Unlock()
+
+	close(s.stop)
+	s.wg.Wait() // Wait for the goroutine to finish draining
+}
+
+// run processes events in a single goroutine
+func (s *InternalStream) run() {
+	defer s.wg.Done()
+	for {
+		select {
+		case job := <-s.jobs:
+			s.handleEvent(job.Ctx, job.Event)
+		case <-s.stop:
+			// Drain remaining events
+			for {
+				select {
+				case job := <-s.jobs:
+					s.handleEvent(job.Ctx, job.Event)
+				default:
+					return
+				}
+			}
+		}
+	}
+}
+
+// handleEvent processes a single event
+func (s *InternalStream) handleEvent(ctx context.Context, event Event) {
+	s.mu.RLock()
+	hs := make([]StreamHandler, 0, 8)
+	if h, ok := s.handlers[event.Topic]; ok {
+		hs = append(hs, h...)
+		golly.Logger().Tracef("Found %d handlers for topic %s", len(h), event.Topic)
+	}
+	if h, ok := s.handlers[AllEvents]; ok {
+		hs = append(hs, h...)
+		golly.Logger().Tracef("Found %d handlers for AllEvents (*)", len(h))
+	}
+	s.mu.RUnlock()
+
+	golly.Logger().Tracef("Total handlers for event %s: %d", event.Topic, len(hs))
+	for i := range hs {
+		hs[i](ctx, event)
+	}
+}
+
+// ProducerManager manages external event producers (like Kafka)
+type ProducerManager struct {
+	mu        sync.RWMutex
+	producers []StreamPublisher
+}
+
+// NewProducerManager creates a new producer manager
+func NewProducerManager() *ProducerManager {
+	return &ProducerManager{}
+}
+
+// Add registers external producers
+func (pm *ProducerManager) Add(producers ...StreamPublisher) {
+	pm.mu.Lock()
+	pm.producers = append(pm.producers, producers...)
+	pm.mu.Unlock()
+}
+
+// Publish publishes events to all external producers
+func (pm *ProducerManager) Publish(ctx context.Context, topic string, events ...Event) {
+	pm.mu.RLock()
+	producers := append([]StreamPublisher(nil), pm.producers...)
+	pm.mu.RUnlock()
+
+	if len(producers) == 0 || len(events) == 0 {
+		return
+	}
+
+	for i := range producers {
+		for j := range events {
+			_ = producers[i].Publish(ctx, topic, events[j])
+		}
+	}
+}
+
+// Start starts producers that implement lifecycle
+func (pm *ProducerManager) Start() {
+	pm.mu.RLock()
+	producers := append([]StreamPublisher(nil), pm.producers...)
+	pm.mu.RUnlock()
+
+	for i := range producers {
+		if lc, ok := producers[i].(StreamLifecycle); ok {
+			lc.Start()
+		}
+	}
+}
+
+// Stop stops producers that implement lifecycle
+func (pm *ProducerManager) Stop() {
+	pm.mu.RLock()
+	producers := append([]StreamPublisher(nil), pm.producers...)
+	pm.mu.RUnlock()
+
+	for i := range producers {
+		if lc, ok := producers[i].(StreamLifecycle); ok {
+			lc.Stop()
+		}
+	}
 }

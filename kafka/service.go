@@ -1,8 +1,6 @@
 package kafka
 
 import (
-	"fmt"
-
 	"github.com/golly-go/golly"
 )
 
@@ -37,24 +35,19 @@ func (s *Service) Initialize(app *golly.Application) error {
 
 // Start begins the Kafka consumer service
 func (s *Service) Start() error {
-	if s.plugin.consumerManager == nil {
-		return fmt.Errorf("consumer manager not initialized")
-	}
-
-	return s.plugin.consumerManager.Start()
+	consumerManager := s.plugin.ConsumerManager()
+	return consumerManager.Start()
 }
 
 // Stop gracefully stops the Kafka consumer service
 func (s *Service) Stop() error {
-	if s.plugin.consumerManager == nil {
-		return nil
-	}
-
-	return s.plugin.consumerManager.Stop()
+	consumerManager := s.plugin.ConsumerManager()
+	return consumerManager.Stop()
 }
 
 // IsRunning indicates if the service is active
 func (s *Service) IsRunning() bool {
 	// TODO: Implement proper running state tracking
+	// For now, just check if consumer manager exists
 	return s.plugin.consumerManager != nil
 }

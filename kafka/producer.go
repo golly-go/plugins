@@ -14,7 +14,7 @@ import (
 type Producer struct {
 	// client is the franz-go client used for publishing
 	client *kgo.Client
-	
+
 	// config contains the producer configuration
 	config Config
 }

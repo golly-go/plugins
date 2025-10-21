@@ -36,13 +36,19 @@ func (sm *StreamManager) Publish(ctx context.Context, topic string, events ...Ev
 	}
 }
 
-// Subscribe subscribes the handler to the first in-memory stream.
+// Subscribe subscribes the handler to the first subscribable stream.
 func (sm *StreamManager) Subscribe(topic string, handler StreamHandler) bool {
 	streams := sm.getStreams()
 	if len(streams) == 0 {
 		return false
 	}
 	for i := range streams {
+		// Try InternalStream first (for projections)
+		if sub, ok := streams[i].(*InternalStream); ok {
+			sub.Subscribe(topic, handler)
+			return true
+		}
+		// Fall back to complex Stream
 		if sub, ok := streams[i].(*Stream); ok {
 			sub.Subscribe(topic, handler)
 			return true
@@ -78,6 +84,11 @@ func (sm *StreamManager) Stop() {
 		if lc, ok := streams[i].(StreamLifecycle); ok {
 			lc.Stop()
 		}
+		// Handle InternalStream
+		if s, ok := streams[i].(*InternalStream); ok {
+			s.Stop()
+		}
+		// Handle complex Stream
 		if s, ok := streams[i].(*Stream); ok {
 			s.Stop()
 		}

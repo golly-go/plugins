@@ -93,7 +93,7 @@ func NameToTopicUnicode(obj any) string {
 	b.Grow(len(s)) // lower bound; may grow if case fold expands
 	for _, r := range s {
 		switch r {
-		case '/':
+		case '/', '.':
 			b.WriteByte('-')
 		default:
 			b.WriteRune(unicode.ToLower(r))

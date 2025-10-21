@@ -19,7 +19,7 @@ func TestNewStream(t *testing.T) {
 		BufferSize:    100,
 	})
 	assert.Equal(t, "testStream", s.Name())
-	assert.Equal(t, uint32(4), s.queue.numParts)
+	// InternalStream doesn't have partitions anymore - it's simple
 }
 
 func TestStream_Subscribe(t *testing.T) {
@@ -122,7 +122,7 @@ func TestStream_ConcurrentSend(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			_ = s.Publish(golly.NewContext(nil), "TestEvent", Event{Type: "TestEvent", AggregateID: "MyAggregate", Version: int64(i)})
+			_ = s.Publish(context.Background(), "TestEvent", Event{Type: "TestEvent", AggregateID: "MyAggregate", Version: int64(i), Topic: "TestEvent"})
 		}(i)
 	}
 	wg.Wait()
@@ -130,47 +130,3 @@ func TestStream_ConcurrentSend(t *testing.T) {
 
 	assert.Equal(t, int32(100), atomic.LoadInt32(&counter))
 }
-
-// func TestStreamPartitioning(t *testing.T) {
-// 	// Create stream with 16 partitions
-// 	stream := NewStream(StreamOptions{
-// 		Name:          "test",
-// 		NumPartitions: 16,
-// 		BufferSize:    1000,
-// 	})
-
-// 	// Track which partition handles each event
-// 	partitionMap := make(map[string]uint32)
-
-// 	var mu sync.Mutex
-
-// 	stream.Subscribe("TestEvent", func(ctx context.Context, evt Event) {
-// 		mu.Lock()
-// 		partitionMap[evt.ID.String()] = evt.partitionID
-// 		mu.Unlock()
-// 	})
-
-// 	stream.Start()
-// 	defer stream.Stop()
-
-// 	// Send same event multiple times - should always go to same partition
-// 	id, _ := uuid.Parse("123e4567-e89b-12d3-a456-426614174000")
-// 	evt := Event{
-// 		ID:   id,
-// 		Type: "TestEvent",
-// 	}
-
-// 	for i := 0; i < 100; i++ {
-// 		stream.Send(golly.NewContext(nil), evt)
-// 	}
-
-// 	mu.Lock()
-// 	defer mu.Unlock()
-
-// 	// Verify all instances went to same partition
-// 	firstPartition := partitionMap[evt.ID.String()]
-// 	for _, partition := range partitionMap {
-// 		assert.Equal(t, firstPartition, partition,
-// 			"Same event ID should always map to same partition")
-// 	}
-// }

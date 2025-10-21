@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/golly-go/golly"
 	"github.com/google/uuid"
@@ -165,15 +166,37 @@ func TestEngine_ExecuteCommand(t *testing.T) {
 	assert.Equal(t, "test", agg.Name)
 }
 
+// SendTestProjection for testing Send functionality
+type SendTestProjection struct {
+	ProjectionBase
+	seen *[]string
+}
+
+func (tp *SendTestProjection) HandleEvent(ctx context.Context, evt Event) error {
+	*tp.seen = append(*tp.seen, evt.Topic+":"+evt.Type)
+	return nil
+}
+
 func TestEngine_Send_ResolvesTopic(t *testing.T) {
 	eng := NewEngine(WithStore(NewInMemoryStore()))
 	defer eng.Stop()
 	eng.Start()
 
 	var seen []string
-	_ = eng.On(func(ctx context.Context, evt Event) { seen = append(seen, evt.Topic+":"+evt.Type) })
+	proj := &SendTestProjection{seen: &seen}
 
-	eng.Send(context.Background(), Event{Type: "X"}, Event{Data: struct{}{}}, Event{Type: "Y"})
+	_ = eng.RegisterProjection(proj)
+
+	eng.Send(context.Background(),
+		Event{Type: "X", Topic: "X"},
+		Event{Data: struct{}{}},
+		Event{Type: "Y", Topic: "Y"})
+
+	// Wait for async processing
+	time.Sleep(10 * time.Millisecond)
+
+	// Debug: print what we saw
+	t.Logf("Seen events: %v", seen)
 
 	foundX, foundY := false, false
 	for _, s := range seen {

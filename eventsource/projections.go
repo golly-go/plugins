@@ -235,3 +235,19 @@ func projectionTopics(p Projection) []string {
 
 	return topics
 }
+
+// eventTopics determines what topics an event should be published to
+func eventTopic(evt Event) string {
+
+	// If the event has a Topic field, use it
+	if evt.Topic != "" {
+		return evt.Topic
+	}
+
+	// Generate topic from AggregateType
+	if evt.AggregateType != "" {
+		return NameToTopicUnicode(evt.AggregateType)
+	}
+
+	return ""
+}

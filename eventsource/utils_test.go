@@ -88,9 +88,9 @@ func Test_trace_NoPanic(t *testing.T) {
 func Test_NameToTopicUnicode(t *testing.T) {
 	// Dots and slashes replaced with hyphens; case folded
 	cases := []struct{ in, out string }{
-		{"eventsource.TestEvent", "eventsource-testevent"},
-		{"pkg/path.Event", "pkg-path-event"},
-		{"Already-Lower", "already-lower"},
+		{"eventsource.TestEvent", "events.eventsource-testevent"},
+		{"pkg/path.Event", "events.pkg-path-event"},
+		{"Already-Lower", "events.already-lower"},
 	}
 	for _, c := range cases {
 		if got := NameToTopicUnicode(c.in); got != c.out {
