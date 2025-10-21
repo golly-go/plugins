@@ -169,6 +169,8 @@ func (cm *ConsumerManager) Start() error {
 
 	cm.mu.RLock()
 	for subscriptionID, consumer := range cm.consumers {
+		trace("starting consumer for subscription on topic (%s) group (%s) position (%v)", consumer.topic, consumer.groupID, consumer.opts.StartPosition)
+
 		cm.wg.Add(1)
 		go func(id string, c *ConsumerBase) {
 			defer cm.wg.Done()

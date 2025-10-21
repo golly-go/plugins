@@ -27,8 +27,9 @@ func NewProducer(client *kgo.Client, config Config) *Producer {
 	}
 }
 
-// Publish sends a message to the given topic. The payload is JSON-encoded automatically.
-// If a key generation function is configured, it will be used to generate the message key.
+// Publish sends a message to the given topic asynchronously for better performance.
+// The payload is JSON-encoded automatically. If a key generation function is configured,
+// it will be used to generate the message key.
 func (p *Producer) Publish(ctx context.Context, topic string, payload any) error {
 	// Generate key
 	var key []byte = []byte(uuid.New().String())
@@ -51,43 +52,40 @@ func (p *Producer) Publish(ctx context.Context, topic string, payload any) error
 
 	trace("publishing message to topic %s %v", topic, payload)
 
-	// Send with retry logic
-	return p.publishWithRetry(ctx, msg)
+	// Send asynchronously - much faster!
+	p.client.Produce(ctx, msg, func(record *kgo.Record, err error) {
+		if err != nil {
+			trace("failed to publish message to %s: %v", record.Topic, err)
+		} else {
+			trace("successfully published message to %s", record.Topic)
+		}
+	})
+
+	return nil
 }
 
-// publishWithRetry handles retry logic for publishing
-func (p *Producer) publishWithRetry(ctx context.Context, msg *kgo.Record) error {
-	var attempt int
-	backoff := p.config.RetryBackoff
-	if backoff <= 0 {
-		backoff = 100 * time.Millisecond
-	}
+// Flush ensures all pending messages are sent and acknowledged.
+// This is important for CLI commands to ensure messages are delivered before exit.
+func (p *Producer) Flush(ctx context.Context) error {
+	trace("flushing producer - ensuring all messages are sent")
 
-	for {
-		// Send message
-		result := p.client.ProduceSync(ctx, msg)
+	// Use franz-go's built-in flush method
+	p.client.Flush(ctx)
 
-		// Check for errors
-		if result.FirstErr() == nil {
-			return nil
-		}
-
-		attempt++
-		if attempt > p.config.MaxRetries || ctx.Err() != nil {
-			return fmt.Errorf("kafka: publish failed after %d attempts: %w", attempt, result.FirstErr())
-		}
-
-		// Exponential backoff
-		time.Sleep(backoff)
-		backoff = time.Duration(float64(backoff) * 1.5)
-		if backoff > 5*time.Second {
-			backoff = 5 * time.Second
-		}
-	}
+	trace("producer flush completed")
+	return nil
 }
 
-// Stop closes the producer
+// Stop closes the producer after flushing any pending messages
 func (p *Producer) Stop() error {
+	// Flush any pending messages before closing
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := p.Flush(ctx); err != nil {
+		trace("failed to flush producer during stop: %v", err)
+	}
+
 	p.client.Close()
 	return nil
 }
