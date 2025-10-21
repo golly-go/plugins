@@ -1,173 +1,109 @@
 package kafka
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/golly-go/golly"
+	"github.com/twmb/franz-go/pkg/kgo"
 )
-
-const pluginName = "kafka"
 
 const (
-	publisherCtxKey golly.ContextKey = "kafka-publisher"
+	PluginName = "kafka"
 )
 
-// Plugin wires a Kafka Publisher into the app and optionally exposes the consumer Service.
-// It does not run its own loop; lifecycle is Initialize/Deinitialize.
+// Plugin implements the golly.Plugin interface
 type Plugin struct {
-	publisher *Publisher
-	service   *Service
-
-	opts    []Option
-	cfgFunc func(app *golly.Application) Config
+	config          Config
+	producer        *Producer
+	consumerManager *ConsumerManager
+	client          *kgo.Client
 }
 
-type PluginOption func(*Plugin)
-
-// WithOptions sets default options used for both publisher and consumers
-func WithOptions(opts ...Option) PluginOption {
-	return func(p *Plugin) { p.opts = append(p.opts, opts...) }
-}
-
-func NewPlugin(fnc ...func(app *golly.Application) Config) *Plugin {
-	var f func(app *golly.Application) Config
-	if len(fnc) > 0 {
-		f = fnc[0]
+// NewPlugin creates a new Kafka plugin
+func NewPlugin(opts ...Option) *Plugin {
+	p := &Plugin{}
+	for _, opt := range opts {
+		opt(&p.config)
 	}
-
-	return &Plugin{
-		service: NewService(Config{}),
-		cfgFunc: f,
-	}
+	return p
 }
 
-func (p *Plugin) Name() string { return pluginName }
+// Name returns the plugin name
+func (p *Plugin) Name() string { return PluginName }
 
-// Initialize configures and starts the publisher. Consumers are configured in Service.Initialize.
+// Initialize sets up the Kafka plugin
 func (p *Plugin) Initialize(app *golly.Application) error {
-	var config Config
-	if p.cfgFunc != nil {
-		config = p.cfgFunc(app)
-	} else {
-		config = ConfigFromApp(app)
+	// Create franz-go client
+	client, err := p.createClient()
+	if err != nil {
+		return fmt.Errorf("failed to create Kafka client: %w", err)
+	}
+	p.client = client
+
+	// Create producer if enabled
+	if p.config.EnableProducer {
+		p.producer = NewProducer(client, p.config)
 	}
 
-	if len(config.Brokers) == 0 {
-		return fmt.Errorf("kafka: no brokers configured; set kafka.brokers in config or configure the plugin")
+	// Create consumer manager if enabled
+	if p.config.EnableConsumers {
+		p.consumerManager = NewConsumerManager(client)
 	}
 
-	p.service.ApplyConfig(config)
-	p.publisher = NewPublisher(config)
-
-	return p.publisher.Start()
+	return nil
 }
 
+// Deinitialize cleans up the plugin
 func (p *Plugin) Deinitialize(app *golly.Application) error {
-	if p.publisher == nil {
-		return nil
+	// Stop consumer manager
+	if p.consumerManager != nil {
+		if err := p.consumerManager.Stop(); err != nil {
+			return err
+		}
 	}
-	p.publisher.Stop()
+
+	// Stop producer
+	if p.producer != nil {
+		return p.producer.Stop()
+	}
+
 	return nil
 }
 
-// Publisher returns the shared Kafka publisher instance.
-func (p *Plugin) Publisher() PublisherAPI { return p.publisher }
+func (p *Plugin) ConsumerManager() *ConsumerManager {
+	return p.consumerManager
+}
 
-// Services returns the consumer service so it can be run by the app when desired.
+// Producer returns the producer instance
+func (p *Plugin) Producer() *Producer {
+	return p.producer
+}
+
 func (p *Plugin) Services() []golly.Service {
-	return []golly.Service{p.service}
-}
-
-// High-level instance API to avoid reaching into internal structs
-func (p *Plugin) Subscribe(handler Handler, opts ...SubOption) error {
-	if p.service == nil || p.service.Bus() == nil {
-		return fmt.Errorf("kafka: consumer bus not available")
-	}
-	return p.service.Bus().Subscribe(handler, opts...)
-}
-
-func (p *Plugin) Consumers() *Consumers {
-	if p.service != nil {
-		return p.service.Bus()
-	}
-	return nil
-}
-
-func (p *Plugin) Unsubscribe(topic string, handler Handler) {
-	if p.service != nil && p.service.Bus() != nil {
-		p.service.Bus().Unsubscribe(topic, handler)
+	return []golly.Service{
+		NewService(p),
 	}
 }
 
-func (p *Plugin) Publish(ctx context.Context, topic string, payload any) error {
-	if p.publisher == nil {
-		return fmt.Errorf("kafka publisher not found")
-	}
-	return p.publisher.Publish(ctx, topic, payload)
-}
-
-// Helper accessor to fetch the publisher from context or plugin manager
-func GetPublisher(ctx context.Context) PublisherAPI {
-	if p, ok := ctx.Value(publisherCtxKey).(PublisherAPI); ok {
-		return p
+// createClient creates a franz-go client
+func (p *Plugin) createClient() (*kgo.Client, error) {
+	opts := []kgo.Opt{
+		kgo.SeedBrokers(p.config.Brokers...),
+		kgo.ClientID(p.config.ClientID),
 	}
 
-	if pm := golly.CurrentPlugins(); pm != nil {
-		if p, ok := pm.Get(pluginName).(*Plugin); ok {
-			return p.publisher
-		}
+	// Add authentication if configured
+	if p.config.Username != "" && p.config.Password != "" {
+		// TODO: Add SASL authentication
+		// This will need proper franz-go SASL implementation
 	}
 
-	return nil
-}
-
-func GetPlugin() *Plugin {
-	if pm := golly.CurrentPlugins(); pm != nil {
-		if p, ok := pm.Get(pluginName).(*Plugin); ok {
-			return p
-		}
-	}
-	return nil
-}
-
-func GetConsumer() *Consumers {
-	if p := GetPlugin(); p != nil {
-		return p.service.Bus()
-	}
-	return nil
-}
-
-// Subscribe registers a handler
-func Subscribe[T any](topic T, handler Handler, opts ...SubOption) *Consumers {
-	topics := []string{}
-	switch any(topic).(type) {
-	case string:
-		topics = []string{any(topic).(string)}
-	case []string:
-		topics = any(topic).([]string)
+	// Add TLS if enabled
+	if p.config.TLSEnabled {
+		opts = append(opts, kgo.DialTLS())
 	}
 
-	consumer := GetConsumer()
-	if consumer == nil {
-		trace("kafka: no consumer struct found")
-		return nil
-	}
-
-	opts = append(opts, SubscribeWithTopics(topics...))
-	if err := consumer.Subscribe(handler, opts...); err != nil {
-		golly.Logger().Errorf("kafka: subscribe error: %v", err)
-	}
-
-	return consumer
-}
-
-func Publish(ctx context.Context, topic string, payload []byte) error {
-	publisher := GetPublisher(ctx)
-	if publisher == nil {
-		return fmt.Errorf("kafka publisher not found")
-	}
-	return publisher.Publish(ctx, topic, payload)
+	return kgo.NewClient(opts...)
 }
 
 var _ golly.Plugin = (*Plugin)(nil)

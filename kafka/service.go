@@ -2,70 +2,59 @@ package kafka
 
 import (
 	"fmt"
-	"sync/atomic"
 
 	"github.com/golly-go/golly"
 )
 
-// Service composes Kafka consumers and implements golly.Service lifecycle.
+// Service implements golly.Service for Kafka consumers
 type Service struct {
-	config    Config
-	consumers *Consumers
-	running   atomic.Bool
+	plugin *Plugin
+	app    *golly.Application
 }
 
-func NewService(config Config) *Service {
-	return &Service{config: config, consumers: NewConsumers(config)}
+// NewService creates a new Kafka service
+func NewService(plugin *Plugin) *Service {
+	return &Service{
+		plugin: plugin,
+	}
 }
 
-// Bus returns the underlying event bus (consumers implement Bus)
-func (s *Service) Bus() *Consumers { return s.consumers }
-func (s *Service) Name() string    { return "kafka-consumers" }
-
-func (s *Service) ApplyConfig(config Config) {
-	s.config = config
-	s.consumers.ApplyConfig(config)
+// Name returns the service name
+func (s *Service) Name() string {
+	return "kafka-consumers"
 }
 
-// Initialize builds consumers from app.Config(). Services and plugins are guaranteed to run before app initializers.
+// Description returns the service description
+func (s *Service) Description() string {
+	return "Kafka consumer service for processing messages"
+}
+
+// Initialize prepares the service
 func (s *Service) Initialize(app *golly.Application) error {
-	if len(s.config.Brokers) == 0 {
-		return fmt.Errorf("kafka: no brokers configured; set kafka.brokers in config or configure the plugin")
-	}
-
+	s.app = app
 	return nil
 }
 
+// Start begins the Kafka consumer service
 func (s *Service) Start() error {
-	if s.running.Load() {
-		return nil
+	if s.plugin.consumerManager == nil {
+		return fmt.Errorf("consumer manager not initialized")
 	}
 
-	err := s.consumers.Start()
-	if err != nil {
-		return err
-	}
-
-	s.running.Store(true)
-
-	// Block until Stop() is called (context is cancelled)
-	<-s.consumers.ctx.Done()
-
-	return nil
+	return s.plugin.consumerManager.Start()
 }
 
+// Stop gracefully stops the Kafka consumer service
 func (s *Service) Stop() error {
-	fmt.Println("Stopping service")
-	if !s.running.Load() {
-		fmt.Println("Service is not running")
+	if s.plugin.consumerManager == nil {
 		return nil
 	}
 
-	fmt.Println("Stopping consumers")
-	s.consumers.Stop()
-
-	s.running.Store(false)
-	return nil
+	return s.plugin.consumerManager.Stop()
 }
 
-func (s *Service) IsRunning() bool { return s.running.Load() }
+// IsRunning indicates if the service is active
+func (s *Service) IsRunning() bool {
+	// TODO: Implement proper running state tracking
+	return s.plugin.consumerManager != nil
+}

@@ -1,43 +1,37 @@
 package kafka
 
 import (
-	"strings"
-	"unicode"
+	"fmt"
+
+	"github.com/golly-go/golly"
 )
 
-// sanitizeTopic replaces characters that are unsafe for certain Kafka providers (e.g., MSK)
-// Current policy: replace '/' and '.' with '-'.
-func sanitizeTopic(topic string) string {
-	var b strings.Builder
-	b.Grow(len(topic)) // lower bound; may grow if case fold expands
-	for _, r := range topic {
-		switch r {
-		case '/':
-			b.WriteByte('-')
-		default:
-			b.WriteRune(unicode.ToLower(r))
-		}
+// GetPlugin retrieves the Kafka plugin from the golly application
+func GetPlugin() *Plugin {
+	if plugin, ok := golly.App().Plugins().Get(PluginName).(*Plugin); ok {
+		return plugin
 	}
-
-	return b.String()
+	return nil
 }
 
-// sanitizeTopics accepts either a single topic (string) or a list ([]string)
-// and returns a sanitized []string. Returns nil for unsupported types.
-func sanitizeTopics(topics any) []string {
-	switch v := topics.(type) {
-	case string:
-		return []string{sanitizeTopic(v)}
-	case []string:
-		if len(v) == 0 {
-			return []string{}
-		}
-		out := make([]string, len(v))
-		for i, s := range v {
-			out[i] = sanitizeTopic(s)
-		}
-		return out
-	default:
-		return nil
+// GetProducer retrieves the Kafka producer from the application
+func GetProducer() *Producer {
+	if plugin := GetPlugin(); plugin != nil {
+		return plugin.Producer()
 	}
+	return nil
+}
+
+func GetConsumerManager() *ConsumerManager {
+	if plugin := GetPlugin(); plugin != nil {
+		return plugin.consumerManager
+	}
+	return nil
+}
+
+func Subscribe(topic string, consumer Consumer) error {
+	if consumerManager := GetConsumerManager(); consumerManager != nil {
+		return consumerManager.Subscribe(topic, consumer)
+	}
+	return fmt.Errorf("kafka consumer manager not found")
 }
