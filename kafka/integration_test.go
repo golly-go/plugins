@@ -4,17 +4,15 @@ import (
 	"context"
 	"testing"
 	"time"
-
-	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 // TestConsumer for integration testing
 type TestConsumer struct {
-	receivedMessages []*kgo.Record
+	receivedMessages []*Message
 	opts             SubscribeOptions
 }
 
-func (tc *TestConsumer) Handler(ctx context.Context, msg *kgo.Record) error {
+func (tc *TestConsumer) Handler(ctx context.Context, msg *Message) error {
 	tc.receivedMessages = append(tc.receivedMessages, msg)
 	return nil
 }
@@ -59,8 +57,8 @@ func TestProducerConsumerFlow(t *testing.T) {
 	// Create test consumer
 	testConsumer := &TestConsumer{
 		opts: SubscribeOptions{
-			GroupID:         "test-group",
-			StartFromLatest: true,
+			GroupID:       "test-group",
+			StartPosition: StartFromLatest,
 		},
 	}
 
@@ -159,12 +157,6 @@ func TestCLIMessageDelivery(t *testing.T) {
 	err = producer.Publish(ctx, "cli-test-topic", testMessage)
 	if err != nil {
 		t.Fatalf("failed to publish: %v", err)
-	}
-
-	// Flush to ensure delivery
-	err = producer.Flush(ctx)
-	if err != nil {
-		t.Fatalf("failed to flush: %v", err)
 	}
 
 	// If we get here without error, the message was delivered

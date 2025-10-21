@@ -4,34 +4,78 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/golly-go/golly"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-// Consumer interface for handling Kafka messages
-type Consumer interface {
-	Handler(ctx context.Context, msg *kgo.Record) error
-	SubscribeOptions() SubscribeOptions
+// SubscribeOptions configures how a consumer subscribes to topics
+type SubscribeOptions struct {
+	// GroupID is the consumer group ID. If empty, the consumer will not be part of a group
+	// and will start from the latest offset. For event sourcing, use a group ID to track offsets.
+	GroupID string
+	
+	// StartPosition determines where to start consuming from when there's no committed offset
+	StartPosition StartPosition
 }
 
-// SubscribeOptions configures how to subscribe to a topic
-type SubscribeOptions struct {
-	GroupID           string // required for offset tracking, empty for websockets
-	StartFromLatest   bool   // for websocket notifications (no group)
-	StartFromEarliest bool   // for event sourcing replay (with group)
+// Message represents a Kafka message with essential data
+type Message struct {
+	// Topic is the Kafka topic this message was received from
+	Topic string
+	
+	// Partition is the partition number within the topic
+	Partition int32
+	
+	// Offset is the message offset within the partition
+	Offset int64
+	
+	// Key is the message key (can be nil)
+	Key []byte
+	
+	// Value is the message payload
+	Value []byte
+	
+	// Headers contains additional metadata as key-value pairs
+	Headers map[string][]byte
+	
+	// Timestamp is when the message was produced to Kafka
+	Timestamp time.Time
+}
+
+// Consumer defines the interface for Kafka consumers
+type Consumer interface {
+	// Handler processes a single Kafka message. If this returns an error,
+	// the message will be retried according to the retry policy.
+	Handler(ctx context.Context, msg *Message) error
+	
+	// SubscribeOptions returns the configuration for how this consumer
+	// should subscribe to topics (group ID, starting position, etc.)
+	SubscribeOptions() SubscribeOptions
 }
 
 // ConsumerBase handles the Kafka reading loop with panic protection
 type ConsumerBase struct {
+	// handler is the business logic consumer that processes messages
 	handler Consumer
-	client  *kgo.Client
-	topic   string
-	opts    SubscribeOptions
+	
+	// client is the franz-go client for this consumer
+	client *kgo.Client
+	
+	// topic is the Kafka topic this consumer is subscribed to
+	topic string
+	
+	// opts contains the subscription configuration
+	opts SubscribeOptions
+	
+	// groupID is the consumer group ID (cached from opts for convenience)
 	groupID string
 }
 
-// ProcessEvent runs the Kafka reading loop with panic protection
+// ProcessEvent runs the Kafka reading loop with panic protection.
+// This method polls Kafka for messages and calls the consumer's Handler for each message.
+// It handles panics gracefully and provides basic error handling.
 func (cb *ConsumerBase) ProcessEvent(ctx context.Context) error {
 	defer func() {
 		if r := recover(); r != nil {
@@ -58,8 +102,24 @@ func (cb *ConsumerBase) ProcessEvent(ctx context.Context) error {
 
 			// Process each message
 			fetches.EachRecord(func(record *kgo.Record) {
+				// Convert kgo.Record to our Message
+				msg := &Message{
+					Topic:     record.Topic,
+					Partition: record.Partition,
+					Offset:    record.Offset,
+					Key:       record.Key,
+					Value:     record.Value,
+					Headers:   make(map[string][]byte),
+					Timestamp: record.Timestamp,
+				}
+
+				// Copy headers
+				for _, h := range record.Headers {
+					msg.Headers[h.Key] = h.Value
+				}
+
 				// Call the handler
-				if err := cb.handler.Handler(ctx, record); err != nil {
+				if err := cb.handler.Handler(ctx, msg); err != nil {
 					// TODO: Handle handler errors (DLQ, retry, etc.)
 					return
 				}
@@ -73,17 +133,28 @@ func (cb *ConsumerBase) ProcessEvent(ctx context.Context) error {
 	}
 }
 
-// ConsumerManager manages multiple consumers
+// ConsumerManager manages multiple consumers and their lifecycle
 type ConsumerManager struct {
-	client    *kgo.Client
+	// client is the shared franz-go client for the manager
+	client *kgo.Client
+	
+	// consumers maps subscription IDs to their ConsumerBase instances
 	consumers map[string]*ConsumerBase
-	ctx       context.Context
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
-	mu        sync.RWMutex
+	
+	// ctx is the context for all consumers (cancelled on Stop)
+	ctx context.Context
+	
+	// cancel is the cancel function for the context
+	cancel context.CancelFunc
+	
+	// wg tracks all running consumer goroutines
+	wg sync.WaitGroup
+	
+	// mu protects the consumers map from concurrent access
+	mu sync.RWMutex
 }
 
-// NewConsumerManager creates a new consumer manager
+// NewConsumerManager creates a new consumer manager with the given franz-go client
 func NewConsumerManager(client *kgo.Client) *ConsumerManager {
 	return &ConsumerManager{
 		client:    client,
@@ -91,7 +162,8 @@ func NewConsumerManager(client *kgo.Client) *ConsumerManager {
 	}
 }
 
-// Start begins processing consumers
+// Start initializes the context and starts all registered consumers in goroutines.
+// This method is safe to call multiple times.
 func (cm *ConsumerManager) Start() error {
 	cm.ctx, cm.cancel = context.WithCancel(context.Background())
 
@@ -108,7 +180,8 @@ func (cm *ConsumerManager) Start() error {
 	return nil
 }
 
-// Stop gracefully stops all consumers
+// Stop gracefully stops all consumers by cancelling the context and waiting for
+// all consumer goroutines to finish. This method is safe to call multiple times.
 func (cm *ConsumerManager) Stop() error {
 	// Stop accepting new events
 	cm.cancel()
@@ -121,7 +194,9 @@ func (cm *ConsumerManager) Stop() error {
 	return nil
 }
 
-// Subscribe adds a new consumer subscription
+// Subscribe adds a new consumer subscription to a topic. The consumer's SubscribeOptions
+// determine how the subscription is configured (group ID, starting position, etc.).
+// This method should be called before Start().
 func (cm *ConsumerManager) Subscribe(topic string, consumer Consumer) error {
 	opts := consumer.SubscribeOptions()
 	subscriptionID := generateSubscriptionID(topic, opts)
@@ -136,10 +211,10 @@ func (cm *ConsumerManager) Subscribe(topic string, consumer Consumer) error {
 		clientOpts = append(clientOpts, kgo.ConsumerGroup(opts.GroupID))
 	}
 
-	// Configure starting offset
-	if opts.StartFromLatest {
+	switch opts.StartPosition {
+	case StartFromLatest:
 		clientOpts = append(clientOpts, kgo.ConsumeResetOffset(kgo.NewOffset().AtEnd()))
-	} else if opts.StartFromEarliest {
+	case StartFromEarliest:
 		clientOpts = append(clientOpts, kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()))
 	}
 
@@ -172,7 +247,7 @@ func (cm *ConsumerManager) Subscribe(topic string, consumer Consumer) error {
 	return nil
 }
 
-// generateSubscriptionID creates a unique ID for a subscription
+// generateSubscriptionID creates a unique ID for a subscription based on topic and group ID
 func generateSubscriptionID(topic string, opts SubscribeOptions) string {
 	// TODO: Implement proper ID generation
 	return topic + "-" + opts.GroupID

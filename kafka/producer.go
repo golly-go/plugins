@@ -10,13 +10,16 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-// Producer handles Kafka message publishing
+// Producer handles Kafka message publishing with reliability guarantees
 type Producer struct {
+	// client is the franz-go client used for publishing
 	client *kgo.Client
+	
+	// config contains the producer configuration
 	config Config
 }
 
-// NewProducer creates a new Kafka producer
+// NewProducer creates a new Kafka producer with the given franz-go client and configuration
 func NewProducer(client *kgo.Client, config Config) *Producer {
 	return &Producer{
 		client: client,
@@ -24,7 +27,8 @@ func NewProducer(client *kgo.Client, config Config) *Producer {
 	}
 }
 
-// Publish sends a message to the given topic
+// Publish sends a message to the given topic. The payload is JSON-encoded automatically.
+// If a key generation function is configured, it will be used to generate the message key.
 func (p *Producer) Publish(ctx context.Context, topic string, payload any) error {
 	// Generate key
 	var key []byte = []byte(uuid.New().String())
@@ -44,6 +48,8 @@ func (p *Producer) Publish(ctx context.Context, topic string, payload any) error
 		Key:   key,
 		Value: payloadBytes,
 	}
+
+	trace("publishing message to topic %s %v", topic, payload)
 
 	// Send with retry logic
 	return p.publishWithRetry(ctx, msg)
@@ -78,13 +84,6 @@ func (p *Producer) publishWithRetry(ctx context.Context, msg *kgo.Record) error 
 			backoff = 5 * time.Second
 		}
 	}
-}
-
-// Flush ensures all pending messages are sent
-func (p *Producer) Flush(ctx context.Context) error {
-	// franz-go handles flushing automatically with ProduceSync
-	// This method exists for interface compatibility
-	return nil
 }
 
 // Stop closes the producer

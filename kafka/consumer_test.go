@@ -3,18 +3,16 @@ package kafka
 import (
 	"context"
 	"testing"
-
-	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 // Mock consumer for testing
 type MockConsumer struct {
-	handledMessages []*kgo.Record
+	handledMessages []*Message
 	opts            SubscribeOptions
 	shouldError     bool
 }
 
-func (m *MockConsumer) Handler(ctx context.Context, msg *kgo.Record) error {
+func (m *MockConsumer) Handler(ctx context.Context, msg *Message) error {
 	m.handledMessages = append(m.handledMessages, msg)
 	if m.shouldError {
 		return context.Canceled // Use a real error type
@@ -36,30 +34,26 @@ func TestConsumerSubscribeOptions(t *testing.T) {
 			name: "event sourcing consumer",
 			consumer: &MockConsumer{
 				opts: SubscribeOptions{
-					GroupID:           "user-service",
-					StartFromLatest:   false,
-					StartFromEarliest: false,
+					GroupID:       "user-service",
+					StartPosition: StartFromDefault,
 				},
 			},
 			expected: SubscribeOptions{
-				GroupID:           "user-service",
-				StartFromLatest:   false,
-				StartFromEarliest: false,
+				GroupID:       "user-service",
+				StartPosition: StartFromDefault,
 			},
 		},
 		{
 			name: "websocket consumer",
 			consumer: &MockConsumer{
 				opts: SubscribeOptions{
-					GroupID:           "",
-					StartFromLatest:   true,
-					StartFromEarliest: false,
+					GroupID:       "",
+					StartPosition: StartFromLatest,
 				},
 			},
 			expected: SubscribeOptions{
-				GroupID:           "",
-				StartFromLatest:   true,
-				StartFromEarliest: false,
+				GroupID:       "",
+				StartPosition: StartFromLatest,
 			},
 		},
 	}
@@ -72,12 +66,8 @@ func TestConsumerSubscribeOptions(t *testing.T) {
 				t.Errorf("expected GroupID %s, got %s", tt.expected.GroupID, opts.GroupID)
 			}
 
-			if opts.StartFromLatest != tt.expected.StartFromLatest {
-				t.Errorf("expected StartFromLatest %v, got %v", tt.expected.StartFromLatest, opts.StartFromLatest)
-			}
-
-			if opts.StartFromEarliest != tt.expected.StartFromEarliest {
-				t.Errorf("expected StartFromEarliest %v, got %v", tt.expected.StartFromEarliest, opts.StartFromEarliest)
+			if opts.StartPosition != tt.expected.StartPosition {
+				t.Errorf("expected StartPosition %v, got %v", tt.expected.StartPosition, opts.StartPosition)
 			}
 		})
 	}
@@ -127,7 +117,7 @@ func TestMockConsumer(t *testing.T) {
 
 	// Test handler
 	ctx := context.Background()
-	msg := &kgo.Record{
+	msg := &Message{
 		Topic: "test-topic",
 		Value: []byte("test-message"),
 	}

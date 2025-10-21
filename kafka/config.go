@@ -36,6 +36,15 @@ const (
 	SASLScramSHA512 SASLMechanism = "SCRAM-SHA-512"
 )
 
+// StartPosition specifies where to start consuming from
+type StartPosition int
+
+const (
+	StartFromDefault StartPosition = iota // Let Kafka decide based on group state
+	StartFromLatest
+	StartFromEarliest
+)
+
 // Config holds the Kafka configuration
 type Config struct {
 	Brokers        []string
@@ -60,8 +69,7 @@ type Config struct {
 	Compression  Compression
 
 	// Consumer settings
-	StartFromLatest bool
-	CommitInterval  time.Duration
+	CommitInterval time.Duration
 
 	// Retry settings
 	MaxRetries   int
@@ -150,13 +158,6 @@ func WithGroupID(groupID string) Option {
 func WithAutoTopic() Option {
 	return func(c *Config) {
 		c.AllowAutoTopic = true
-	}
-}
-
-// WithStartFromLatest sets consumers to start from latest
-func WithStartFromLatest() Option {
-	return func(c *Config) {
-		c.StartFromLatest = true
 	}
 }
 

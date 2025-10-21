@@ -35,3 +35,7 @@ func Subscribe(topic string, consumer Consumer) error {
 	}
 	return fmt.Errorf("kafka consumer manager not found")
 }
+
+func trace(msg string, args ...any) {
+	golly.Logger().Tracef("[KAFKA] %s", fmt.Sprintf(msg, args...))
+}
