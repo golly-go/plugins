@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/golly-go/golly"
 	"github.com/google/uuid"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
@@ -50,15 +51,13 @@ func (p *Producer) Publish(ctx context.Context, topic string, payload any) error
 		Value: payloadBytes,
 	}
 
-	trace("publishing message to topic %s %v", topic, payload)
-
 	// Send asynchronously - much faster!
 	p.client.Produce(ctx, msg, func(record *kgo.Record, err error) {
 		if err != nil {
-			trace("failed to publish message to %s: %v", record.Topic, err)
-		} else {
-			trace("successfully published message to %s", record.Topic)
+			golly.Logger().Errorf("[kafka] publish: failed to publish message to %s: %v", record.Topic, err)
+			return
 		}
+		trace("successfully published message to %s", record.Topic)
 	})
 
 	return nil
