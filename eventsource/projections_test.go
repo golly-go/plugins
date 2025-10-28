@@ -358,3 +358,111 @@ func TestProjectionManager_Rebuild(t *testing.T) {
 		})
 	}
 }
+
+func TestProjectionManager_List(t *testing.T) {
+	t.Run("Empty manager", func(t *testing.T) {
+		pm := NewProjectionManager()
+
+		var count int
+		for range pm.List() {
+			count++
+		}
+
+		assert.Equal(t, 0, count, "Empty manager should have no projections")
+	})
+
+	t.Run("Single projection", func(t *testing.T) {
+		pm := NewProjectionManager()
+		proj := &TestProjection{id: "test1"}
+		pm.Register(proj)
+
+		var count int
+		var projections []Projection
+		for p := range pm.List() {
+			count++
+			projections = append(projections, p)
+		}
+
+		assert.Equal(t, 1, count, "Should have one projection")
+		assert.NotNil(t, projections[0], "Projection should not be nil")
+	})
+
+	t.Run("Multiple projections", func(t *testing.T) {
+		pm := NewProjectionManager()
+		proj1 := &TestProjection{id: "test1"}
+		proj2 := &TestProjection{id: "test2"}
+		proj3 := &noOpProjection{}
+
+		pm.Register(proj1, proj2, proj3)
+
+		var count int
+		for range pm.List() {
+			count++
+		}
+
+		assert.Equal(t, 3, count, "Should have three projections")
+	})
+
+	t.Run("Early break", func(t *testing.T) {
+		pm := NewProjectionManager()
+		pm.Register(
+			&TestProjection{id: "test1"},
+			&TestProjection{id: "test2"},
+			&TestProjection{id: "test3"},
+		)
+
+		var count int
+		for range pm.List() {
+			count++
+			if count == 2 {
+				break // Test early termination
+			}
+		}
+
+		assert.Equal(t, 2, count, "Should stop after second item")
+	})
+
+	t.Run("Concurrent safety", func(t *testing.T) {
+		pm := NewProjectionManager()
+		pm.Register(
+			&TestProjection{id: "test1"},
+			&TestProjection{id: "test2"},
+		)
+
+		// Start iteration
+		iter := pm.List()
+
+		// Register another projection while iterating (shouldn't panic)
+		pm.Register(&TestProjection{id: "test999"})
+
+		var count int
+		for range iter {
+			count++
+		}
+
+		// Original snapshot should have 2 items, not affected by concurrent registration
+		assert.Equal(t, 2, count, "Iterator should use snapshot from List() call time")
+	})
+
+	t.Run("Iteration with projection types", func(t *testing.T) {
+		pm := NewProjectionManager()
+
+		testProj := &TestProjection{id: "test1"}
+		noOpProj := &noOpProjection{}
+
+		pm.Register(testProj, noOpProj)
+
+		var testProjCount, noOpProjCount int
+		for proj := range pm.List() {
+			switch proj.(type) {
+			case *TestProjection:
+				testProjCount++
+			case *noOpProjection:
+				noOpProjCount++
+			}
+		}
+
+		assert.Equal(t, 1, testProjCount, "Should have one TestProjection")
+		assert.Equal(t, 1, noOpProjCount, "Should have one noOpProjection")
+	})
+}

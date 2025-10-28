@@ -13,36 +13,36 @@ import (
 // It contains:
 //   - An EventStore for persistence
 //   - A ProjectionManager for building read models
-//   - A ProducerManager for external event publishing
+//   - A StreamManager for all event publishing (internal projections and external producers)
 type Engine struct {
 	store       EventStore
 	projections *ProjectionManager
 	aggregates  *AggregateRegistry
-
-	// Separate internal projections from external producers
-	internalStream *InternalStream
-	producers      *ProducerManager
+	streams     *StreamManager
 
 	mu      sync.RWMutex
 	running bool
 }
 
-var defaultStream = NewInternalStream(DefaultStreamName)
-
 // NewEngine allows configuring the engine via Option by building a config first.
 func NewEngine(opts ...Option) *Engine {
 	cfg := handleOptions(opts...)
-	eng := &Engine{
-		store:          cfg.Store,
-		projections:    NewProjectionManager(),
-		aggregates:     NewAggregateRegistry(),
-		internalStream: NewInternalStream(DefaultStreamName),
-		producers:      NewProducerManager(),
-	}
+
+	streams := NewStreamManager()
+
+	// Add internal stream for projections
+	streams.Add(NewInternalStream(DefaultStreamName))
 
 	// Add external producers (like Kafka)
 	for i := range cfg.Streams {
-		eng.producers.Add(cfg.Streams[i])
+		streams.Add(cfg.Streams[i])
+	}
+
+	eng := &Engine{
+		store:       cfg.Store,
+		projections: NewProjectionManager(),
+		aggregates:  NewAggregateRegistry(),
+		streams:     streams,
 	}
 
 	return eng
@@ -63,9 +63,9 @@ func (eng *Engine) IsRunning() bool {
 	return eng.running
 }
 
-// WithStream adds external producers for outbound publishing
+// WithStream adds streams for event publishing (internal or external)
 func (eng *Engine) WithStream(streams ...StreamPublisher) *Engine {
-	eng.producers.Add(streams...)
+	eng.streams.Add(streams...)
 	return eng
 }
 
@@ -94,7 +94,7 @@ func (eng *Engine) RunProjectionOnce(ctx context.Context, projection any) error 
 	return eng.projections.RunOnce(ctx, eng, resolveInterfaceName(projection))
 }
 
-// RegisterProjection registers a projection to the internal stream
+// RegisterProjection registers a projection to the stream manager
 func (eng *Engine) RegisterProjection(proj Projection) error {
 	eng.projections.Register(proj)
 
@@ -117,13 +117,13 @@ func (eng *Engine) RegisterProjection(proj Projection) error {
 	// If no specific topics are defined, subscribe to all events
 	if len(topics) == 0 {
 		golly.Logger().Tracef("Registering projection %s to AllEvents", resolveInterfaceName(proj))
-		eng.internalStream.Subscribe(AllEvents, handler)
+		eng.streams.Subscribe(AllEvents, handler)
 		return nil
 	}
 
 	// Subscribe to specific topics
 	for _, topic := range topics {
-		eng.internalStream.Subscribe(topic, handler)
+		eng.streams.Subscribe(topic, handler)
 	}
 
 	return nil
@@ -308,7 +308,7 @@ func handleExecutionError(ctx context.Context, agg Aggregate, cmd Command, err e
 	return err
 }
 
-// Send publishes events to both internal projections and external producers
+// Send publishes events to all registered streams (internal projections and external producers)
 func (eng *Engine) Send(ctx context.Context, events ...Event) {
 	for i := range events {
 		evt := events[i]
@@ -316,12 +316,11 @@ func (eng *Engine) Send(ctx context.Context, events ...Event) {
 		if topic == "" {
 			continue
 		}
-		eng.internalStream.Publish(ctx, topic, evt)
-		eng.producers.Publish(ctx, topic, evt)
+		eng.streams.Publish(ctx, topic, evt)
 	}
 }
 
-// Start marks the engine running
+// Start marks the engine running and starts all streams
 func (eng *Engine) Start() {
 	golly.Logger().Tracef("Starting engine")
 
@@ -329,13 +328,11 @@ func (eng *Engine) Start() {
 	eng.running = true
 	eng.mu.Unlock()
 
-	// Start internal stream for projections
-	eng.internalStream.Start()
-	// Start external producers
-	eng.producers.Start()
+	// Start all streams (internal and external)
+	eng.streams.Start()
 }
 
-// Stop marks the engine stopped
+// Stop marks the engine stopped and stops all streams
 func (eng *Engine) Stop() {
 	golly.Logger().Tracef("Stopping engine")
 
@@ -343,10 +340,8 @@ func (eng *Engine) Stop() {
 	eng.running = false
 	eng.mu.Unlock()
 
-	// Stop external producers first
-	eng.producers.Stop()
-	// Stop internal stream (this will flush all events)
-	eng.internalStream.Stop()
+	// Stop all streams (internal and external)
+	eng.streams.Stop()
 }
 
 func HasValidID(agg Aggregate) bool {

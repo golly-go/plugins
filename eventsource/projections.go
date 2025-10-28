@@ -3,6 +3,7 @@ package eventsource
 import (
 	"context"
 	"fmt"
+	"iter"
 	"sync"
 	"sync/atomic"
 
@@ -67,6 +68,23 @@ type ProjectionManager struct {
 func NewProjectionManager() *ProjectionManager {
 	return &ProjectionManager{
 		projections: make(map[string]Projection),
+	}
+}
+
+func (pm *ProjectionManager) List() iter.Seq[Projection] {
+	pm.mu.RLock()
+	projs := make([]Projection, 0, len(pm.projections))
+	for _, proj := range pm.projections {
+		projs = append(projs, proj)
+	}
+	pm.mu.RUnlock()
+
+	return func(yield func(Projection) bool) {
+		for _, proj := range projs {
+			if !yield(proj) {
+				return
+			}
+		}
 	}
 }
 

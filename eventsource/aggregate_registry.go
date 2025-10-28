@@ -2,6 +2,7 @@ package eventsource
 
 import (
 	"fmt"
+	"iter"
 	"reflect"
 	"sync"
 
@@ -32,6 +33,29 @@ type AggregateRegistry struct {
 func NewAggregateRegistry() *AggregateRegistry {
 	return &AggregateRegistry{
 		items: make(map[string]*AggregateRegistryItem),
+	}
+}
+
+// List returns an iterator over all registered aggregate types.
+// This can be used with Go 1.23+ range-over-func:
+//
+//	for agg := range registry.List() {
+//	    // use agg
+//	}
+func (r *AggregateRegistry) List() iter.Seq[*AggregateRegistryItem] {
+	r.mu.RLock()
+	aggs := make([]*AggregateRegistryItem, 0, len(r.items))
+	for _, agg := range r.items {
+		aggs = append(aggs, agg)
+	}
+	r.mu.RUnlock()
+
+	return func(yield func(*AggregateRegistryItem) bool) {
+		for _, agg := range aggs {
+			if !yield(agg) {
+				return
+			}
+		}
 	}
 }
 

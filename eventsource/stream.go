@@ -89,11 +89,14 @@ func (s *InternalStream) Publish(ctx context.Context, topic string, evt any) err
 
 	golly.Logger().Tracef("publish event to internal stream %s topic=%s", s.name, topic)
 
+	// Use background context for async processing to prevent cancellation
+	// when the originating request completes. Events should be self-contained.
+	// We don't check ctx.Done() because events cannot be lost.
+	bgCtx := context.Background()
+
 	select {
-	case s.jobs <- Job{Ctx: ctx, Event: e}:
+	case s.jobs <- Job{Ctx: bgCtx, Event: e}:
 		return nil
-	case <-ctx.Done():
-		return ctx.Err()
 	default:
 		return ErrQueueDraining
 	}
@@ -180,66 +183,5 @@ func (s *InternalStream) handleEvent(ctx context.Context, event Event) {
 	golly.Logger().Tracef("Total handlers for event %s: %d", event.Topic, len(hs))
 	for i := range hs {
 		hs[i](ctx, event)
-	}
-}
-
-// ProducerManager manages external event producers (like Kafka)
-type ProducerManager struct {
-	mu        sync.RWMutex
-	producers []StreamPublisher
-}
-
-// NewProducerManager creates a new producer manager
-func NewProducerManager() *ProducerManager {
-	return &ProducerManager{}
-}
-
-// Add registers external producers
-func (pm *ProducerManager) Add(producers ...StreamPublisher) {
-	pm.mu.Lock()
-	pm.producers = append(pm.producers, producers...)
-	pm.mu.Unlock()
-}
-
-// Publish publishes events to all external producers
-func (pm *ProducerManager) Publish(ctx context.Context, topic string, events ...Event) {
-	pm.mu.RLock()
-	producers := append([]StreamPublisher(nil), pm.producers...)
-	pm.mu.RUnlock()
-
-	if len(producers) == 0 || len(events) == 0 {
-		return
-	}
-
-	for i := range producers {
-		for j := range events {
-			_ = producers[i].Publish(ctx, topic, events[j])
-		}
-	}
-}
-
-// Start starts producers that implement lifecycle
-func (pm *ProducerManager) Start() {
-	pm.mu.RLock()
-	producers := append([]StreamPublisher(nil), pm.producers...)
-	pm.mu.RUnlock()
-
-	for i := range producers {
-		if lc, ok := producers[i].(StreamLifecycle); ok {
-			lc.Start()
-		}
-	}
-}
-
-// Stop stops producers that implement lifecycle
-func (pm *ProducerManager) Stop() {
-	pm.mu.RLock()
-	producers := append([]StreamPublisher(nil), pm.producers...)
-	pm.mu.RUnlock()
-
-	for i := range producers {
-		if lc, ok := producers[i].(StreamLifecycle); ok {
-			lc.Stop()
-		}
 	}
 }

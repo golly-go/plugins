@@ -105,6 +105,12 @@ func (p *Plugin) createClient() (*kgo.Client, error) {
 		kgo.ClientID(p.config.ClientID),
 	}
 
+	// Allow auto topic creation if configured
+	// Note: This still requires broker to have auto.create.topics.enable=true
+	if p.config.AllowAutoTopic {
+		opts = append(opts, kgo.AllowAutoTopicCreation())
+	}
+
 	// Add authentication if configured
 	if p.config.Username != "" && p.config.Password != "" {
 		// TODO: Add SASL authentication

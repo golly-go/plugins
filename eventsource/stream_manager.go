@@ -26,12 +26,20 @@ func (sm *StreamManager) Publish(ctx context.Context, topic string, events ...Ev
 	sm.mu.RLock()
 	streams := append([]StreamPublisher(nil), sm.streams...)
 	sm.mu.RUnlock()
+
 	if len(streams) == 0 || len(events) == 0 {
 		return
 	}
+
+	// Use background context for publishing to prevent cancellation
+	// when the originating request completes. Events should be self-contained.
+	// Note: We don't use WithTimeout here because many publishers (like Kafka)
+	// are async and the timeout would fire before they complete.
+	bgCtx := context.Background()
+
 	for i := range streams {
 		for j := range events {
-			_ = streams[i].Publish(ctx, topic, events[j])
+			_ = streams[i].Publish(bgCtx, topic, events[j])
 		}
 	}
 }
@@ -83,14 +91,6 @@ func (sm *StreamManager) Stop() {
 	for i := range streams {
 		if lc, ok := streams[i].(StreamLifecycle); ok {
 			lc.Stop()
-		}
-		// Handle InternalStream
-		if s, ok := streams[i].(*InternalStream); ok {
-			s.Stop()
-		}
-		// Handle complex Stream
-		if s, ok := streams[i].(*Stream); ok {
-			s.Stop()
 		}
 	}
 }
