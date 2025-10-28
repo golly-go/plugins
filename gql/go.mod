@@ -1,6 +1,6 @@
 module github.com/golly-go/plugins/gql
 
-go 1.24.0
+go 1.25
 
 require (
 	github.com/golly-go/golly v0.7.1-0.20251016054240-1a1ec4fc4c29

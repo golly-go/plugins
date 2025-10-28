@@ -1,4 +1,4 @@
-go 1.24.1
+go 1.25
 
 use ./kafka
 use ./orm
@@ -8,10 +8,6 @@ use ./orm
 use ./redis
 
 use ./gql
-
-use ./workers
-
-use ./vectordb
 
 // use ./mongo
 // use ./neo4j

@@ -377,14 +377,17 @@ func TestProjectionManager_List(t *testing.T) {
 		pm.Register(proj)
 
 		var count int
+		var ids []string
 		var projections []Projection
-		for p := range pm.List() {
+		for id, p := range pm.List() {
 			count++
+			ids = append(ids, id)
 			projections = append(projections, p)
 		}
 
 		assert.Equal(t, 1, count, "Should have one projection")
 		assert.NotNil(t, projections[0], "Projection should not be nil")
+		assert.NotEmpty(t, ids[0], "ID should not be empty")
 	})
 
 	t.Run("Multiple projections", func(t *testing.T) {
@@ -396,11 +399,14 @@ func TestProjectionManager_List(t *testing.T) {
 		pm.Register(proj1, proj2, proj3)
 
 		var count int
-		for range pm.List() {
+		ids := make(map[string]bool)
+		for id := range pm.List() {
 			count++
+			ids[id] = true
 		}
 
 		assert.Equal(t, 3, count, "Should have three projections")
+		assert.Equal(t, 3, len(ids), "Should have three unique IDs")
 	})
 
 	t.Run("Early break", func(t *testing.T) {
@@ -444,7 +450,7 @@ func TestProjectionManager_List(t *testing.T) {
 		assert.Equal(t, 2, count, "Iterator should use snapshot from List() call time")
 	})
 
-	t.Run("Iteration with projection types", func(t *testing.T) {
+	t.Run("Iteration with IDs and types", func(t *testing.T) {
 		pm := NewProjectionManager()
 
 		testProj := &TestProjection{id: "test1"}
@@ -453,7 +459,9 @@ func TestProjectionManager_List(t *testing.T) {
 		pm.Register(testProj, noOpProj)
 
 		var testProjCount, noOpProjCount int
-		for proj := range pm.List() {
+		ids := make(map[string]Projection)
+		for id, proj := range pm.List() {
+			ids[id] = proj
 			switch proj.(type) {
 			case *TestProjection:
 				testProjCount++
@@ -464,5 +472,12 @@ func TestProjectionManager_List(t *testing.T) {
 
 		assert.Equal(t, 1, testProjCount, "Should have one TestProjection")
 		assert.Equal(t, 1, noOpProjCount, "Should have one noOpProjection")
+		assert.Equal(t, 2, len(ids), "Should have two ID-projection pairs")
+
+		// Verify we can access projections by their IDs
+		for id, proj := range ids {
+			assert.NotEmpty(t, id, "ID should not be empty")
+			assert.NotNil(t, proj, "Projection should not be nil")
+		}
 	})
 }

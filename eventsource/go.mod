@@ -1,6 +1,6 @@
 module github.com/golly-go/plugins/eventsource
 
-go 1.23.4
+go 1.25
 
 require (
 	github.com/golly-go/golly v0.7.1-0.20250929072316-7b76394ce147

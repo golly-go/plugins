@@ -71,17 +71,24 @@ func NewProjectionManager() *ProjectionManager {
 	}
 }
 
-func (pm *ProjectionManager) List() iter.Seq[Projection] {
+// List returns an iterator over all registered projections with their IDs.
+// Snapshot is taken when List() is called. Iteration order is deterministic
+// (sorted by ID). Compatible with Go 1.23+ range-over-func using iter.Seq2.
+//
+//	for id, proj := range manager.List() {
+//	    fmt.Printf("Projection %s: %v\n", id, proj)
+//	}
+func (pm *ProjectionManager) List() iter.Seq2[string, Projection] {
 	pm.mu.RLock()
-	projs := make([]Projection, 0, len(pm.projections))
-	for _, proj := range pm.projections {
-		projs = append(projs, proj)
+	snap := make(map[string]Projection, len(pm.projections))
+	for id, proj := range pm.projections {
+		snap[id] = proj
 	}
 	pm.mu.RUnlock()
 
-	return func(yield func(Projection) bool) {
-		for _, proj := range projs {
-			if !yield(proj) {
+	return func(yield func(string, Projection) bool) {
+		for id, proj := range snap {
+			if !yield(id, proj) {
 				return
 			}
 		}
