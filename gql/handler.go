@@ -1,12 +1,26 @@
 package gql
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/golly-go/golly"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/gqlerrors"
 	"github.com/graphql-go/graphql/language/ast"
+)
+
+var (
+	ErrorInvalidContext      = errors.New("invalid context type")
+	ErrorUnauthenticated     = errors.New("unauthenticated")
+	ErrorForbidden           = errors.New("forbidden")
+	ErrorNotFound            = errors.New("not found")
+	ErrorBadRequest          = errors.New("bad request")
+	ErrorInternalServer      = errors.New("internal server error")
+	ErrorBadGateway          = errors.New("bad gateway")
+	ErrorUnprocessableEntity = errors.New("unprocessable entity")
+	ErrorNotImplemented      = errors.New("not implemented")
 )
 
 // This plugins provides golly wrappers to allow easy to use GQL integration
@@ -57,14 +71,14 @@ func NewHandler(handler HandlerFunc, options ...Option) graphql.FieldResolveFn {
 		// Ensure the context is of type WebContext
 		wctx, ok := p.Context.(*golly.WebContext)
 		if !ok {
-			return nil, BadUserInput(fmt.Errorf("invalid context type"))
+			return nil, (fmt.Errorf("invalid context type"))
 		}
 
 		// Retrieve identity from context
 		if identityFunc == nil {
 			if !cfg.Public {
 				// If identity function is not set and the handler is not public, return unauthenticated error
-				return nil, Unauthenticated(nil)
+				return nil, golly.NewError(http.StatusUnauthorized, ErrorUnauthenticated)
 			}
 			goto execute
 
@@ -76,7 +90,7 @@ func NewHandler(handler HandlerFunc, options ...Option) graphql.FieldResolveFn {
 		wctx = wctx.WithContext(golly.WithLoggerFields(wctx.Context, metadata(p)))
 
 		if !cfg.Public && (ident == nil || ident.IsValid() != nil) {
-			return nil, Unauthenticated(nil)
+			return nil, golly.NewError(http.StatusUnauthorized, ErrorUnauthenticated)
 		}
 
 		goto execute
@@ -87,9 +101,14 @@ func NewHandler(handler HandlerFunc, options ...Option) graphql.FieldResolveFn {
 		if err != nil {
 			wctx.Logger().Errorf("error in GQL handler: %v", err)
 			if gqlErr, ok := err.(*gqlerrors.Error); ok {
-				return nil, gqlErr
+				return result, gqlErr
 			}
-			return nil, InternalServerError(err)
+
+			if gqlErr, ok := err.(*golly.Error); ok {
+				return result, gqlErr
+			}
+
+			return result, golly.NewError(http.StatusInternalServerError, ErrorInternalServer)
 		}
 
 		// Ensure the modified context is passed back

@@ -3,7 +3,7 @@ module github.com/golly-go/plugins/eventsource
 go 1.25
 
 require (
-	github.com/golly-go/golly v0.7.1-0.20250929072316-7b76394ce147
+	github.com/golly-go/golly v0.7.1-0.20251031191503-7f09823ded0a
 	github.com/google/uuid v1.6.0
 	github.com/segmentio/encoding v0.4.1
 	github.com/sirupsen/logrus v1.9.3

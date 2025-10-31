@@ -3,7 +3,7 @@ module github.com/golly-go/plugins/kafka
 go 1.25
 
 require (
-	github.com/golly-go/golly v0.7.0
+	github.com/golly-go/golly v0.7.1-0.20251031191503-7f09823ded0a
 	github.com/google/uuid v1.6.0
 	github.com/twmb/franz-go v1.20.0
 )
