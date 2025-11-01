@@ -105,10 +105,32 @@ func (p *Plugin) createClient() (*kgo.Client, error) {
 		kgo.ClientID(p.config.ClientID),
 	}
 
-	// Allow auto topic creation if configured
-	// Note: This still requires broker to have auto.create.topics.enable=true
-	if p.config.AllowAutoTopic {
-		opts = append(opts, kgo.AllowAutoTopicCreation())
+	// Configure producer settings if enabled
+	if p.config.EnableProducer {
+		// Map our RequiredAcks to franz-go's Acks type
+		var acks kgo.Acks
+		switch p.config.RequiredAcks {
+		case AckNone:
+			acks = kgo.NoAck()
+		case AckLeader:
+			acks = kgo.LeaderAck()
+		case AckAll:
+			acks = kgo.AllISRAcks()
+		default:
+			acks = kgo.AllISRAcks() // Default to all replicas
+		}
+		opts = append(opts, kgo.RequiredAcks(acks))
+
+		// Set producer timeout if configured
+		if p.config.WriteTimeout > 0 {
+			opts = append(opts, kgo.ProduceRequestTimeout(p.config.WriteTimeout))
+		}
+
+		// Allow auto topic creation if configured
+		// Note: This still requires broker to have auto.create.topics.enable=true
+		if p.config.AllowAutoTopic {
+			opts = append(opts, kgo.AllowAutoTopicCreation())
+		}
 	}
 
 	// Add authentication if configured
