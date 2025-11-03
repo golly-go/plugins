@@ -24,9 +24,6 @@ func TestDefaultConfig(t *testing.T) {
 		t.Error("expected EnableProducer true")
 	}
 
-	if cfg.EnableConsumers {
-		t.Error("expected EnableConsumers false")
-	}
 }
 
 func TestWithBrokers(t *testing.T) {
@@ -48,15 +45,6 @@ func TestWithProducer(t *testing.T) {
 
 	if !cfg.EnableProducer {
 		t.Error("expected EnableProducer true")
-	}
-}
-
-func TestWithConsumers(t *testing.T) {
-	cfg := Config{}
-	WithConsumers()(&cfg)
-
-	if !cfg.EnableConsumers {
-		t.Error("expected EnableConsumers true")
 	}
 }
 

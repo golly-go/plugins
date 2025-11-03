@@ -2,7 +2,6 @@ package gql
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/golly-go/golly"
@@ -59,44 +58,29 @@ func metadata(p graphql.ResolveParams) map[string]interface{} {
 
 // NewHandler creates a GraphQL field resolver with WebContext and identity handling.
 func NewHandler(handler HandlerFunc, options ...Option) graphql.FieldResolveFn {
-
 	cfg := &Options{}
 	for _, option := range options {
 		option(cfg)
 	}
 
 	return func(p graphql.ResolveParams) (interface{}, error) {
-		var ident golly.Identity
-
-		// Ensure the context is of type WebContext
-		wctx, ok := p.Context.(*golly.WebContext)
-		if !ok {
-			return nil, (fmt.Errorf("invalid context type"))
+		rc, ok := p.Context.(*ResolverContext)
+		if !ok || rc.WebContext == nil {
+			return nil, ErrorInvalidContext
 		}
 
-		// Retrieve identity from context
-		if identityFunc == nil {
-			if !cfg.Public {
-				// If identity function is not set and the handler is not public, return unauthenticated error
+		wctx := rc.WebContext
+
+		wctx = wctx.WithContext(golly.WithLoggerFields(wctx.Context, metadata(p)))
+		rc.WebContext = wctx
+
+		identity := rc.Identity()
+		if !cfg.Public {
+			if identity == nil || identity.IsValid() != nil {
 				return nil, golly.NewError(http.StatusUnauthorized, ErrorUnauthenticated)
 			}
-			goto execute
-
 		}
 
-		ident = identityFunc(wctx.Context)
-
-		// Enrich logging with metadata
-		wctx = wctx.WithContext(golly.WithLoggerFields(wctx.Context, metadata(p)))
-
-		if !cfg.Public && (ident == nil || ident.IsValid() != nil) {
-			return nil, golly.NewError(http.StatusUnauthorized, ErrorUnauthenticated)
-		}
-
-		goto execute
-
-	execute:
-		// Execute the handler
 		result, err := handler(wctx, p)
 		if err != nil {
 			wctx.Logger().Errorf("error in GQL handler: %v", err)
@@ -112,7 +96,7 @@ func NewHandler(handler HandlerFunc, options ...Option) graphql.FieldResolveFn {
 		}
 
 		// Ensure the modified context is passed back
-		p.Context = wctx
+		p.Context = rc
 
 		return result, nil
 	}

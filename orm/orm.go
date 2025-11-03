@@ -51,7 +51,7 @@ func GlobalConnection() *gorm.DB {
 func middlewareWithConnection(db *gorm.DB) golly.MiddlewareFunc {
 	return func(next golly.HandlerFunc) golly.HandlerFunc {
 		return func(wctx *golly.WebContext) {
-			wctx.Context = ToGollyContext(wctx.Context, db)
+			wctx.Context = golly.ToGollyContext(ToContext(wctx.Context, db))
 			next(wctx)
 		}
 	}
@@ -73,10 +73,6 @@ func ToContext(parent context.Context, db *gorm.DB) context.Context {
 	return context.WithValue(parent, contextKey, db)
 }
 
-func ToGollyContext(parent context.Context, db *gorm.DB) *golly.Context {
-	return golly.WithValue(parent, contextKey, db)
-}
-
 func FromContext(ctx context.Context) *gorm.DB {
 	if ctx != nil {
 		if d, ok := ctx.Value(contextKey).(*gorm.DB); ok {
@@ -86,8 +82,8 @@ func FromContext(ctx context.Context) *gorm.DB {
 	return nil
 }
 
-func CreateTestContext(c context.Context, modelsToMigration ...interface{}) *golly.Context {
-	return ToGollyContext(c, NewInMemoryConnection(modelsToMigration...))
+func CreateTestContext(c context.Context, modelsToMigration ...interface{}) context.Context {
+	return context.WithValue(c, contextKey, NewInMemoryConnection(modelsToMigration...))
 }
 
 func Close(c context.Context) error {

@@ -7,74 +7,117 @@ import (
 
 	"github.com/golly-go/golly"
 	"github.com/graphql-go/graphql"
-	"github.com/graphql-go/graphql/gqlerrors"
 )
 
-var (
-	identityFunc func(ctx context.Context) golly.Identity
-)
+var identityFunc func(context.Context) golly.Identity
 
-type gqlHandler struct {
-	schema graphql.Schema
-	err    error
+// SchemaOption allows customization of the schema before it is compiled.
+type SchemaOption func(*graphql.SchemaConfig)
+
+// GraphQL represents a configurable GraphQL server instance.
+type GraphQL struct {
+	mu                 sync.RWMutex
+	queryFields        graphql.Fields
+	mutationFields     graphql.Fields
+	subscriptionFields graphql.Fields
+	schema             graphql.Schema
+	schemaErr          error
+	schemaDirty        bool
+	schemaOptions      []SchemaOption
 }
 
-var (
-	queryRegistry    = graphql.Fields{}
-	mutationRegistry = graphql.Fields{}
-	lock             sync.RWMutex
-)
-
-// RegisterQuery registers query fields to the schema.
-func RegisterQuery(flds ...graphql.Fields) {
-	lock.Lock()
-	defer lock.Unlock()
-	for _, fields := range flds {
-		for name, field := range fields {
-			queryRegistry[name] = field
-		}
-	}
-}
-
-// RegisterMutation registers mutation fields to the schema.
-func RegisterMutation(flds ...graphql.Fields) {
-	lock.Lock()
-	defer lock.Unlock()
-	for _, fields := range flds {
-		for name, field := range fields {
-			mutationRegistry[name] = field
-		}
-	}
-}
-
-// NewGraphQL initializes a new GraphQL handler with the current registry.
-func NewGraphQL(opts ...ConfigOption) gqlHandler {
-	config := &Config{}
+// NewGraphQL initializes a new GraphQL server with its own registry of fields and configuration.
+func NewGraphQL(opts ...ConfigOption) *GraphQL {
+	cfg := &Config{}
 	for _, opt := range opts {
-		opt(config)
+		opt(cfg)
 	}
 
-	identityFunc = config.identityFunc
-
-	if len(mutationRegistry) == 0 {
-		mutationRegistry = emptyField()
+	if cfg.identityFunc != nil {
+		RegisterIdentityFunc(cfg.identityFunc)
 	}
 
-	if len(queryRegistry) == 0 {
-		queryRegistry = emptyField()
+	return &GraphQL{
+		queryFields:        graphql.Fields{},
+		mutationFields:     graphql.Fields{},
+		subscriptionFields: graphql.Fields{},
+		schemaDirty:        true,
+		schemaOptions:      cfg.schemaOpts,
 	}
-
-	schema, err := graphql.NewSchema(graphql.SchemaConfig{
-		Query:    graphql.NewObject(graphql.ObjectConfig{Name: "Query", Fields: queryRegistry}),
-		Mutation: graphql.NewObject(graphql.ObjectConfig{Name: "Mutation", Fields: mutationRegistry}),
-	})
-
-	return gqlHandler{schema: schema, err: err}
 }
 
-// Routes registers GraphQL-related routes.
-func (gql gqlHandler) Routes(r *golly.Route) {
-	r.Post("/", gql.Perform)
+// RegisterQuery registers query fields to the instance schema.
+func (g *GraphQL) RegisterQuery(flds ...graphql.Fields) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	for _, fields := range flds {
+		for name, field := range fields {
+			g.queryFields[name] = field
+		}
+	}
+
+	g.schemaDirty = true
+}
+
+// RegisterSubscription registers subscription fields to the instance schema.
+func (g *GraphQL) RegisterSubscription(flds ...graphql.Fields) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if g.subscriptionFields == nil {
+		g.subscriptionFields = graphql.Fields{}
+	}
+
+	for _, fields := range flds {
+		for name, field := range fields {
+			g.subscriptionFields[name] = field
+		}
+	}
+
+	g.schemaDirty = true
+}
+
+// ApplySchemaOptions appends schema customization options and rebuilds the schema on next access.
+func (g *GraphQL) ApplySchemaOptions(opts ...SchemaOption) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	g.schemaOptions = append(g.schemaOptions, opts...)
+	g.schemaDirty = true
+}
+
+// RegisterMutation registers mutation fields to the instance schema.
+func (g *GraphQL) RegisterMutation(flds ...graphql.Fields) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	for _, fields := range flds {
+		for name, field := range fields {
+			g.mutationFields[name] = field
+		}
+	}
+
+	g.schemaDirty = true
+}
+
+// Schema returns the compiled GraphQL schema for the instance.
+func (g *GraphQL) Schema() (graphql.Schema, error) {
+	g.ensureSchema()
+
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	if g.schemaErr != nil {
+		return graphql.Schema{}, g.schemaErr
+	}
+
+	return g.schema, nil
+}
+
+// Routes registers GraphQL-related routes for the instance.
+func (g *GraphQL) Routes(r *golly.Route) {
+	r.Post("/", g.Perform)
 }
 
 type postData struct {
@@ -83,13 +126,21 @@ type postData struct {
 	Variables map[string]interface{} `json:"variables"`
 }
 
-// Perform executes a GraphQL query or mutation.
-func (gql gqlHandler) Perform(wctx *golly.WebContext) {
-	if gql.err != nil {
-		wctx.Logger().Error("GraphQL schema initialization error: ", gql.err)
+// Perform executes a GraphQL query or mutation using the instance schema.
+func (g *GraphQL) Perform(wctx *golly.WebContext) {
+	schema, err := g.Schema()
+	if err != nil {
+		wctx.Logger().Error("GraphQL schema initialization error: ", err)
 		wctx.Response().WriteHeader(http.StatusInternalServerError)
 		return
 	}
+
+	var ident golly.Identity
+	if identityFunc != nil {
+		ident = identityFunc(wctx.Context)
+	}
+
+	resolverCtx := newResolverContext(wctx, ident)
 
 	var p postData
 	if err := wctx.Marshal(&p); err != nil {
@@ -99,14 +150,93 @@ func (gql gqlHandler) Perform(wctx *golly.WebContext) {
 	}
 
 	result := graphql.Do(graphql.Params{
-		Schema:         gql.schema,
+		Schema:         schema,
 		RequestString:  p.Query,
 		VariableValues: p.Variables,
 		OperationName:  p.Operation,
-		Context:        wctx,
+		Context:        resolverCtx,
 	})
 
 	wctx.RenderJSON(result)
+}
+
+// Execute runs a GraphQL operation against the instance schema without HTTP helpers.
+func (g *GraphQL) Execute(ctx context.Context, query string, variables map[string]interface{}, operation string) (*graphql.Result, error) {
+	schema, err := g.Schema()
+	if err != nil {
+		return nil, err
+	}
+
+	params := graphql.Params{
+		Schema:         schema,
+		RequestString:  query,
+		VariableValues: variables,
+		OperationName:  operation,
+		Context:        ctx,
+	}
+
+	return graphql.Do(params), nil
+}
+
+func (g *GraphQL) ensureSchema() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if !g.schemaDirty {
+		return
+	}
+
+	queries := copyFields(g.queryFields)
+	if len(queries) == 0 {
+		queries = emptyField()
+	}
+
+	mutations := copyFields(g.mutationFields)
+	if len(mutations) == 0 {
+		mutations = emptyField()
+	}
+
+	subscriptions := copyFields(g.subscriptionFields)
+
+	schemaConfig := graphql.SchemaConfig{
+		Query:    graphql.NewObject(graphql.ObjectConfig{Name: "Query", Fields: queries}),
+		Mutation: graphql.NewObject(graphql.ObjectConfig{Name: "Mutation", Fields: mutations}),
+	}
+
+	if len(subscriptions) > 0 {
+		schemaConfig.Subscription = graphql.NewObject(graphql.ObjectConfig{Name: "Subscription", Fields: subscriptions})
+	}
+
+	for _, opt := range g.schemaOptions {
+		if opt != nil {
+			opt(&schemaConfig)
+		}
+	}
+
+	schema, err := graphql.NewSchema(schemaConfig)
+
+	g.schema = schema
+	g.schemaErr = err
+	g.schemaDirty = false
+}
+
+func copyFields(src graphql.Fields) graphql.Fields {
+	if len(src) == 0 {
+		return graphql.Fields{}
+	}
+
+	clone := make(graphql.Fields, len(src))
+	for name, field := range src {
+		clone[name] = field
+	}
+
+	return clone
+}
+
+func emptyField() graphql.Fields {
+	return graphql.Fields{"empty": &graphql.Field{Type: graphql.String, Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+		return "empty", nil
+	}}}
 }
 
 // ExecuteGraphQL executes a standalone GraphQL query with a specified schema configuration.
@@ -124,27 +254,4 @@ func ExecuteGraphQL(gctx *golly.Context, sc graphql.SchemaConfig, query string, 
 	}
 
 	return graphql.Do(params), nil
-}
-
-func emptyField() graphql.Fields {
-	return graphql.Fields{"empty": &graphql.Field{Type: graphql.String, Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-		return "empty", nil
-	}}}
-}
-
-// ErrorWithCode creates a GraphQL error with an extension code
-func ErrorWithCode(message, code string, extensions ...map[string]interface{}) error {
-	var extension = map[string]interface{}{"code": code}
-
-	if len(extensions) > 0 {
-		for _, ext := range extensions {
-			for k, v := range ext {
-				extension[k] = v
-			}
-		}
-	}
-
-	err := gqlerrors.NewFormattedError(message)
-	err.Extensions = extension
-	return err
 }

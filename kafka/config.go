@@ -76,8 +76,7 @@ type Config struct {
 	RetryBackoff time.Duration
 
 	// Service settings
-	EnableProducer  bool
-	EnableConsumers bool
+	EnableProducer bool
 
 	// Key generation function
 	KeyFunc func(topic string, payload any) []byte
@@ -86,23 +85,29 @@ type Config struct {
 // DefaultConfig returns a sensible default configuration
 func DefaultConfig() Config {
 	return Config{
-		ReadMinBytes:    1024,
-		ReadMaxBytes:    1048576,
-		ReadMaxWait:     250 * time.Millisecond,
-		WriteTimeout:    5 * time.Second,
-		AllowAutoTopic:  true,
-		RequiredAcks:    AckAll, // Require all replicas
-		Compression:     CompressionSnappy,
-		CommitInterval:  0, // Manual commit
-		MaxRetries:      3,
-		RetryBackoff:    100 * time.Millisecond,
-		EnableProducer:  true,
-		EnableConsumers: false,
+		ReadMinBytes:   1024,
+		ReadMaxBytes:   1048576,
+		ReadMaxWait:    250 * time.Millisecond,
+		WriteTimeout:   5 * time.Second,
+		AllowAutoTopic: true,
+		RequiredAcks:   AckAll, // Require all replicas
+		Compression:    CompressionSnappy,
+		CommitInterval: 0, // Manual commit
+		MaxRetries:     3,
+		RetryBackoff:   100 * time.Millisecond,
+		EnableProducer: true,
 	}
 }
 
 // Option configures the Kafka plugin
 type Option func(*Config)
+
+// WithWriteTimeout sets the write timeout
+func WithWriteTimeout(timeout time.Duration) Option {
+	return func(c *Config) {
+		c.WriteTimeout = timeout
+	}
+}
 
 // WithBrokers sets the Kafka brokers
 func WithBrokers(brokers ...string) Option {
@@ -125,10 +130,38 @@ func WithProducer() Option {
 	}
 }
 
-// WithConsumers enables consumers
-func WithConsumers() Option {
+// WithCommitInterval sets the commit interval
+func WithCommitInterval(interval time.Duration) Option {
 	return func(c *Config) {
-		c.EnableConsumers = true
+		c.CommitInterval = interval
+	}
+}
+
+// WithMaxRetries sets the maximum number of retries
+func WithMaxRetries(maxRetries int) Option {
+	return func(c *Config) {
+		c.MaxRetries = maxRetries
+	}
+}
+
+// WithRetryBackoff sets the retry backoff
+func WithRetryBackoff(backoff time.Duration) Option {
+	return func(c *Config) {
+		c.RetryBackoff = backoff
+	}
+}
+
+// WithUsername sets the username
+func WithUsername(username string) Option {
+	return func(c *Config) {
+		c.Username = username
+	}
+}
+
+// WithPassword sets the password
+func WithPassword(password string) Option {
+	return func(c *Config) {
+		c.Password = password
 	}
 }
 
