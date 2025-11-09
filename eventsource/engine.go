@@ -91,7 +91,7 @@ func (eng *Engine) RunProjectionToEnd(ctx context.Context, projection any) error
 
 // RunProjectionOnce runs the projection once
 func (eng *Engine) RunProjectionOnce(ctx context.Context, projection any) error {
-	return eng.projections.RunOnce(ctx, eng, resolveInterfaceName(projection))
+	return eng.projections.RunToEnd(ctx, eng, resolveInterfaceName(projection))
 }
 
 // RegisterProjection registers a projection to the stream manager
@@ -108,6 +108,12 @@ func (eng *Engine) RegisterProjection(proj Projection) error {
 		err := proj.HandleEvent(ctx, evt)
 		if err != nil {
 			golly.Logger().Errorf("error in projection %s: %v", resolveInterfaceName(proj), err)
+			return
+		}
+
+		// Update projection position after successful event handling
+		if err := proj.SetPosition(ctx, evt.GlobalVersion); err != nil {
+			golly.Logger().Errorf("error updating position for projection %s: %v", resolveInterfaceName(proj), err)
 		}
 	}
 

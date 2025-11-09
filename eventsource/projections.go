@@ -143,8 +143,8 @@ func (pm *ProjectionManager) Rebuild(ctx context.Context, eng *Engine, projID st
 	return pm.processProjection(ctx, eng, proj, 0, projectionBatchSize)
 }
 
-// RunOnce catches up a single projection from its current position to the end.
-func (pm *ProjectionManager) RunOnce(ctx context.Context, eng *Engine, projID string) error {
+// RunToEnd catches up a single projection from its current position to the end of the stream.
+func (pm *ProjectionManager) RunToEnd(ctx context.Context, eng *Engine, projID string) error {
 	pm.mu.Lock()
 	proj, ok := pm.projections[projID]
 	pm.mu.Unlock()
@@ -153,41 +153,12 @@ func (pm *ProjectionManager) RunOnce(ctx context.Context, eng *Engine, projID st
 		return fmt.Errorf("projection not found: %s", projID)
 	}
 
-	return pm.processProjection(ctx, eng, proj, int(proj.Position(ctx)+1), projectionBatchSize)
-}
+	// Start from the projection's current position + 1
+	currentPos := proj.Position(ctx)
+	startPos := int(currentPos + 1)
 
-// RunToEnd catches up all registered projections from their current positions.
-func (pm *ProjectionManager) RunToEnd(ctx context.Context, eng *Engine, projID string) error {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-
-	proj, ok := pm.projections[projID]
-	if !ok {
-		return fmt.Errorf("projection not found: %s", projID)
-	}
-
-	// Reset projection state before running
-	if err := proj.Reset(ctx); err != nil {
-		return fmt.Errorf("failed to reset projection: %w", err)
-	}
-
-	var lastError error
-	err := eng.LoadEvents(ctx, 100, func(events []Event) error {
-		for _, evt := range events {
-			if err := proj.HandleEvent(ctx, evt); err != nil {
-				lastError = err
-				proj.SetPosition(ctx, -1) // Mark as failed
-				return nil                // Stop processing but don't fail other projections
-			}
-			proj.SetPosition(ctx, evt.GlobalVersion) // Use GlobalVersion instead of Version
-		}
-		return nil
-	})
-
-	if err != nil {
-		return err
-	}
-	return lastError
+	// Use processProjection which handles filtering and position updates correctly
+	return pm.processProjection(ctx, eng, proj, startPos, projectionBatchSize)
 }
 
 // processProjection loads events from 'fromGlobalVersion' in batches, calling p.HandleEvent,
