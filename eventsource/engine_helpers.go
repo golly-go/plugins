@@ -18,7 +18,7 @@ type TestEventData struct {
 	AggregateType string
 	Data          any
 	// Optional metadata
-	Metadata Metadata
+	Metadata map[string]any
 
 	// if not set, will be set to the version
 	Version int64

@@ -12,7 +12,7 @@ type sampleEvent struct {
 }
 
 func Test_testEventToEvent_BuildsCorrectEvent(t *testing.T) {
-	meta := Metadata{"k": "v"}
+	meta := map[string]any{"k": "v"}
 	input := TestEventData{
 		AggregateID:   "agg-1",
 		AggregateType: "SampleAgg",
@@ -37,7 +37,7 @@ func Test_testEventToEvent_BuildsCorrectEvent(t *testing.T) {
 }
 
 func Test_buildInMemoryEvents_MixedInputs(t *testing.T) {
-	meta := Metadata{"m": "x"}
+	meta := map[string]any{"m": "x"}
 	// Pre-constructed event that should pass through unchanged
 	pre := NewEvent(sampleEvent{Name: "pre"}, EventStateApplied, meta)
 	pre.AggregateID = "agg-pre"

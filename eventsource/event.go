@@ -31,21 +31,21 @@ const (
 
 // Event represents a single event in the system.
 type Event struct {
-	ID            uuid.UUID   `json:"id"`
-	Kind          EventKind   `json:"kind"`
-	CreatedAt     time.Time   `json:"createdAt"`
-	Type          string      `json:"eventType" gorm:"index:idx_events_type"`
-	AggregateID   string      `json:"aggregateId" gorm:"index:idx_events_aggregate"`
-	AggregateType string      `json:"aggregateType" gorm:"index:idx_events_aggregate"`
-	Version       int64       `json:"version"`
-	GlobalVersion int64       `json:"globalVersion"`
-	State         EventState  `json:"state,omitempty" gorm:"-"`
-	Data          interface{} `json:"data" gorm:"-"`
-	UserInfo      UserInfo    `json:"userInfo,omitempty" gorm:"-"`
-	Metadata      Metadata    `json:"metadata" gorm:"-"`
-	TenantID      string      `json:"tenantID"`
-	UserID        string      `json:"userID"`
-	Topic         string      `json:"topic"`
+	ID            uuid.UUID      `json:"id"`
+	Kind          EventKind      `json:"kind"`
+	CreatedAt     time.Time      `json:"createdAt"`
+	Type          string         `json:"eventType" gorm:"index:idx_events_type"`
+	AggregateID   string         `json:"aggregateId" gorm:"index:idx_events_aggregate"`
+	AggregateType string         `json:"aggregateType" gorm:"index:idx_events_aggregate"`
+	Version       int64          `json:"version"`
+	GlobalVersion int64          `json:"globalVersion"`
+	State         EventState     `json:"state,omitempty" gorm:"-"`
+	Data          interface{}    `json:"data" gorm:"-"`
+	UserInfo      UserInfo       `json:"userInfo,omitempty" gorm:"-"`
+	Metadata      map[string]any `json:"metadata" gorm:"-"`
+	TenantID      string         `json:"tenantID"`
+	UserID        string         `json:"userID"`
+	Topic         string         `json:"topic"`
 }
 
 type PersistedEvent interface {
@@ -73,11 +73,11 @@ func (e *Event) InState(s EventState) bool {
 }
 
 // NewEvent creates a new Event with the provided data and aggregate information.
-func NewEvent(data any, state EventState, metadata Metadata) Event {
+func NewEvent(data any, state EventState, metadata map[string]any) Event {
 	id, _ := uuid.NewV7()
 
 	if metadata == nil {
-		metadata = make(Metadata)
+		metadata = make(map[string]any)
 	}
 
 	s := EventStateReady

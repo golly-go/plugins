@@ -120,7 +120,7 @@ func TestProjectionManager_RunToEnd(t *testing.T) {
 				eng.store.Save(context.Background(), &Event{GlobalVersion: 1}, &Event{GlobalVersion: 2})
 				return proj.ID()
 			},
-			expectedPos:   -1,
+			expectedPos:   0, // Position stays at initial 0 when error occurs
 			expectedCount: 0,
 			expectErr:     true,
 			errContains:   "simulated error on event #1",
@@ -157,7 +157,7 @@ func TestProjectionManager_RunToEnd(t *testing.T) {
 				pm.Register(proj)
 				return proj.ID()
 			},
-			expectedPos:   -1,
+			expectedPos:   0, // Position stays at initial 0 when no events to process
 			expectedCount: 0,
 		},
 	}

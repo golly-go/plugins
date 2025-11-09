@@ -31,7 +31,7 @@ type Aggregate interface {
 	Record(...any)
 
 	// Record events to be applied later with metadata
-	RecordWithMetadata(any, Metadata)
+	RecordWithMetadata(any, map[string]any)
 
 	// Process the events into the aggregation
 	ProcessChanges(context.Context, Aggregate) error
@@ -107,7 +107,7 @@ func (ab *AggregateBase) Record(data ...any) {
 // Record generates and tracks events for the aggregate, incrementing the version for each event.
 // Events are stored as uncommitted changes, ready for processing by the handler.
 // Allows for additional metadata to be added to the event
-func (ab *AggregateBase) RecordWithMetadata(data any, metadata Metadata) {
+func (ab *AggregateBase) RecordWithMetadata(data any, metadata map[string]any) {
 	var version int64
 
 	changes := ab.Changes()
