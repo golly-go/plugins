@@ -286,12 +286,11 @@ func (eng *Engine) Send(ctx context.Context, events ...Event) {
 
 	// Then publish to external streams (Kafka, etc)
 	for i := range events {
-		evt := events[i]
-		topic := eventTopic(evt)
+		topic := eventTopic(events[i])
 		if topic == "" {
 			continue
 		}
-		eng.streams.Publish(ctx, topic, evt)
+		eng.streams.Publish(ctx, topic, events[i])
 	}
 }
 

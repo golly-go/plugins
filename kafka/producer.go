@@ -25,10 +25,6 @@ type Producer struct {
 	running atomic.Bool
 	cancel  context.CancelFunc
 	ctx     context.Context
-
-	// Track errors from async publishes
-	errMu    sync.Mutex
-	firstErr error
 }
 
 // NewProducer creates a new Kafka producer with the given franz-go client and configuration
@@ -50,6 +46,9 @@ func NewProducer(client *kgo.Client, config Config) *Producer {
 // This method blocks until the message is acknowledged by Kafka or an error occurs.
 // For async publishing with manual concurrency control, manage goroutines in your application layer.
 func (p *Producer) Publish(ctx context.Context, topic string, payload any) error {
+
+	trace("publishing message to topic %s", topic)
+
 	// Generate key
 	var key []byte = []byte(uuid.New().String())
 	if p.config.KeyFunc != nil {

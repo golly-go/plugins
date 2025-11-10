@@ -120,13 +120,19 @@ func (cb *ConsumerBase) ProcessEvent(ctx context.Context) error {
 
 				// Call the handler
 				if err := cb.handler.Handler(ctx, msg); err != nil {
-					// TODO: Handle handler errors (DLQ, retry, etc.)
+					// Log the error but continue processing
+					golly.Logger().Errorf("[kafka] handler error for topic %s partition %d offset %d: %v",
+						record.Topic, record.Partition, record.Offset, err)
+					// TODO: Implement retry logic and DLQ
 					return
 				}
 
-				// Commit offset if using consumer group
+				// Commit offset after successful processing (at-least-once delivery)
 				if cb.opts.GroupID != "" {
-					// TODO: Implement offset committing
+					if err := cb.client.CommitRecords(ctx, record); err != nil {
+						golly.Logger().Warnf("[kafka] failed to commit offset for topic %s partition %d offset %d: %v",
+							record.Topic, record.Partition, record.Offset, err)
+					}
 				}
 			})
 		}
@@ -137,6 +143,9 @@ func (cb *ConsumerBase) ProcessEvent(ctx context.Context) error {
 type ConsumerManager struct {
 	// client is the shared franz-go client for the manager
 	client *kgo.Client
+
+	// config contains broker addresses and other settings needed for creating consumer clients
+	config Config
 
 	// consumers maps subscription IDs to their ConsumerBase instances
 	consumers map[string]*ConsumerBase
@@ -154,10 +163,11 @@ type ConsumerManager struct {
 	mu sync.RWMutex
 }
 
-// NewConsumerManager creates a new consumer manager with the given franz-go client
-func NewConsumerManager(client *kgo.Client) *ConsumerManager {
+// NewConsumerManager creates a new consumer manager with the given franz-go client and config
+func NewConsumerManager(client *kgo.Client, config Config) *ConsumerManager {
 	return &ConsumerManager{
 		client:    client,
+		config:    config,
 		consumers: make(map[string]*ConsumerBase),
 	}
 }
@@ -205,12 +215,21 @@ func (cm *ConsumerManager) Subscribe(topic string, consumer Consumer) error {
 
 	// Create a dedicated client for this consumer
 	clientOpts := []kgo.Opt{
+		kgo.SeedBrokers(cm.config.Brokers...),
 		kgo.ConsumeTopics(topic),
 	}
 
 	// Configure consumer group if specified
 	if opts.GroupID != "" {
-		clientOpts = append(clientOpts, kgo.ConsumerGroup(opts.GroupID))
+		clientOpts = append(clientOpts,
+			kgo.ConsumerGroup(opts.GroupID),
+			kgo.DisableAutoCommit(), // We commit manually after successful processing
+		)
+	}
+
+	// Add TLS if enabled
+	if cm.config.TLSEnabled {
+		clientOpts = append(clientOpts, kgo.DialTLS())
 	}
 
 	switch opts.StartPosition {

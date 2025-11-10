@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/golly-go/golly"
@@ -36,6 +37,16 @@ func Subscribe(topic string, consumer Consumer) error {
 		return consumerManager.Subscribe(topic, consumer)
 	}
 	return fmt.Errorf("kafka consumer manager not found")
+}
+
+// Publish is a convenience function to publish a message using the global producer
+func Publish(ctx context.Context, topic string, payload any) error {
+	producer := GetProducer()
+	if producer == nil {
+		golly.Logger().Warnf("[KAFKA] attempted to publish to %s but producer is not available (EnableProducer=false?)", topic)
+		return fmt.Errorf("kafka producer not available")
+	}
+	return producer.Publish(ctx, topic, payload)
 }
 
 // trace logs a formatted message with the Kafka prefix

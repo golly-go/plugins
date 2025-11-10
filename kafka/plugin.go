@@ -57,7 +57,11 @@ func (p *Plugin) Initialize(app *golly.Application) error {
 
 	// Create producer if enabled
 	if p.config.EnableProducer {
+		trace("creating Kafka producer")
 		p.producer = NewProducer(client, p.config)
+		p.producer.running.Store(true)
+	} else {
+		trace("producer disabled (EnableProducer=false)")
 	}
 
 	// Consumer manager will be created by the service when needed
@@ -91,7 +95,7 @@ func (p *Plugin) AfterDeinitialize(app *golly.Application) error {
 // ConsumerManager returns the consumer manager, creating it if needed
 func (p *Plugin) ConsumerManager() *ConsumerManager {
 	if p.consumerManager == nil {
-		p.consumerManager = NewConsumerManager(p.client)
+		p.consumerManager = NewConsumerManager(p.client, p.config)
 	}
 	return p.consumerManager
 }

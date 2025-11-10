@@ -33,7 +33,6 @@ func TestProducerConsumerFlow(t *testing.T) {
 		WithBrokers("localhost:9092"),
 		WithClientID("test-client"),
 		WithProducer(),
-		WithConsumers(),
 		WithAutoTopic(), // Enable auto topic creation
 	)
 
