@@ -50,18 +50,15 @@ func (sm *StreamManager) Subscribe(topic string, handler StreamHandler) bool {
 	if len(streams) == 0 {
 		return false
 	}
+
 	for i := range streams {
-		// Try InternalStream first (for projections)
-		if sub, ok := streams[i].(*InternalStream); ok {
-			sub.Subscribe(topic, handler)
-			return true
-		}
 		// Fall back to complex Stream
 		if sub, ok := streams[i].(*Stream); ok {
 			sub.Subscribe(topic, handler)
 			return true
 		}
 	}
+
 	return false
 }
 

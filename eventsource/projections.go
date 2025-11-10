@@ -26,6 +26,10 @@ type AggregateProjection interface {
 	AggregateTypes() []any
 }
 
+type EventProjection interface {
+	EventTypes() []any
+}
+
 type Projection interface {
 	HandleEvent(context.Context, Event) error
 
@@ -36,6 +40,8 @@ type Projection interface {
 	// Reset to clear state for rebuild
 	Reset(context.Context) error
 }
+
+type ProjectionHandler func(context.Context, Event) error
 
 // ProjectionBase is an embeddable helper for common Projection logic.
 type ProjectionBase struct {
@@ -61,13 +67,26 @@ func (p *ProjectionBase) Reset(ctx context.Context) error {
 // ProjectionManager manages multiple projections, each identified by a key.
 type ProjectionManager struct {
 	mu          sync.RWMutex
-	projections map[string]Projection
+	projections map[string]Projection // id -> projection
+
+	eventHandlers map[string][]ProjectionHandler // eventType -> handlers
+	topicHandlers map[string][]ProjectionHandler // topic -> handlers
+
+	// Async processing with graceful shutdown
+	jobs    chan Event
+	stop    chan struct{}
+	wg      sync.WaitGroup
+	running atomic.Bool // Lockless check for running state
 }
 
 // NewProjectionManager creates a ProjectionManager with an empty registry.
 func NewProjectionManager() *ProjectionManager {
 	return &ProjectionManager{
-		projections: make(map[string]Projection),
+		projections:   make(map[string]Projection),
+		eventHandlers: make(map[string][]ProjectionHandler),
+		topicHandlers: make(map[string][]ProjectionHandler),
+		jobs:          make(chan Event, 1000), // Buffered for throughput
+		stop:          make(chan struct{}),
 	}
 }
 
@@ -95,13 +114,140 @@ func (pm *ProjectionManager) List() iter.Seq2[string, Projection] {
 	}
 }
 
-// Register adds one or more projections to the manager.
+// Register adds one or more projections to the manager and indexes them by their filters.
 func (pm *ProjectionManager) Register(projs ...Projection) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
 	for _, proj := range projs {
-		pm.projections[projectionKey(proj)] = proj
+		hasFilters := false
+
+		key := projectionKey(proj)
+		pm.projections[key] = proj
+
+		fnc := func(ctx context.Context, event Event) error {
+			defer func() {
+				if r := recover(); r != nil {
+					golly.Logger().Errorf("panic in projection %s: %v", resolveInterfaceName(proj), r)
+				}
+			}()
+
+			return proj.HandleEvent(ctx, event)
+		}
+
+		if ep, ok := proj.(EventProjection); ok {
+			events := ep.EventTypes()
+			for _, event := range events {
+				pm.eventHandlers[ObjectName(event)] = append(pm.eventHandlers[ObjectName(event)], fnc)
+			}
+			hasFilters = true
+		}
+
+		var topics []string = projectionTopics(proj)
+		if len(topics) > 0 {
+			for pos := range topics {
+				pm.topicHandlers[topics[pos]] = append(pm.topicHandlers[topics[pos]], fnc)
+			}
+			hasFilters = true
+		}
+
+		if !hasFilters {
+			pm.eventHandlers[AllEvents] = append(pm.eventHandlers[AllEvents], fnc)
+		}
+	}
+}
+
+// Start begins async processing of projection events
+func (pm *ProjectionManager) Start() {
+	if pm.running.Swap(true) {
+		return // Already running
+	}
+
+	pm.wg.Add(1)
+
+	go pm.run()
+}
+
+// Stop gracefully shuts down projection processing, draining all in-flight events
+func (pm *ProjectionManager) Stop() {
+	if !pm.running.Swap(false) {
+		return // Already stopped
+	}
+
+	trace("stopping projection manager, draining events")
+
+	close(pm.stop)
+	pm.wg.Wait() // Block until all events drained
+
+	trace("projection manager stopped")
+}
+
+// run processes events in a single goroutine with drain on shutdown
+func (pm *ProjectionManager) run() {
+	defer pm.wg.Done()
+
+	trace("starting projection manager")
+
+	for {
+		select {
+		case evt := <-pm.jobs:
+			pm.handleEvent(context.Background(), evt)
+
+		case <-pm.stop:
+			// Drain remaining events before shutdown
+			trace("draining projection events")
+			for {
+				select {
+				case evt := <-pm.jobs:
+					pm.handleEvent(context.Background(), evt)
+				default:
+					trace("projection drain complete")
+					return
+				}
+			}
+		}
+	}
+}
+
+// dispatch enqueues an event for async projection processing
+func (pm *ProjectionManager) dispatch(evt Event) {
+	if !pm.running.Load() {
+		golly.Logger().Warnf("projection manager not running, dropping event")
+		return
+	}
+
+	// Use background context for async processing to prevent cancellation
+	// when the originating request completes
+	select {
+	case pm.jobs <- evt:
+		// Enqueued successfully
+	default:
+		golly.Logger().Errorf("projection queue full, dropping event")
+	}
+}
+
+// handleEvent routes event to relevant projections using dual indexes
+func (pm *ProjectionManager) handleEvent(ctx context.Context, evt Event) {
+	// Copy handlers while holding lock, then release before processing
+	pm.mu.RLock()
+
+	var handlers []ProjectionHandler
+	if h, ok := pm.eventHandlers[evt.Type]; ok {
+		handlers = append(handlers, h...)
+	}
+	if h, ok := pm.topicHandlers[evt.Topic]; ok {
+		handlers = append(handlers, h...)
+	}
+	if h, ok := pm.eventHandlers[AllEvents]; ok {
+		handlers = append(handlers, h...)
+	}
+	pm.mu.RUnlock()
+
+	// Process handlers without holding lock
+	for pos := range handlers {
+		if err := handlers[pos](ctx, evt); err != nil {
+			golly.Logger().Errorf("error in projection handler %s: %v", resolveInterfaceName(handlers[pos]), err)
+		}
 	}
 }
 

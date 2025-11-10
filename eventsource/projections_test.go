@@ -2,9 +2,12 @@ package eventsource
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/golly-go/golly"
 	"github.com/stretchr/testify/assert"
@@ -394,6 +397,207 @@ func TestProjectionManager_List(t *testing.T) {
 		for id, proj := range ids {
 			assert.NotEmpty(t, id, "ID should not be empty")
 			assert.NotNil(t, proj, "Projection should not be nil")
+		}
+	})
+}
+
+func TestProjectionManager_handleEvent(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("Routes to event type handlers", func(t *testing.T) {
+		pm := NewProjectionManager()
+		var called bool
+		handler := func(ctx context.Context, evt Event) error {
+			called = true
+			return nil
+		}
+		pm.eventHandlers["UserCreated"] = []ProjectionHandler{handler}
+
+		pm.handleEvent(ctx, Event{Type: "UserCreated", Topic: "user"})
+		assert.True(t, called)
+	})
+
+	t.Run("Routes to topic handlers", func(t *testing.T) {
+		pm := NewProjectionManager()
+		var called bool
+		handler := func(ctx context.Context, evt Event) error {
+			called = true
+			return nil
+		}
+		pm.topicHandlers["user"] = []ProjectionHandler{handler}
+
+		pm.handleEvent(ctx, Event{Type: "UserCreated", Topic: "user"})
+		assert.True(t, called)
+	})
+
+	t.Run("Routes to both event and topic handlers", func(t *testing.T) {
+		pm := NewProjectionManager()
+		var eventCalls, topicCalls int
+
+		eventHandler := func(ctx context.Context, evt Event) error {
+			eventCalls++
+			return nil
+		}
+		topicHandler := func(ctx context.Context, evt Event) error {
+			topicCalls++
+			return nil
+		}
+
+		pm.eventHandlers["UserCreated"] = []ProjectionHandler{eventHandler}
+		pm.topicHandlers["user"] = []ProjectionHandler{topicHandler}
+
+		pm.handleEvent(ctx, Event{Type: "UserCreated", Topic: "user"})
+		assert.Equal(t, 1, eventCalls)
+		assert.Equal(t, 1, topicCalls)
+	})
+
+	t.Run("No handlers matched", func(t *testing.T) {
+		pm := NewProjectionManager()
+		pm.eventHandlers["OtherEvent"] = []ProjectionHandler{
+			func(ctx context.Context, evt Event) error { return nil },
+		}
+
+		// Should not panic
+		pm.handleEvent(ctx, Event{Type: "UserCreated", Topic: "user"})
+	})
+
+	t.Run("Multiple handlers for same event type", func(t *testing.T) {
+		pm := NewProjectionManager()
+		var calls int
+
+		handler1 := func(ctx context.Context, evt Event) error {
+			calls++
+			return nil
+		}
+		handler2 := func(ctx context.Context, evt Event) error {
+			calls++
+			return nil
+		}
+
+		pm.eventHandlers["UserCreated"] = []ProjectionHandler{handler1, handler2}
+
+		pm.handleEvent(ctx, Event{Type: "UserCreated", Topic: "user"})
+		assert.Equal(t, 2, calls)
+	})
+
+	t.Run("Handler error does not stop other handlers", func(t *testing.T) {
+		pm := NewProjectionManager()
+		var calls int
+
+		handler1 := func(ctx context.Context, evt Event) error {
+			calls++
+			return errors.New("handler1 failed")
+		}
+		handler2 := func(ctx context.Context, evt Event) error {
+			calls++
+			return nil
+		}
+
+		pm.eventHandlers["UserCreated"] = []ProjectionHandler{handler1, handler2}
+
+		pm.handleEvent(ctx, Event{Type: "UserCreated", Topic: "user"})
+		assert.Equal(t, 2, calls, "Both handlers should be called despite error")
+	})
+
+	t.Run("Concurrent handleEvent calls are safe", func(t *testing.T) {
+		pm := NewProjectionManager()
+		var calls atomic.Int64
+
+		handler := func(ctx context.Context, evt Event) error {
+			calls.Add(1)
+			time.Sleep(time.Millisecond)
+			return nil
+		}
+
+		pm.eventHandlers["UserCreated"] = []ProjectionHandler{handler}
+
+		var wg sync.WaitGroup
+		for i := 0; i < 10; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				pm.handleEvent(ctx, Event{Type: "UserCreated", Topic: "user"})
+			}()
+		}
+
+		wg.Wait()
+		assert.Equal(t, int64(10), calls.Load())
+	})
+}
+
+// Benchmarks
+
+func BenchmarkProjectionManager_handleEvent_SingleEventHandler(b *testing.B) {
+	pm := NewProjectionManager()
+	handler := func(ctx context.Context, evt Event) error { return nil }
+	pm.eventHandlers["UserCreated"] = []ProjectionHandler{handler}
+
+	evt := Event{Type: "UserCreated", Topic: "user"}
+	ctx := context.Background()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		pm.handleEvent(ctx, evt)
+	}
+}
+
+func BenchmarkProjectionManager_handleEvent_SingleTopicHandler(b *testing.B) {
+	pm := NewProjectionManager()
+	handler := func(ctx context.Context, evt Event) error { return nil }
+	pm.topicHandlers["user"] = []ProjectionHandler{handler}
+
+	evt := Event{Type: "UserCreated", Topic: "user"}
+	ctx := context.Background()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		pm.handleEvent(ctx, evt)
+	}
+}
+
+func BenchmarkProjectionManager_handleEvent_MultipleHandlers(b *testing.B) {
+	pm := NewProjectionManager()
+	handler := func(ctx context.Context, evt Event) error { return nil }
+
+	pm.eventHandlers["UserCreated"] = []ProjectionHandler{handler, handler, handler}
+	pm.topicHandlers["user"] = []ProjectionHandler{handler, handler}
+
+	evt := Event{Type: "UserCreated", Topic: "user"}
+	ctx := context.Background()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		pm.handleEvent(ctx, evt)
+	}
+}
+
+func BenchmarkProjectionManager_handleEvent_NoMatch(b *testing.B) {
+	pm := NewProjectionManager()
+	handler := func(ctx context.Context, evt Event) error { return nil }
+	pm.eventHandlers["OtherEvent"] = []ProjectionHandler{handler}
+	pm.topicHandlers["other"] = []ProjectionHandler{handler}
+
+	evt := Event{Type: "UserCreated", Topic: "user"}
+	ctx := context.Background()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		pm.handleEvent(ctx, evt)
+	}
+}
+
+func BenchmarkProjectionManager_handleEvent_Parallel(b *testing.B) {
+	pm := NewProjectionManager()
+	handler := func(ctx context.Context, evt Event) error { return nil }
+	pm.eventHandlers["UserCreated"] = []ProjectionHandler{handler}
+
+	evt := Event{Type: "UserCreated", Topic: "user"}
+	ctx := context.Background()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			pm.handleEvent(ctx, evt)
 		}
 	})
 }

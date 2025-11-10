@@ -30,9 +30,6 @@ func NewEngine(opts ...Option) *Engine {
 
 	streams := NewStreamManager()
 
-	// Add internal stream for projections
-	streams.Add(NewInternalStream(DefaultStreamName))
-
 	// Add external producers (like Kafka)
 	for i := range cfg.Streams {
 		streams.Add(cfg.Streams[i])
@@ -95,43 +92,9 @@ func (eng *Engine) RunProjectionOnce(ctx context.Context, projection any) error 
 }
 
 // RegisterProjection registers a projection to the stream manager
+// RegisterProjection registers a projection with the projection manager
 func (eng *Engine) RegisterProjection(proj Projection) error {
 	eng.projections.Register(proj)
-
-	handler := func(ctx context.Context, evt Event) {
-		defer func() {
-			if r := recover(); r != nil {
-				golly.Logger().Errorf("panic in projection %s: %v", resolveInterfaceName(proj), r)
-			}
-		}()
-
-		err := proj.HandleEvent(ctx, evt)
-		if err != nil {
-			golly.Logger().Errorf("error in projection %s: %v", resolveInterfaceName(proj), err)
-			return
-		}
-
-		// Update projection position after successful event handling
-		if err := proj.SetPosition(ctx, evt.GlobalVersion); err != nil {
-			golly.Logger().Errorf("error updating position for projection %s: %v", resolveInterfaceName(proj), err)
-		}
-	}
-
-	// Get the topics this projection should listen to
-	topics := projectionTopics(proj)
-
-	// If no specific topics are defined, subscribe to all events
-	if len(topics) == 0 {
-		golly.Logger().Tracef("Registering projection %s to AllEvents", resolveInterfaceName(proj))
-		eng.streams.Subscribe(AllEvents, handler)
-		return nil
-	}
-
-	// Subscribe to specific topics
-	for _, topic := range topics {
-		eng.streams.Subscribe(topic, handler)
-	}
-
 	return nil
 }
 
@@ -316,6 +279,12 @@ func handleExecutionError(ctx context.Context, agg Aggregate, cmd Command, err e
 
 // Send publishes events to all registered streams (internal projections and external producers)
 func (eng *Engine) Send(ctx context.Context, events ...Event) {
+	// Dispatch to projections first (internal)
+	for i := range events {
+		eng.projections.dispatch(events[i])
+	}
+
+	// Then publish to external streams (Kafka, etc)
 	for i := range events {
 		evt := events[i]
 		topic := eventTopic(evt)
@@ -326,7 +295,7 @@ func (eng *Engine) Send(ctx context.Context, events ...Event) {
 	}
 }
 
-// Start marks the engine running and starts all streams
+// Start marks the engine running and starts projections and streams
 func (eng *Engine) Start() {
 	golly.Logger().Tracef("Starting engine")
 
@@ -334,11 +303,10 @@ func (eng *Engine) Start() {
 	eng.running = true
 	eng.mu.Unlock()
 
-	// Start all streams (internal and external)
-	eng.streams.Start()
+	eng.projections.Start() // Start projection async processing
 }
 
-// Stop marks the engine stopped and stops all streams
+// Stop stops the engine, gracefully draining all projection events
 func (eng *Engine) Stop() {
 	golly.Logger().Tracef("Stopping engine")
 
@@ -346,8 +314,7 @@ func (eng *Engine) Stop() {
 	eng.running = false
 	eng.mu.Unlock()
 
-	// Stop all streams (internal and external)
-	eng.streams.Stop()
+	eng.projections.Stop() // Drain all projection events first
 }
 
 func HasValidID(agg Aggregate) bool {

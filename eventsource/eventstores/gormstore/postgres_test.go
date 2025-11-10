@@ -52,7 +52,7 @@ func TestGormRepository_Save(t *testing.T) {
 		AggregateType: "gorm.TestAggregate",
 		Version:       1,
 		Data:          TestEvent{Key: "value"},
-		Metadata: eventsource.Metadata{
+		Metadata: map[string]any{
 			"UserID": "123",
 		},
 	}
