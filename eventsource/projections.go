@@ -2,6 +2,7 @@ package eventsource
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"sync"
@@ -132,7 +133,7 @@ func (pm *ProjectionManager) Register(projs ...Projection) {
 				}
 			}()
 
-			return proj.HandleEvent(ctx, event)
+			return projectEvent(ctx, proj, event, true)
 		}
 
 		if ep, ok := proj.(EventProjection); ok {
@@ -308,7 +309,7 @@ func (pm *ProjectionManager) RunToEnd(ctx context.Context, eng *Engine, projID s
 }
 
 // processProjection loads events from 'fromGlobalVersion' in batches, calling p.HandleEvent,
-// then does ONE p.SetPosition() per batch.
+// then does ONE p.SetPosition() at the very end (avoiding N+1 position updates).
 func (pm *ProjectionManager) processProjection(
 	ctx context.Context,
 	eng *Engine,
@@ -316,31 +317,43 @@ func (pm *ProjectionManager) processProjection(
 	fromGlobalVersion int,
 	batchSize int,
 ) error {
-
-	golly.Logger().Tracef("Processing projection %s", resolveInterfaceName(p))
+	trace("Processing projection %s from version %d", resolveInterfaceName(p), fromGlobalVersion)
 	filter := projectionFilters(p, fromGlobalVersion)
 
-	return eng.LoadEvents(ctx, batchSize, func(events []Event) error {
+	var lastGlobalVersion int64 = -1
+
+	err := eng.LoadEvents(ctx, batchSize, func(events []Event) error {
 		if len(events) == 0 {
 			return nil
 		}
 
+		// Process all events in batch (no position updates per event)
 		for i := range events {
-			if err := p.HandleEvent(ctx, events[i]); err != nil {
+			if err := projectEvent(ctx, p, events[i], false); err != nil {
 				return err
 			}
 		}
 
-		// Add context cancellation checks
+		// Check for cancellation
 		select {
 		case <-ctx.Done():
-			return p.SetPosition(ctx, events[len(events)-1].GlobalVersion)
+			return ctx.Err()
 		default:
-			// Continue processing
 		}
 
-		return p.SetPosition(ctx, events[len(events)-1].GlobalVersion)
+		// Track last processed version
+		lastGlobalVersion = events[len(events)-1].GlobalVersion
+		return nil
 	}, filter)
+
+	// Set position once at the end (only if we processed events)
+	if lastGlobalVersion > -1 {
+		if e := p.SetPosition(ctx, lastGlobalVersion); e != nil {
+			err = errors.Join(err, e)
+		}
+	}
+
+	return err
 }
 
 func projectionKey(p Projection) string {
@@ -392,4 +405,14 @@ func eventTopic(evt Event) string {
 	}
 
 	return ""
+}
+
+func projectEvent(ctx context.Context, proj Projection, evt Event, setPosition bool) error {
+	if err := proj.HandleEvent(ctx, evt); err != nil {
+		return err
+	}
+	if setPosition {
+		return proj.SetPosition(ctx, evt.GlobalVersion)
+	}
+	return nil
 }
