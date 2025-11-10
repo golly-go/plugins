@@ -65,9 +65,18 @@ func (p *Plugin) Initialize(app *golly.Application) error {
 	return nil
 }
 
-// Deinitialize cleans up the plugin
+// Deinitialize cleans up the plugin - intentionally does nothing.
+// We use AfterDeinitialize instead to ensure all other plugins (especially projections)
+// have finished publishing their Kafka messages before we shut down the producer.
 func (p *Plugin) Deinitialize(app *golly.Application) error {
-	trace("deinitializing Kafka plugin")
+	return nil
+}
+
+// AfterDeinitialize runs after all other plugins have deinitialized.
+// This ensures projections and other plugins have finished publishing their Kafka messages
+// before we shut down the producer.
+func (p *Plugin) AfterDeinitialize(app *golly.Application) error {
+	trace("after deinitialize - stopping Kafka producer")
 
 	// Consumer manager lifecycle is managed by the service
 
