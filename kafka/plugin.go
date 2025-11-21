@@ -21,6 +21,9 @@ type Plugin struct {
 	cfgFunc func(app *golly.Application) Config
 }
 
+func (p Plugin) Client() *kgo.Client { return p.client }
+func (p Plugin) Config() Config      { return p.config }
+
 // NewPlugin creates a new Kafka plugin
 func NewPlugin(opts ...Option) *Plugin {
 	p := &Plugin{}
