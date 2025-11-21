@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/golly-go/golly"
@@ -161,6 +162,8 @@ type ConsumerManager struct {
 
 	// mu protects the consumers map from concurrent access
 	mu sync.RWMutex
+
+	running atomic.Bool
 }
 
 // NewConsumerManager creates a new consumer manager with the given franz-go client and config
@@ -175,6 +178,10 @@ func NewConsumerManager(client *kgo.Client, config Config) *ConsumerManager {
 // Start initializes the context and starts all registered consumers in goroutines.
 // This method is safe to call multiple times.
 func (cm *ConsumerManager) Start() error {
+	if !cm.running.CompareAndSwap(false, true) {
+		return nil
+	}
+
 	cm.ctx, cm.cancel = context.WithCancel(context.Background())
 
 	cm.mu.RLock()
@@ -195,6 +202,10 @@ func (cm *ConsumerManager) Start() error {
 // Stop gracefully stops all consumers by cancelling the context and waiting for
 // all consumer goroutines to finish. This method is safe to call multiple times.
 func (cm *ConsumerManager) Stop() error {
+	if !cm.running.CompareAndSwap(true, false) {
+		return nil
+	}
+
 	// Stop accepting new events
 	cm.cancel()
 
