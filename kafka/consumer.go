@@ -175,6 +175,8 @@ func NewConsumerManager(client *kgo.Client, config Config) *ConsumerManager {
 	}
 }
 
+func (cm *ConsumerManager) IsRunning() bool { return cm.running.Load() }
+
 // Start initializes the context and starts all registered consumers in goroutines.
 // This method is safe to call multiple times.
 func (cm *ConsumerManager) Start() error {
