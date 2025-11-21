@@ -3,7 +3,7 @@ module github.com/golly-go/plugins/gql
 go 1.25
 
 require (
-	github.com/golly-go/golly v0.7.1-0.20251031191503-7f09823ded0a
+	github.com/golly-go/golly v0.7.1-0.20251121222621-02227c385490
 	github.com/graphql-go/graphql v0.8.2-0.20250728114051-fd7999201870
 )
 
@@ -21,6 +21,7 @@ require (
 	github.com/spf13/pflag v1.0.8 // indirect
 	github.com/spf13/viper v1.20.1 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
+	golang.org/x/sync v0.16.0 // indirect
 	golang.org/x/sys v0.35.0 // indirect
 	golang.org/x/term v0.34.0 // indirect
 	golang.org/x/text v0.28.0 // indirect

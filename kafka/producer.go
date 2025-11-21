@@ -79,7 +79,7 @@ func (p *Producer) Publish(ctx context.Context, topic string, payload any) error
 		// Send synchronously and wait for result
 		results := p.client.ProduceSync(ctx, msg)
 		if err := results.FirstErr(); err != nil {
-			golly.Logger().Errorf("kafka: publish: failed to publish message to %s: %w", topic, err)
+			golly.Logger().Errorf("kafka: publish: failed to publish message to %s: %v", topic, err)
 			return
 		}
 

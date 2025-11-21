@@ -3,10 +3,9 @@ module github.com/golly-go/plugins/kafka
 go 1.25
 
 require (
-	github.com/golly-go/golly v0.7.1-0.20251031191503-7f09823ded0a
+	github.com/golly-go/golly v0.7.1-0.20251121222621-02227c385490
 	github.com/google/uuid v1.6.0
 	github.com/twmb/franz-go v1.20.0
-	golang.org/x/sync v0.17.0
 )
 
 require (
@@ -26,6 +25,7 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/twmb/franz-go/pkg/kmsg v1.12.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
+	golang.org/x/sync v0.17.0 // indirect
 	golang.org/x/sys v0.37.0 // indirect
 	golang.org/x/term v0.36.0 // indirect
 	golang.org/x/text v0.30.0 // indirect

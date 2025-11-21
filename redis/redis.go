@@ -57,7 +57,7 @@ func (s *RedisService) Initialize(app *golly.Application) error {
 		return fmt.Errorf("failed to connect to Redis: %w", err)
 	}
 
-	app.Events().Register(golly.EventShutdown, func(ctx *golly.Context, event *golly.Event) {
+	app.Events().Register(golly.EventShutdown, func(ctx context.Context, event any) {
 		_ = s.Stop()
 	})
 
