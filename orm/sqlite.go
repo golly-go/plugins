@@ -3,6 +3,7 @@ package orm
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/glebarez/sqlite"
 	"github.com/golly-go/golly"
@@ -14,6 +15,7 @@ var (
 )
 
 type SQLiteConfig struct {
+	Logger           bool
 	InMemory         bool
 	Database         string
 	Path             string
@@ -35,7 +37,7 @@ func NewSQLiteConnection(config SQLiteConfig, modelToMigrate ...interface{}) (*g
 
 	golly.Logger().Tracef("Connecting to sqlite database: %s", connectionString)
 
-	db, _ := gorm.Open(sqlite.Open(connectionString), &gorm.Config{Logger: NewLogger(connectionString, false)})
+	db, _ := gorm.Open(sqlite.Open(connectionString), &gorm.Config{Logger: NewLogger(connectionString, !config.Logger)})
 
 	if len(modelToMigrate) > 0 {
 		if err := db.AutoMigrate(modelToMigrate...); err != nil {
@@ -46,11 +48,23 @@ func NewSQLiteConnection(config SQLiteConfig, modelToMigrate ...interface{}) (*g
 	return db, nil
 }
 
+func getDisableLogger() bool {
+	if os.Getenv("ENABLE_DB_LOGGER_IN_TEST") == "true" {
+		return false
+	}
+
+	if os.Getenv("DATABASE_LOGGER") == "true" {
+		return true
+	}
+
+	return true
+}
+
 // this is used for testing makes things easier.
 // NewInMemoryConnection creates a new database connection and migrates any passed in model
 func NewInMemoryConnection(modelToMigrate ...interface{}) *gorm.DB {
 	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
-		Logger: NewLogger("in-memory", false),
+		Logger: NewLogger("in-memory", getDisableLogger()),
 	})
 
 	if len(modelToMigrate) > 0 {
