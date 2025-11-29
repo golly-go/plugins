@@ -187,6 +187,18 @@ func saslMechanism(config Config) (kgo.Opt, error) {
 			return nil, ErrTokenProviderRequired
 		}
 		return kgo.SASL(oauth.Oauth(config.CustomSASLMechanism)), nil
+
+	case SASLOAUTHPlain:
+		// PLAIN mechanism with OAuth token as password
+		// Used by GCP Managed Kafka and some other managed services
+		if config.TokenProvider == nil {
+			return nil, ErrTokenProviderRequired
+		}
+		return kgo.SASL(OAuthPlainAuth{
+			User:          config.Username, // Can be empty
+			TokenProvider: config.TokenProvider,
+		}), nil
+
 	case SASLPlain:
 		if config.Username == "" || config.Password == "" {
 			return nil, ErrUsernamePasswordRequired

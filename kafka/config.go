@@ -38,6 +38,7 @@ const (
 	SASLScramSHA256 SASLMechanism = "SCRAM-SHA-256"
 	SASLScramSHA512 SASLMechanism = "SCRAM-SHA-512"
 	SASLOAUTHCustom SASLMechanism = "CUSTOM"
+	SASLOAUTHPlain  SASLMechanism = "OAUTHPLAIN" // PLAIN with OAuth token as password
 )
 
 // StartPosition specifies where to start consuming from
@@ -85,6 +86,12 @@ type Config struct {
 	// Key generation function
 	KeyFunc func(topic string, payload any) []byte
 
+	// TokenProvider returns an OAuth access token for SASL authentication.
+	// Used by SASLOAUTHPlain to pass the token as the PLAIN password.
+	TokenProvider func() (string, error)
+
+	// CustomSASLMechanism for full control over OAUTHBEARER auth.
+	// Used by SASLOAUTHCustom.
 	CustomSASLMechanism func(ctx context.Context) (oauth.Auth, error)
 }
 
