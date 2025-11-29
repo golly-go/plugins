@@ -1,10 +1,13 @@
 package kafka
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/golly-go/golly"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/sasl/plain"
+	"github.com/twmb/franz-go/pkg/sasl/scram"
 )
 
 const (
@@ -149,10 +152,13 @@ func (p *Plugin) createClient() (*kgo.Client, error) {
 		}
 	}
 
-	// Add authentication if configured
-	if p.config.Username != "" && p.config.Password != "" {
-		// TODO: Add SASL authentication
-		// This will need proper franz-go SASL implementation
+	// Configure SASL authentication
+	if p.config.SASL != "" {
+		sasl, err := saslMechanism(p.config)
+		if err != nil {
+			return nil, fmt.Errorf("failed to configure SASL authentication: %w", err)
+		}
+		opts = append(opts, sasl)
 	}
 
 	// Add TLS if enabled
@@ -161,6 +167,61 @@ func (p *Plugin) createClient() (*kgo.Client, error) {
 	}
 
 	return kgo.NewClient(opts...)
+}
+
+var (
+	ErrTokenProviderRequired               = errors.New("token provider is required for OAUTHBEARER authentication")
+	ErrUsernamePasswordRequired            = errors.New("username and password are required for PLAIN authentication")
+	ErrUsernamePasswordRequiredSCRAMSHA256 = errors.New("username and password are required for SCRAM-SHA-256 authentication")
+	ErrUsernamePasswordRequiredSCRAMSHA512 = errors.New("username and password are required for SCRAM-SHA-512 authentication")
+	ErrInvalidSASLMechanism                = errors.New("invalid sasl mechanism")
+)
+
+func saslMechanism(config Config) (kgo.Opt, error) {
+	switch config.SASL {
+	case SASLOAUTHBearer:
+		if config.TokenProvider == nil {
+			return nil, ErrTokenProviderRequired
+
+		}
+
+		// Use our custom OAuthBearerAuth that calls TokenProvider on each auth attempt
+		// This ensures we get fresh tokens for AWS/GCP which expire
+		return kgo.SASL(OAuthBearerAuth{
+			TokenProvider: config.TokenProvider,
+		}), nil
+
+	case SASLPlain:
+		if config.Username == "" || config.Password == "" {
+			return nil, ErrUsernamePasswordRequired
+		}
+		return kgo.SASL(plain.Auth{
+			User: config.Username,
+			Pass: config.Password,
+		}.AsMechanism()), nil
+
+	case SASLScramSHA256:
+		if config.Username == "" || config.Password == "" {
+			return nil, ErrUsernamePasswordRequiredSCRAMSHA256
+		}
+
+		return kgo.SASL(scram.Auth{
+			User: config.Username,
+			Pass: config.Password,
+		}.AsSha256Mechanism()), nil
+
+	case SASLScramSHA512:
+		if config.Username == "" || config.Password == "" {
+			return nil, ErrUsernamePasswordRequiredSCRAMSHA512
+		}
+
+		return kgo.SASL(scram.Auth{
+			User: config.Username,
+			Pass: config.Password,
+		}.AsSha512Mechanism()), nil
+	}
+
+	return nil, ErrInvalidSASLMechanism
 }
 
 var _ golly.Plugin = (*Plugin)(nil)

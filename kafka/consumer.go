@@ -9,6 +9,8 @@ import (
 
 	"github.com/golly-go/golly"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/sasl/plain"
+	"github.com/twmb/franz-go/pkg/sasl/scram"
 )
 
 // SubscribeOptions configures how a consumer subscribes to topics
@@ -243,6 +245,39 @@ func (cm *ConsumerManager) Subscribe(topic string, consumer Consumer) error {
 	// Add TLS if enabled
 	if cm.config.TLSEnabled {
 		clientOpts = append(clientOpts, kgo.DialTLS())
+	}
+
+	// Configure SASL authentication
+	if cm.config.SASL != "" {
+		switch cm.config.SASL {
+		case SASLOAUTHBearer:
+			if cm.config.TokenProvider != nil {
+				clientOpts = append(clientOpts, kgo.SASL(OAuthBearerAuth{
+					TokenProvider: cm.config.TokenProvider,
+				}))
+			}
+		case SASLPlain:
+			if cm.config.Username != "" && cm.config.Password != "" {
+				clientOpts = append(clientOpts, kgo.SASL(plain.Auth{
+					User: cm.config.Username,
+					Pass: cm.config.Password,
+				}.AsMechanism()))
+			}
+		case SASLScramSHA256:
+			if cm.config.Username != "" && cm.config.Password != "" {
+				clientOpts = append(clientOpts, kgo.SASL(scram.Auth{
+					User: cm.config.Username,
+					Pass: cm.config.Password,
+				}.AsSha256Mechanism()))
+			}
+		case SASLScramSHA512:
+			if cm.config.Username != "" && cm.config.Password != "" {
+				clientOpts = append(clientOpts, kgo.SASL(scram.Auth{
+					User: cm.config.Username,
+					Pass: cm.config.Password,
+				}.AsSha512Mechanism()))
+			}
+		}
 	}
 
 	switch opts.StartPosition {

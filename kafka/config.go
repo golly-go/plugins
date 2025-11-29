@@ -34,6 +34,7 @@ const (
 	SASLPlain       SASLMechanism = "PLAIN"
 	SASLScramSHA256 SASLMechanism = "SCRAM-SHA-256"
 	SASLScramSHA512 SASLMechanism = "SCRAM-SHA-512"
+	SASLOAUTHBearer SASLMechanism = "OAUTHBEARER"
 )
 
 // StartPosition specifies where to start consuming from
@@ -80,6 +81,8 @@ type Config struct {
 
 	// Key generation function
 	KeyFunc func(topic string, payload any) []byte
+
+	TokenProvider func() (string, error)
 }
 
 // DefaultConfig returns a sensible default configuration
@@ -219,5 +222,15 @@ func WithCompression(compression Compression) Option {
 func WithSASL(mechanism SASLMechanism) Option {
 	return func(c *Config) {
 		c.SASL = mechanism
+	}
+}
+
+// WithTokenProvider sets the OAuth token provider function for OAUTHBEARER authentication.
+// The function should return a valid OAuth token string and any error.
+// When set, SASL mechanism is automatically set to OAUTHBEARER.
+func WithTokenProvider(provider func() (string, error)) Option {
+	return func(c *Config) {
+		c.TokenProvider = provider
+		c.SASL = SASLOAUTHBearer
 	}
 }
