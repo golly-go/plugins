@@ -124,6 +124,8 @@ func (p *Plugin) createClient() (*kgo.Client, error) {
 		kgo.ClientID(p.config.ClientID),
 	}
 
+	trace("creating Kafka client with brokers %v and client ID %s", p.config.Brokers, p.config.ClientID)
+
 	// Configure producer settings if enabled
 	if p.config.EnableProducer {
 		// Map our RequiredAcks to franz-go's Acks type
