@@ -6,6 +6,7 @@ import (
 
 	"github.com/golly-go/golly"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/sasl/oauth"
 	"github.com/twmb/franz-go/pkg/sasl/plain"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
 )
@@ -181,18 +182,11 @@ var (
 
 func saslMechanism(config Config) (kgo.Opt, error) {
 	switch config.SASL {
-	case SASLOAUTHBearer:
-		if config.TokenProvider == nil {
+	case SASLOAUTHCustom:
+		if config.CustomSASLMechanism == nil {
 			return nil, ErrTokenProviderRequired
-
 		}
-
-		// Use our custom OAuthBearerAuth that calls TokenProvider on each auth attempt
-		// This ensures we get fresh tokens for AWS/GCP which expire
-		return kgo.SASL(OAuthBearerAuth{
-			TokenProvider: config.TokenProvider,
-		}), nil
-
+		return kgo.SASL(oauth.Oauth(config.CustomSASLMechanism)), nil
 	case SASLPlain:
 		if config.Username == "" || config.Password == "" {
 			return nil, ErrUsernamePasswordRequired

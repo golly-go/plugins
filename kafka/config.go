@@ -1,7 +1,10 @@
 package kafka
 
 import (
+	"context"
 	"time"
+
+	"github.com/twmb/franz-go/pkg/sasl/oauth"
 )
 
 // RequiredAcks specifies the acknowledgment level for producers
@@ -34,7 +37,7 @@ const (
 	SASLPlain       SASLMechanism = "PLAIN"
 	SASLScramSHA256 SASLMechanism = "SCRAM-SHA-256"
 	SASLScramSHA512 SASLMechanism = "SCRAM-SHA-512"
-	SASLOAUTHBearer SASLMechanism = "OAUTHBEARER"
+	SASLOAUTHCustom SASLMechanism = "CUSTOM"
 )
 
 // StartPosition specifies where to start consuming from
@@ -82,7 +85,7 @@ type Config struct {
 	// Key generation function
 	KeyFunc func(topic string, payload any) []byte
 
-	TokenProvider func() (string, error)
+	CustomSASLMechanism func(ctx context.Context) (oauth.Auth, error)
 }
 
 // DefaultConfig returns a sensible default configuration
@@ -228,9 +231,9 @@ func WithSASL(mechanism SASLMechanism) Option {
 // WithTokenProvider sets the OAuth token provider function for OAUTHBEARER authentication.
 // The function should return a valid OAuth token string and any error.
 // When set, SASL mechanism is automatically set to OAUTHBEARER.
-func WithTokenProvider(provider func() (string, error)) Option {
+func WithTokenProvider(provider func(ctx context.Context) (oauth.Auth, error)) Option {
 	return func(c *Config) {
-		c.TokenProvider = provider
-		c.SASL = SASLOAUTHBearer
+		c.CustomSASLMechanism = provider
+		c.SASL = SASLOAUTHCustom
 	}
 }
