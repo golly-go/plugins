@@ -99,7 +99,9 @@ func (cb *ConsumerBase) ProcessEvent(ctx context.Context) error {
 				if err == context.Canceled {
 					return err
 				}
-				// TODO: Add retry logic and logging
+
+				golly.Logger().Errorf("[kafka] error polling topic %s group %s: %v", cb.topic, cb.groupID, err)
+				// TODO: Add retry logic with backoff
 				continue
 			}
 
@@ -195,7 +197,10 @@ func (cm *ConsumerManager) Start() error {
 		cm.wg.Add(1)
 		go func(id string, c *ConsumerBase) {
 			defer cm.wg.Done()
-			c.ProcessEvent(cm.ctx)
+			err := c.ProcessEvent(cm.ctx)
+			if err != nil {
+				golly.Logger().Errorf("error processing event for subscription %s: %v", id, err)
+			}
 		}(subscriptionID, consumer)
 	}
 	cm.mu.RUnlock()
@@ -291,6 +296,13 @@ func (cm *ConsumerManager) Subscribe(topic string, consumer Consumer) error {
 	if err != nil {
 		return fmt.Errorf("failed to create consumer client: %w", err)
 	}
+
+	// Verify connection by pinging Kafka
+	if err := client.Ping(context.Background()); err != nil {
+		client.Close()
+		return fmt.Errorf("failed to connect to Kafka for topic %s group %s: %w", topic, opts.GroupID, err)
+	}
+	trace("successfully connected consumer for topic %s group %s", topic, opts.GroupID)
 
 	base := &ConsumerBase{
 		handler: consumer,
