@@ -35,5 +35,20 @@ func (o OAuthPlainAuth) Authenticate(ctx context.Context, host string) (sasl.Ses
 	// For OAuth, password is the access token
 	msg := []byte(fmt.Sprintf("\x00%s\x00%s", o.User, token))
 
-	return nil, msg, nil
+	// PLAIN is a single-step mechanism, return a completed session
+	return &plainSession{}, msg, nil
+}
+
+// plainSession implements sasl.Session for PLAIN (single-step auth)
+type plainSession struct{}
+
+// Challenge handles server response. PLAIN is single-step, so if we get here
+// with data, authentication failed.
+func (s *plainSession) Challenge(resp []byte) (bool, []byte, error) {
+	// PLAIN is single-step - if server sends anything, it's an error
+	if len(resp) > 0 {
+		return false, nil, fmt.Errorf("PLAIN authentication failed: %s", string(resp))
+	}
+	// Empty response means success
+	return true, nil, nil
 }
