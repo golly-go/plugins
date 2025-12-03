@@ -54,6 +54,12 @@ type Consumer interface {
 	// SubscribeOptions returns the configuration for how this consumer
 	// should subscribe to topics (group ID, starting position, etc.)
 	SubscribeOptions() SubscribeOptions
+
+	// ProcessEvent runs the Kafka reading loop with panic protection.
+	// This method polls Kafka for messages and calls the consumer's Handler for each message.
+	// It handles panics gracefully and provides basic error handling.
+	// provided by ConsumerBase
+	ProcessEvent(ctx context.Context) error
 }
 
 // ConsumerBase handles the Kafka reading loop with panic protection
@@ -85,6 +91,7 @@ func (cb *ConsumerBase) ProcessEvent(ctx context.Context) error {
 	}()
 
 	// Create consumer group or simple consumer based on options
+	trace("consumer starting poll loop for topic %s group %s", cb.topic, cb.groupID)
 	for {
 		select {
 		case <-ctx.Done():
@@ -151,7 +158,7 @@ type ConsumerManager struct {
 	config Config
 
 	// consumers maps subscription IDs to their ConsumerBase instances
-	consumers map[string]*ConsumerBase
+	consumers map[string]Consumer
 
 	// ctx is the context for all consumers (cancelled on Stop)
 	ctx context.Context
@@ -173,7 +180,7 @@ func NewConsumerManager(client *kgo.Client, config Config) *ConsumerManager {
 	return &ConsumerManager{
 		client:    client,
 		config:    config,
-		consumers: make(map[string]*ConsumerBase),
+		consumers: make(map[string]Consumer),
 	}
 }
 
@@ -190,16 +197,7 @@ func (cm *ConsumerManager) Start() error {
 
 	cm.mu.RLock()
 	for subscriptionID, consumer := range cm.consumers {
-		trace("starting consumer for subscription on topic (%s) group (%s) position (%v)", consumer.topic, consumer.groupID, consumer.opts.StartPosition)
-
-		cm.wg.Add(1)
-		go func(id string, c *ConsumerBase) {
-			defer cm.wg.Done()
-			err := c.ProcessEvent(cm.ctx)
-			if err != nil {
-				golly.Logger().Errorf("error processing event for subscription %s: %v", id, err)
-			}
-		}(subscriptionID, consumer)
+		cm.StartConsumer(subscriptionID, consumer)
 	}
 	cm.mu.RUnlock()
 
@@ -278,26 +276,35 @@ func (cm *ConsumerManager) Subscribe(topic string, consumer Consumer) error {
 	}
 	trace("successfully connected consumer for topic %s group %s", topic, opts.GroupID)
 
-	base := &ConsumerBase{
-		handler: consumer,
-		client:  client,
-		topic:   topic,
-		opts:    opts,
-		groupID: opts.GroupID,
-	}
-
 	cm.mu.Lock()
-	cm.consumers[subscriptionID] = base
+	cm.consumers[subscriptionID] = consumer
 	cm.mu.Unlock()
 
 	// If already started, start this consumer immediately
 	if cm.ctx != nil {
-		cm.wg.Add(1)
-		go func() {
-			defer cm.wg.Done()
-			base.ProcessEvent(cm.ctx)
-		}()
+		return cm.StartConsumer(subscriptionID, consumer)
 	}
+
+	return nil
+}
+
+func (cm *ConsumerManager) StartConsumer(subscriptionID string, consumer Consumer) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	cm.wg.Add(1)
+	go func(id string, c Consumer) {
+		defer func() {
+			cm.wg.Done()
+			if r := recover(); r != nil {
+				golly.Logger().Errorf("panic in consumer: %v", r)
+			}
+		}()
+
+		if err := c.ProcessEvent(cm.ctx); err != nil {
+			golly.Logger().Errorf("error processing event for subscription %s: %v", id, err)
+		}
+	}(subscriptionID, consumer)
 
 	return nil
 }

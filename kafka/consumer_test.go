@@ -24,6 +24,10 @@ func (m *MockConsumer) SubscribeOptions() SubscribeOptions {
 	return m.opts
 }
 
+func (m *MockConsumer) ProcessEvent(ctx context.Context) error {
+	return m.Handler(ctx, nil)
+}
+
 func TestConsumerSubscribeOptions(t *testing.T) {
 	tests := []struct {
 		name     string

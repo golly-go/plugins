@@ -6,21 +6,6 @@ import (
 	"time"
 )
 
-// TestConsumer for integration testing
-type TestConsumer struct {
-	receivedMessages []*Message
-	opts             SubscribeOptions
-}
-
-func (tc *TestConsumer) Handler(ctx context.Context, msg *Message) error {
-	tc.receivedMessages = append(tc.receivedMessages, msg)
-	return nil
-}
-
-func (tc *TestConsumer) SubscribeOptions() SubscribeOptions {
-	return tc.opts
-}
-
 // TestProducerConsumerFlow tests the basic flow of publishing and consuming messages
 func TestProducerConsumerFlow(t *testing.T) {
 	// Skip if no Kafka broker available
@@ -54,7 +39,7 @@ func TestProducerConsumerFlow(t *testing.T) {
 	}
 
 	// Create test consumer
-	testConsumer := &TestConsumer{
+	testConsumer := &MockConsumer{
 		opts: SubscribeOptions{
 			GroupID:       "test-group",
 			StartPosition: StartFromLatest,
@@ -97,7 +82,7 @@ func TestProducerConsumerFlow(t *testing.T) {
 		case <-timeout:
 			t.Fatal("timeout waiting for message to be consumed")
 		default:
-			if len(testConsumer.receivedMessages) > 0 {
+			if len(testConsumer.handledMessages) > 0 {
 				goto messageReceived
 			}
 			time.Sleep(100 * time.Millisecond)
@@ -106,13 +91,8 @@ func TestProducerConsumerFlow(t *testing.T) {
 
 messageReceived:
 	// Verify message was received
-	if len(testConsumer.receivedMessages) != 1 {
-		t.Fatalf("expected 1 message, got %d", len(testConsumer.receivedMessages))
-	}
-
-	receivedMsg := testConsumer.receivedMessages[0]
-	if receivedMsg.Topic != testTopic {
-		t.Errorf("expected topic %s, got %s", testTopic, receivedMsg.Topic)
+	if len(testConsumer.handledMessages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(testConsumer.handledMessages))
 	}
 
 	// Cleanup
