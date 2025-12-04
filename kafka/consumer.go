@@ -238,6 +238,9 @@ func (cm *ConsumerManager) Subscribe(topic string, consumer Consumer) error {
 	clientOpts := []kgo.Opt{
 		kgo.SeedBrokers(cm.config.Brokers...),
 		kgo.ConsumeTopics(topic),
+		kgo.FetchMaxWait(5 * time.Second),                                               // Max time broker waits before responding
+		kgo.RequestTimeoutOverhead(10 * time.Second),                                    // Timeout for all requests including metadata
+		kgo.WithLogger(kgo.BasicLogger(golly.Logger().Writer(), kgo.LogLevelInfo, nil)), // Enable franz-go logging
 	}
 
 	// Configure consumer group if specified
