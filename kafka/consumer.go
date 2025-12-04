@@ -85,7 +85,7 @@ func consumerLoop(ctx context.Context, handle *consumerHandle) error {
 			return ctx.Err()
 		default:
 			// Fetch messages from Kafka
-			fetches := handle.client.PollRecords(ctx, 0)
+			fetches := handle.client.PollFetches(ctx)
 			if fetches.Err() != nil {
 				err := fetches.Err()
 				if err == context.Canceled {
@@ -97,7 +97,7 @@ func consumerLoop(ctx context.Context, handle *consumerHandle) error {
 				continue
 			}
 
-			trace("polled %d messages from Kafka", fetches.NumRecords())
+			trace("polled %d records from Kafka", fetches.NumRecords())
 
 			// Process each message
 			fetches.EachRecord(func(record *kgo.Record) {
@@ -187,7 +187,9 @@ func (cm *ConsumerManager) Start() error {
 	cm.ctx, cm.cancel = context.WithCancel(context.Background())
 
 	cm.mu.RLock()
+	trace("[KAFKA] starting %d consumers from manager", len(cm.consumers))
 	for subscriptionID, handle := range cm.consumers {
+		trace("[KAFKA] starting consumer %s (topic=%s group=%s)", subscriptionID, handle.topic, handle.groupID)
 		cm.StartConsumer(subscriptionID, handle)
 	}
 	cm.mu.RUnlock()
@@ -287,9 +289,6 @@ func (cm *ConsumerManager) Subscribe(topic string, consumer Consumer) error {
 }
 
 func (cm *ConsumerManager) StartConsumer(subscriptionID string, handle *consumerHandle) error {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
 	cm.wg.Add(1)
 	go func(handle *consumerHandle) {
 		defer cm.wg.Done()
