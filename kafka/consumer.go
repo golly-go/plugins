@@ -79,6 +79,15 @@ func consumerLoop(ctx context.Context, handle *consumerHandle) error {
 
 	// Create consumer group or simple consumer based on options
 	trace("consumer starting poll loop for topic %s group %s", handle.topic, handle.groupID)
+
+	select {
+	case <-ctx.Done():
+		trace("context already canceled before entering poll loop for %s", handle.topic)
+		return ctx.Err()
+	default:
+		trace("context is active, entering poll loop for %s", handle.topic)
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -87,6 +96,7 @@ func consumerLoop(ctx context.Context, handle *consumerHandle) error {
 			// Fetch messages from Kafka
 			trace("polling Kafka for topic %s group %s...", handle.topic, handle.groupID)
 			fetches := handle.client.PollFetches(ctx)
+			trace("PollFetches returned for topic %s group %s", handle.topic, handle.groupID)
 			if fetches.Err() != nil {
 				err := fetches.Err()
 				if err == context.Canceled {
@@ -234,6 +244,9 @@ func (cm *ConsumerManager) Subscribe(topic string, consumer Consumer) error {
 		clientOpts = append(clientOpts,
 			kgo.ConsumerGroup(opts.GroupID),
 			kgo.DisableAutoCommit(), // We commit manually after successful processing
+			kgo.SessionTimeout(30*time.Second),
+			kgo.HeartbeatInterval(3*time.Second),
+			kgo.RebalanceTimeout(60*time.Second),
 		)
 	}
 
