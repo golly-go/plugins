@@ -26,17 +26,18 @@ func GetProducer() *Producer {
 // GetConsumerManager retrieves the Kafka consumer manager from the application
 func GetConsumerManager() *ConsumerManager {
 	if plugin := GetPlugin(); plugin != nil {
-		return plugin.ConsumerManager()
+		return plugin.consumers()
 	}
+
 	return nil
 }
 
 // Subscribe registers a consumer for a topic using the consumer manager
 func Subscribe(topic string, consumer Consumer) error {
-	if consumerManager := GetConsumerManager(); consumerManager != nil {
-		return consumerManager.Subscribe(topic, consumer)
+	if consumers := GetConsumerManager(); consumers != nil {
+		return consumers.Subscribe(topic, consumer)
 	}
-	return fmt.Errorf("kafka consumer manager not found")
+	return fmt.Errorf("kafka consumers not found")
 }
 
 // Publish is a convenience function to publish a message using the global producer

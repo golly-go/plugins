@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 
 	"github.com/golly-go/golly"
@@ -9,18 +10,16 @@ import (
 
 // Service implements golly.Service for Kafka consumers
 type Service struct {
-	plugin  *Plugin
-	app     *golly.Application
-	ctx     context.Context
-	cancel  context.CancelFunc
-	running atomic.Bool
+	consumers *ConsumerManager
+	app       *golly.Application
+	ctx       context.Context
+	cancel    context.CancelFunc
+	running   atomic.Bool
 }
 
 // NewService creates a new Kafka service
 func NewService(plugin *Plugin) *Service {
-	return &Service{
-		plugin: plugin,
-	}
+	return &Service{}
 }
 
 // Name returns the service name
@@ -35,6 +34,14 @@ func (s *Service) Description() string {
 
 // Initialize prepares the service
 func (s *Service) Initialize(app *golly.Application) error {
+	plugin := GetPlugin()
+
+	if plugin == nil {
+		return fmt.Errorf("kafka plugin not found")
+	}
+
+	s.consumers = plugin.consumerManager
+
 	s.app = app
 	return nil
 }
@@ -44,8 +51,7 @@ func (s *Service) Initialize(app *golly.Application) error {
 func (s *Service) Start() error {
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 
-	consumerManager := s.plugin.ConsumerManager()
-	if err := consumerManager.Start(); err != nil {
+	if err := s.consumers.Start(); err != nil {
 		return err
 	}
 
@@ -65,8 +71,11 @@ func (s *Service) Stop() error {
 	}
 
 	// Stop the consumer manager
-	consumerManager := s.plugin.ConsumerManager()
-	return consumerManager.Stop()
+	if s.consumers != nil {
+		return s.consumers.Stop()
+	}
+
+	return nil
 }
 
 // IsRunning indicates if the service is active

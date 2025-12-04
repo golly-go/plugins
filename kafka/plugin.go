@@ -6,10 +6,6 @@ import (
 	"os"
 
 	"github.com/golly-go/golly"
-	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/sasl/oauth"
-	"github.com/twmb/franz-go/pkg/sasl/plain"
-	"github.com/twmb/franz-go/pkg/sasl/scram"
 )
 
 const (
@@ -21,13 +17,11 @@ type Plugin struct {
 	config          Config
 	producer        *Producer
 	consumerManager *ConsumerManager
-	client          *kgo.Client
 
 	cfgFunc func(app *golly.Application) Config
 }
 
-func (p Plugin) Client() *kgo.Client { return p.client }
-func (p Plugin) Config() Config      { return p.config }
+func (p Plugin) Config() Config { return p.config }
 
 // NewPlugin creates a new Kafka plugin
 func NewPlugin(opts ...Option) *Plugin {
@@ -61,21 +55,21 @@ func (p *Plugin) Initialize(app *golly.Application) error {
 		p.config = p.cfgFunc(app)
 	}
 
-	// Create franz-go client
-	client, err := p.createClient()
+	// Create producer if enabled
+	if !p.config.EnableProducer {
+		trace("producer disabled (EnableProducer=false)")
+		return nil
+	}
+
+	client, err := createClient(p.config)
 	if err != nil {
 		return fmt.Errorf("failed to create Kafka client: %w", err)
 	}
-	p.client = client
 
-	// Create producer if enabled
-	if p.config.EnableProducer {
-		trace("creating Kafka producer")
-		p.producer = NewProducer(client, p.config)
-		p.producer.running.Store(true)
-	} else {
-		trace("producer disabled (EnableProducer=false)")
-	}
+	p.producer = NewProducer(client, p.config)
+	p.producer.running.Store(true)
+
+	p.consumerManager = NewConsumerManager(p.config)
 
 	// Consumer manager will be created by the service when needed
 
@@ -105,11 +99,7 @@ func (p *Plugin) AfterDeinitialize(app *golly.Application) error {
 	return nil
 }
 
-// ConsumerManager returns the consumer manager, creating it if needed
-func (p *Plugin) ConsumerManager() *ConsumerManager {
-	if p.consumerManager == nil {
-		p.consumerManager = NewConsumerManager(p.client, p.config)
-	}
+func (p *Plugin) consumers() *ConsumerManager {
 	return p.consumerManager
 }
 
@@ -124,60 +114,6 @@ func (p *Plugin) Services() []golly.Service {
 	}
 }
 
-// createClient creates a franz-go client
-func (p *Plugin) createClient() (*kgo.Client, error) {
-	opts := []kgo.Opt{
-		kgo.SeedBrokers(p.config.Brokers...),
-		kgo.ClientID(p.config.ClientID),
-	}
-
-	trace("creating Kafka client with brokers %v and client ID %s", p.config.Brokers, p.config.ClientID)
-
-	// Configure producer settings if enabled
-	if p.config.EnableProducer {
-		// Map our RequiredAcks to franz-go's Acks type
-		var acks kgo.Acks
-		switch p.config.RequiredAcks {
-		case AckNone:
-			acks = kgo.NoAck()
-		case AckLeader:
-			acks = kgo.LeaderAck()
-		case AckAll:
-			acks = kgo.AllISRAcks()
-		default:
-			acks = kgo.AllISRAcks() // Default to all replicas
-		}
-		opts = append(opts, kgo.RequiredAcks(acks))
-
-		// Set producer timeout if configured
-		if p.config.WriteTimeout > 0 {
-			opts = append(opts, kgo.ProduceRequestTimeout(p.config.WriteTimeout))
-		}
-
-		// Allow auto topic creation if configured
-		// Note: This still requires broker to have auto.create.topics.enable=true
-		if p.config.AllowAutoTopic {
-			opts = append(opts, kgo.AllowAutoTopicCreation())
-		}
-	}
-
-	// Configure SASL authentication
-	if p.config.SASL != "" {
-		sasl, err := saslMechanism(p.config)
-		if err != nil {
-			return nil, fmt.Errorf("failed to configure SASL authentication: %w", err)
-		}
-		opts = append(opts, sasl)
-	}
-
-	// Add TLS if enabled
-	if p.config.TLSEnabled {
-		opts = append(opts, kgo.DialTLS())
-	}
-
-	return kgo.NewClient(opts...)
-}
-
 var (
 	ErrTokenProviderRequired               = errors.New("token provider is required for OAUTHBEARER authentication")
 	ErrUsernamePasswordRequired            = errors.New("username and password are required for PLAIN authentication")
@@ -185,57 +121,5 @@ var (
 	ErrUsernamePasswordRequiredSCRAMSHA512 = errors.New("username and password are required for SCRAM-SHA-512 authentication")
 	ErrInvalidSASLMechanism                = errors.New("invalid sasl mechanism")
 )
-
-func saslMechanism(config Config) (kgo.Opt, error) {
-	switch config.SASL {
-	case SASLOAUTHCustom:
-		if config.CustomSASLMechanism == nil {
-			return nil, ErrTokenProviderRequired
-		}
-		return kgo.SASL(oauth.Oauth(config.CustomSASLMechanism)), nil
-
-	case SASLOAUTHPlain:
-		// PLAIN mechanism with OAuth token as password
-		// Used by GCP Managed Kafka and some other managed services
-		if config.TokenProvider == nil {
-			return nil, ErrTokenProviderRequired
-		}
-		return kgo.SASL(OAuthPlainAuth{
-			User:          config.Username, // Can be empty
-			TokenProvider: config.TokenProvider,
-		}), nil
-
-	case SASLPlain:
-		if config.Username == "" || config.Password == "" {
-			return nil, ErrUsernamePasswordRequired
-		}
-		return kgo.SASL(plain.Auth{
-			User: config.Username,
-			Pass: config.Password,
-		}.AsMechanism()), nil
-
-	case SASLScramSHA256:
-		if config.Username == "" || config.Password == "" {
-			return nil, ErrUsernamePasswordRequiredSCRAMSHA256
-		}
-
-		return kgo.SASL(scram.Auth{
-			User: config.Username,
-			Pass: config.Password,
-		}.AsSha256Mechanism()), nil
-
-	case SASLScramSHA512:
-		if config.Username == "" || config.Password == "" {
-			return nil, ErrUsernamePasswordRequiredSCRAMSHA512
-		}
-
-		return kgo.SASL(scram.Auth{
-			User: config.Username,
-			Pass: config.Password,
-		}.AsSha512Mechanism()), nil
-	}
-
-	return nil, ErrInvalidSASLMechanism
-}
 
 var _ golly.Plugin = (*Plugin)(nil)

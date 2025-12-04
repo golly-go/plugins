@@ -2,186 +2,174 @@ package kafka
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/golly-go/golly"
+	"github.com/sirupsen/logrus"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 // SubscribeOptions configures how a consumer subscribes to topics
 type SubscribeOptions struct {
-	// GroupID is the consumer group ID. If empty, the consumer will not be part of a group
-	// and will start from the latest offset. For event sourcing, use a group ID to track offsets.
-	GroupID string
-
-	// StartPosition determines where to start consuming from when there's no committed offset
+	GroupID       string
 	StartPosition StartPosition
 }
 
-// Message represents a Kafka message with essential data
 type Message struct {
-	// Topic is the Kafka topic this message was received from
-	Topic string
-
-	// Partition is the partition number within the topic
+	Topic     string
 	Partition int32
-
-	// Offset is the message offset within the partition
-	Offset int64
-
-	// Key is the message key (can be nil)
-	Key []byte
-
-	// Value is the message payload
-	Value []byte
-
-	// Headers contains additional metadata as key-value pairs
-	Headers map[string][]byte
-
-	// Timestamp is when the message was produced to Kafka
+	Offset    int64
+	Key       []byte
+	Value     []byte
+	Headers   map[string][]byte
 	Timestamp time.Time
 }
 
-// Consumer defines the interface for Kafka consumers
 type Consumer interface {
-	// Handler processes a single Kafka message. If this returns an error,
-	// the message will be retried according to the retry policy.
 	Handler(ctx context.Context, msg *Message) error
-
-	// SubscribeOptions returns the configuration for how this consumer
-	// should subscribe to topics (group ID, starting position, etc.)
 	SubscribeOptions() SubscribeOptions
 }
 
 type consumerHandle struct {
-	client   *kgo.Client
-	consumer Consumer
-	opts     SubscribeOptions
-	topic    string
-	groupID  string
+	client   *kgo.Client      // Created lazily when consumer starts
+	consumer Consumer         // User's consumer implementation
+	opts     SubscribeOptions // Configuration
+	topic    string           // Topic to consume
+	groupID  string           // Consumer group ID
 }
 
-// ConsumerBase handles the Kafka reading loop with panic protection
-type ConsumerBase struct{}
+// ====== core poll loop ======
 
-// ProcessEvent runs the Kafka reading loop with panic protection.
-// This method polls Kafka for messages and calls the consumer's Handler for each message.
-// It handles panics gracefully and provides basic error handling.
-func consumerLoop(ctx context.Context, handle *consumerHandle) error {
+const (
+	pollTimeout       = 10 * time.Second // how long we allow PollFetches to block
+	rebalanceLogEvery = 30 * time.Second // throttle some logs
+)
+
+// run is the main loop for a single consumer
+func (h *consumerHandle) run(ctx context.Context) error {
 	defer func() {
 		if r := recover(); r != nil {
-			golly.Logger().Errorf("panic in consumer: %v", r)
+			golly.Logger().Errorf("[kafka] panic in consumer (topic=%s group=%s): %v", h.topic, h.groupID, r)
 		}
+		// ensure client is closed when this consumer stops
+		h.client.Close()
 	}()
 
-	// Create consumer group or simple consumer based on options
-	trace("consumer starting poll loop for topic %s group %s", handle.topic, handle.groupID)
+	log := golly.Logger().WithFields(logrus.Fields{
+		"topic": h.topic,
+		"group": h.groupID,
+	})
 
-	select {
-	case <-ctx.Done():
-		trace("context already canceled before entering poll loop for %s", handle.topic)
-		return ctx.Err()
-	default:
-		trace("context is active, entering poll loop for %s", handle.topic)
-	}
+	log.Info("consumer loop starting")
+
+	lastEmptyLog := time.Time{}
+
+	retries := 0
 
 	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			// Fetch messages from Kafka
-			trace("polling Kafka for topic %s group %s...", handle.topic, handle.groupID)
-			fetches := handle.client.PollFetches(ctx)
-			trace("PollFetches returned for topic %s group %s", handle.topic, handle.groupID)
-			if fetches.Err() != nil {
-				err := fetches.Err()
-				if err == context.Canceled {
-					return err
-				}
+		if err := ctx.Err(); err != nil {
+			log.Infof("consumer loop exiting: %v", err)
+			return err
+		}
 
-				golly.Logger().Errorf("[kafka] error polling topic %s group %s: %v", handle.topic, handle.groupID, err)
-				// TODO: Add retry logic with backoff
+		// Bound how long PollFetches can block so “hangs” show up as timeouts in logs
+		pollCtx, cancel := context.WithTimeout(ctx, pollTimeout)
+		log.Tracef("PollFetches begin (timeout=%s)", pollTimeout)
+
+		fetches := h.client.PollFetches(pollCtx)
+		cancel()
+
+		log.Tracef("PollFetches returned (numRecords=%d)", fetches.NumRecords())
+
+		// Handle fetch-level error (e.g. timeouts, auth, group errors)
+		if err := fetches.Err(); err != nil {
+			// If this is just our poll timeout, keep going unless the *parent* ctx is dead
+			if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
 				continue
 			}
 
-			trace("polled %d records from Kafka", fetches.NumRecords())
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				// Respect parent context cancellation / timeout
+				return err
+			}
 
-			// Process each message
-			fetches.EachRecord(func(record *kgo.Record) {
-				trace("processing message from Kafka: %s", record.Topic)
+			log.Errorf("PollFetches error: %v", err)
+			// You may want backoff here
+			retries++
 
-				// Convert kgo.Record to our Message
-				msg := &Message{
-					Topic:     record.Topic,
-					Partition: record.Partition,
-					Offset:    record.Offset,
-					Key:       record.Key,
-					Value:     record.Value,
-					Headers:   make(map[string][]byte),
-					Timestamp: record.Timestamp,
-				}
-
-				// Copy headers
-				for _, h := range record.Headers {
-					msg.Headers[h.Key] = h.Value
-				}
-
-				// Call the handler
-				if err := handle.consumer.Handler(ctx, msg); err != nil {
-					// Log the error but continue processing other messages
-					golly.Logger().Errorf("[kafka] handler error for topic %s partition %d offset %d: %v",
-						record.Topic, record.Partition, record.Offset, err)
-					// TODO: Implement retry logic and DLQ
-					// Skip offset commit for this message so it will be retried on restart
-					return // Exit EachRecord callback, not the entire loop
-				}
-
-				// Commit offset after successful processing (at-least-once delivery)
-				if handle.groupID != "" {
-					if err := handle.client.CommitRecords(ctx, record); err != nil {
-						golly.Logger().Warnf("[kafka] failed to commit offset for topic %s partition %d offset %d: %v",
-							record.Topic, record.Partition, record.Offset, err)
-					}
-				}
-			})
+			time.Sleep(time.Second * time.Duration(retries))
+			continue
 		}
+
+		retries = 0
+
+		if fetches.NumRecords() == 0 {
+			// Throttle logs when we’re simply not receiving data
+			if time.Since(lastEmptyLog) > rebalanceLogEvery {
+				log.Tracef("no records fetched – likely idle or still rebalancing")
+				lastEmptyLog = time.Now()
+			}
+			continue
+		}
+
+		// Process each record
+		fetches.EachRecord(func(record *kgo.Record) {
+			log.Tracef("processing record (partition=%d offset=%d)",
+				record.Partition, record.Offset)
+
+			msg := &Message{
+				Topic:     record.Topic,
+				Partition: record.Partition,
+				Offset:    record.Offset,
+				Key:       record.Key,
+				Value:     record.Value,
+				Headers:   make(map[string][]byte, len(record.Headers)),
+				Timestamp: record.Timestamp,
+			}
+
+			for _, h := range record.Headers {
+				msg.Headers[h.Key] = h.Value
+			}
+
+			if err := h.consumer.Handler(ctx, msg); err != nil {
+				log.Errorf("handler error (partition=%d offset=%d): %v",
+					record.Partition, record.Offset, err)
+				// At-least-once: do not commit on error; record will be redelivered after restart
+				return
+			}
+
+			// Commit only if we’re in a group
+			if h.groupID != "" {
+				if err := h.client.CommitRecords(ctx, record); err != nil {
+					log.Warnf("failed to commit offset (partition=%d offset=%d): %v",
+						record.Topic, record.Partition, record.Offset, err)
+				}
+			}
+		})
 	}
 }
 
-// ConsumerManager manages multiple consumers and their lifecycle
-type ConsumerManager struct {
-	// client is the shared franz-go client for the manager
-	client *kgo.Client
+// ====== manager ======
 
-	// config contains broker addresses and other settings needed for creating consumer clients
+type ConsumerManager struct {
 	config Config
 
-	// consumers maps subscription IDs to their ConsumerBase instances
 	consumers map[string]*consumerHandle
 
-	// ctx is the context for all consumers (cancelled on Stop)
-	ctx context.Context
-
-	// cancel is the cancel function for the context
+	ctx    context.Context
 	cancel context.CancelFunc
-
-	// wg tracks all running consumer goroutines
-	wg sync.WaitGroup
-
-	// mu protects the consumers map from concurrent access
-	mu sync.RWMutex
+	wg     sync.WaitGroup
+	mu     sync.RWMutex
 
 	running atomic.Bool
 }
 
-// NewConsumerManager creates a new consumer manager with the given franz-go client and config
-func NewConsumerManager(client *kgo.Client, config Config) *ConsumerManager {
+func NewConsumerManager(config Config) *ConsumerManager {
 	return &ConsumerManager{
-		client:    client,
 		config:    config,
 		consumers: make(map[string]*consumerHandle),
 	}
@@ -189,8 +177,6 @@ func NewConsumerManager(client *kgo.Client, config Config) *ConsumerManager {
 
 func (cm *ConsumerManager) IsRunning() bool { return cm.running.Load() }
 
-// Start initializes the context and starts all registered consumers in goroutines.
-// This method is safe to call multiple times.
 func (cm *ConsumerManager) Start() error {
 	if !cm.running.CompareAndSwap(false, true) {
 		return nil
@@ -199,54 +185,103 @@ func (cm *ConsumerManager) Start() error {
 	cm.ctx, cm.cancel = context.WithCancel(context.Background())
 
 	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
 	trace("[KAFKA] starting %d consumers from manager", len(cm.consumers))
 	for subscriptionID, handle := range cm.consumers {
 		trace("[KAFKA] starting consumer %s (topic=%s group=%s)", subscriptionID, handle.topic, handle.groupID)
-		cm.StartConsumer(subscriptionID, handle)
+		cm.startConsumer(subscriptionID, handle)
 	}
-	cm.mu.RUnlock()
 
 	return nil
 }
 
-// Stop gracefully stops all consumers by cancelling the context and waiting for
-// all consumer goroutines to finish. This method is safe to call multiple times.
 func (cm *ConsumerManager) Stop() error {
 	if !cm.running.CompareAndSwap(true, false) {
 		return nil
 	}
 
-	// Stop accepting new events
-	cm.cancel()
+	if cm.cancel != nil {
+		cm.cancel()
+	}
 
-	// Wait for all consumers to finish processing
+	// Wait for all consumer goroutines to exit; each will close its own client in run()
 	cm.wg.Wait()
 
-	// Close the client
-	cm.client.Close()
+	// If you still use cm.client somewhere, you can close it here;
+	// otherwise you can drop cm.client entirely.
+
+	for _, consumer := range cm.consumers {
+		consumer.client.Close()
+	}
+
 	return nil
 }
 
-// Subscribe adds a new consumer subscription to a topic. The consumer's SubscribeOptions
-// determine how the subscription is configured (group ID, starting position, etc.).
-// This method should be called before Start().
 func (cm *ConsumerManager) Subscribe(topic string, consumer Consumer) error {
 	opts := consumer.SubscribeOptions()
 	subscriptionID := generateSubscriptionID(topic, opts)
 
-	// Create a dedicated client for this consumer
+	// Just register the consumer - don't create client yet
+	// Client will be created when the consumer service actually starts
+	handle := &consumerHandle{
+		consumer: consumer,
+		opts:     opts,
+		topic:    topic,
+		groupID:  opts.GroupID,
+		client:   nil, // Created lazily in startConsumer()
+	}
+
+	cm.mu.Lock()
+	cm.consumers[subscriptionID] = handle
+	cm.mu.Unlock()
+
+	trace("registered consumer for topic %s group %s (client will be created when service starts)", topic, opts.GroupID)
+
+	// If manager is already running, start it immediately
+	if cm.ctx != nil && cm.running.Load() {
+		return cm.startConsumer(subscriptionID, handle)
+	}
+
+	return nil
+}
+
+func (cm *ConsumerManager) startConsumer(subscriptionID string, handle *consumerHandle) error {
+	// Create the Kafka client now (lazy initialization)
+	if handle.client == nil {
+		client, err := createConsumerClient(handle, cm.config)
+		if err != nil {
+			return fmt.Errorf("failed to create consumer client for %s: %w", subscriptionID, err)
+		}
+		handle.client = client
+		trace("created Kafka client for consumer %s (topic=%s group=%s)", subscriptionID, handle.topic, handle.groupID)
+	}
+
+	cm.wg.Add(1)
+	go func(h *consumerHandle) {
+		defer cm.wg.Done()
+		if err := h.run(cm.ctx); err != nil && !errors.Is(err, context.Canceled) {
+			golly.Logger().Errorf("[kafka] consumer error (topic=%s group=%s): %v", h.topic, h.groupID, err)
+		}
+	}(handle)
+	return nil
+}
+
+// createConsumerClient creates a Kafka client configured for the given consumer handle
+func createConsumerClient(handle *consumerHandle, config Config) (*kgo.Client, error) {
+	// Build consumer-specific options
+
 	clientOpts := []kgo.Opt{
-		kgo.SeedBrokers(cm.config.Brokers...),
-		kgo.ConsumeTopics(topic),
-		kgo.FetchMaxWait(5 * time.Second),                                               // Max time broker waits before responding
-		kgo.RequestTimeoutOverhead(10 * time.Second),                                    // Timeout for all requests including metadata
-		kgo.WithLogger(kgo.BasicLogger(golly.Logger().Writer(), kgo.LogLevelInfo, nil)), // Enable franz-go logging
+		kgo.ConsumeTopics(handle.topic),
+		kgo.FetchMaxWait(5 * time.Second),
+		kgo.RequestTimeoutOverhead(10 * time.Second),
+		kgo.WithLogger(kgo.BasicLogger(golly.Logger().Writer(), kgo.LogLevelInfo, nil)),
 	}
 
 	// Configure consumer group if specified
-	if opts.GroupID != "" {
+	if handle.groupID != "" {
 		clientOpts = append(clientOpts,
-			kgo.ConsumerGroup(opts.GroupID),
+			kgo.ConsumerGroup(handle.groupID),
 			kgo.DisableAutoCommit(), // We commit manually after successful processing
 			kgo.SessionTimeout(30*time.Second),
 			kgo.HeartbeatInterval(3*time.Second),
@@ -254,72 +289,30 @@ func (cm *ConsumerManager) Subscribe(topic string, consumer Consumer) error {
 		)
 	}
 
-	// Add TLS if enabled
-	if cm.config.TLSEnabled {
-		clientOpts = append(clientOpts, kgo.DialTLS())
-	}
-
-	// Configure SASL authentication
-	if cm.config.SASL != "" {
-		sasl, err := saslMechanism(cm.config)
-		if err != nil {
-			return fmt.Errorf("failed to configure SASL authentication: %w", err)
-		}
-		clientOpts = append(clientOpts, sasl)
-	}
-
-	switch opts.StartPosition {
+	// Configure starting offset position
+	switch handle.opts.StartPosition {
 	case StartFromLatest:
 		clientOpts = append(clientOpts, kgo.ConsumeResetOffset(kgo.NewOffset().AtEnd()))
 	case StartFromEarliest:
 		clientOpts = append(clientOpts, kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()))
 	}
 
-	client, err := kgo.NewClient(clientOpts...)
+	// Use shared createClient function which handles brokers, auth, TLS
+	client, err := createClient(config, clientOpts...)
 	if err != nil {
-		return fmt.Errorf("failed to create consumer client: %w", err)
+		return nil, err
 	}
 
-	// Verify connection by pinging Kafka
+	// Quick connectivity sanity check
 	if err := client.Ping(context.Background()); err != nil {
 		client.Close()
-		return fmt.Errorf("failed to connect to Kafka for topic %s group %s: %w", topic, opts.GroupID, err)
-	}
-	trace("successfully connected consumer for topic %s group %s", topic, opts.GroupID)
-
-	handle := &consumerHandle{
-		consumer: consumer,
-		opts:     opts,
-		topic:    topic,
-		groupID:  opts.GroupID,
-		client:   client,
-	}
-	cm.mu.Lock()
-	cm.consumers[subscriptionID] = handle
-	cm.mu.Unlock()
-
-	// If already started, start this consumer immediately
-	if cm.ctx != nil {
-		return cm.StartConsumer(subscriptionID, handle)
+		return nil, fmt.Errorf("failed to ping Kafka for topic %s group %s: %w", handle.topic, handle.groupID, err)
 	}
 
-	return nil
+	trace("successfully connected consumer for topic %s group %s", handle.topic, handle.groupID)
+	return client, nil
 }
 
-func (cm *ConsumerManager) StartConsumer(subscriptionID string, handle *consumerHandle) error {
-	cm.wg.Add(1)
-	go func(handle *consumerHandle) {
-		defer cm.wg.Done()
-		if err := consumerLoop(cm.ctx, handle); err != nil {
-			golly.Logger().Errorf("error processing event for subscription %s group %s: %v", handle.topic, handle.groupID, err)
-		}
-	}(handle)
-
-	return nil
-}
-
-// generateSubscriptionID creates a unique ID for a subscription based on topic and group ID
 func generateSubscriptionID(topic string, opts SubscribeOptions) string {
-	// TODO: Implement proper ID generation
 	return topic + "-" + opts.GroupID
 }

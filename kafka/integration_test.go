@@ -29,12 +29,12 @@ func TestProducerConsumerFlow(t *testing.T) {
 
 	// Get producer and consumer manager
 	producer := plugin.Producer()
-	consumerManager := plugin.ConsumerManager()
+	consumers := plugin.consumers()
 
 	if producer == nil {
 		t.Fatal("producer is nil")
 	}
-	if consumerManager == nil {
+	if consumers == nil {
 		t.Fatal("consumer manager is nil")
 	}
 
@@ -48,13 +48,13 @@ func TestProducerConsumerFlow(t *testing.T) {
 
 	// Subscribe to test topic
 	testTopic := "test-topic"
-	err = consumerManager.Subscribe(testTopic, testConsumer)
+	err = consumers.Subscribe(testTopic, testConsumer)
 	if err != nil {
 		t.Fatalf("failed to subscribe: %v", err)
 	}
 
 	// Start consumer manager
-	err = consumerManager.Start()
+	err = consumers.Start()
 	if err != nil {
 		t.Fatalf("failed to start consumer manager: %v", err)
 	}
@@ -96,7 +96,7 @@ messageReceived:
 	}
 
 	// Cleanup
-	consumerManager.Stop()
+	consumers.Stop()
 	producer.Stop()
 }
 

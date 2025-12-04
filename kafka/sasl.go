@@ -4,7 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sasl"
+	"github.com/twmb/franz-go/pkg/sasl/oauth"
+	"github.com/twmb/franz-go/pkg/sasl/plain"
+	"github.com/twmb/franz-go/pkg/sasl/scram"
 )
 
 // OAuthPlainAuth implements SASL PLAIN where the password is an OAuth token.
@@ -51,4 +55,56 @@ func (s *plainSession) Challenge(resp []byte) (bool, []byte, error) {
 	}
 	// Empty response means success
 	return true, nil, nil
+}
+
+func saslMechanism(config Config) (kgo.Opt, error) {
+	switch config.SASL {
+	case SASLOAUTHCustom:
+		if config.CustomSASLMechanism == nil {
+			return nil, ErrTokenProviderRequired
+		}
+		return kgo.SASL(oauth.Oauth(config.CustomSASLMechanism)), nil
+
+	case SASLOAUTHPlain:
+		// PLAIN mechanism with OAuth token as password
+		// Used by GCP Managed Kafka and some other managed services
+		if config.TokenProvider == nil {
+			return nil, ErrTokenProviderRequired
+		}
+		return kgo.SASL(OAuthPlainAuth{
+			User:          config.Username, // Can be empty
+			TokenProvider: config.TokenProvider,
+		}), nil
+
+	case SASLPlain:
+		if config.Username == "" || config.Password == "" {
+			return nil, ErrUsernamePasswordRequired
+		}
+		return kgo.SASL(plain.Auth{
+			User: config.Username,
+			Pass: config.Password,
+		}.AsMechanism()), nil
+
+	case SASLScramSHA256:
+		if config.Username == "" || config.Password == "" {
+			return nil, ErrUsernamePasswordRequiredSCRAMSHA256
+		}
+
+		return kgo.SASL(scram.Auth{
+			User: config.Username,
+			Pass: config.Password,
+		}.AsSha256Mechanism()), nil
+
+	case SASLScramSHA512:
+		if config.Username == "" || config.Password == "" {
+			return nil, ErrUsernamePasswordRequiredSCRAMSHA512
+		}
+
+		return kgo.SASL(scram.Auth{
+			User: config.Username,
+			Pass: config.Password,
+		}.AsSha512Mechanism()), nil
+	}
+
+	return nil, ErrInvalidSASLMechanism
 }
