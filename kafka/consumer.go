@@ -54,12 +54,6 @@ type Consumer interface {
 	// SubscribeOptions returns the configuration for how this consumer
 	// should subscribe to topics (group ID, starting position, etc.)
 	SubscribeOptions() SubscribeOptions
-
-	// ProcessEvent runs the Kafka reading loop with panic protection.
-	// This method polls Kafka for messages and calls the consumer's Handler for each message.
-	// It handles panics gracefully and provides basic error handling.
-	// provided by ConsumerBase
-	ProcessEvent(ctx context.Context) error
 }
 
 type consumerHandle struct {
