@@ -85,6 +85,7 @@ func consumerLoop(ctx context.Context, handle *consumerHandle) error {
 			return ctx.Err()
 		default:
 			// Fetch messages from Kafka
+			trace("polling Kafka for topic %s group %s...", handle.topic, handle.groupID)
 			fetches := handle.client.PollFetches(ctx)
 			if fetches.Err() != nil {
 				err := fetches.Err()
