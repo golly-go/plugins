@@ -132,11 +132,12 @@ func consumerLoop(ctx context.Context, handle *consumerHandle) error {
 
 				// Call the handler
 				if err := handle.consumer.Handler(ctx, msg); err != nil {
-					// Log the error but continue processing
+					// Log the error but continue processing other messages
 					golly.Logger().Errorf("[kafka] handler error for topic %s partition %d offset %d: %v",
 						record.Topic, record.Partition, record.Offset, err)
 					// TODO: Implement retry logic and DLQ
-					return
+					// Skip offset commit for this message so it will be retried on restart
+					return // Exit EachRecord callback, not the entire loop
 				}
 
 				// Commit offset after successful processing (at-least-once delivery)
