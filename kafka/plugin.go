@@ -3,6 +3,7 @@ package kafka
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/golly-go/golly"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -50,6 +51,11 @@ func (p *Plugin) Name() string { return PluginName }
 // Initialize sets up the Kafka plugin
 func (p *Plugin) Initialize(app *golly.Application) error {
 	trace("initializing Kafka plugin")
+
+	// do not boot in migration mode
+	if golly.Contains(os.Args, "migration") {
+		return nil
+	}
 
 	if p.cfgFunc != nil {
 		p.config = p.cfgFunc(app)
