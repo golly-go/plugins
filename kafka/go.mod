@@ -7,7 +7,6 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/twmb/franz-go v1.20.1
-	github.com/twmb/franz-go/pkg/kadm v1.17.1
 )
 
 require (
