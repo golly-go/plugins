@@ -60,18 +60,18 @@ func (h *consumerHandle) run(ctx context.Context) error {
 	}()
 
 	log := golly.Logger().WithFields(logrus.Fields{
-		"topic": h.topic,
-		"group": h.groupID,
+		"topic":   h.topic,
+		"group":   h.groupID,
+		"service": "kafka-consumer",
 	})
 
-	log.Info("consumer loop starting")
-
-	lastEmptyLog := time.Time{}
+	trace := func(msg string, args ...any) {
+		log.Trace("[KAFKA] " + fmt.Sprintf(msg, args...))
+	}
 
 	retries := 0
 	for {
 		if err := ctx.Err(); err != nil {
-			log.Infof("consumer loop exiting: %v", err)
 			return err
 		}
 
@@ -80,8 +80,6 @@ func (h *consumerHandle) run(ctx context.Context) error {
 
 		fetches := h.client.PollFetches(pollCtx)
 		cancel()
-
-		log.Tracef("PollFetches returned (numRecords=%d)", fetches.NumRecords())
 
 		// Handle fetch-level error (e.g. timeouts, auth, group errors)
 		if err := fetches.Err(); err != nil {
@@ -95,7 +93,7 @@ func (h *consumerHandle) run(ctx context.Context) error {
 				return err
 			}
 
-			log.Errorf("PollFetches error: %v", err)
+			log.Errorf("[KAFKA] PollFetches error: %v", err)
 			// You may want backoff here
 			retries++
 
@@ -111,8 +109,7 @@ func (h *consumerHandle) run(ctx context.Context) error {
 
 		// Process each record
 		fetches.EachRecord(func(record *kgo.Record) {
-			log.Tracef("processing record (partition=%d offset=%d)",
-				record.Partition, record.Offset)
+			trace("processing record (partition=%d offset=%d)", record.Partition, record.Offset)
 
 			msg := &Message{
 				Topic:     record.Topic,
@@ -129,7 +126,7 @@ func (h *consumerHandle) run(ctx context.Context) error {
 			}
 
 			if err := h.consumer.Handler(ctx, msg); err != nil {
-				log.Errorf("handler error (partition=%d offset=%d): %v",
+				log.Errorf("[KAFKA] handler error (partition=%d offset=%d): %v",
 					record.Partition, record.Offset, err)
 				// At-least-once: do not commit on error; record will be redelivered after restart
 				return
@@ -138,14 +135,14 @@ func (h *consumerHandle) run(ctx context.Context) error {
 			// Commit only if we’re in a group
 			if h.groupID != "" {
 				if err := h.client.CommitRecords(ctx, record); err != nil {
-					log.Warnf("failed to commit offset (partition=%d offset=%d): %v",
+					log.Warnf("[KAFKA] failed to commit offset (partition=%d offset=%d): %v",
 						record.Topic, record.Partition, record.Offset, err)
 				}
 			}
 		})
 
 		fetches.EachError(func(topic string, partition int32, err error) {
-			log.Errorf("partition error (topic=%s partition=%d): %v", topic, partition, err)
+			log.Errorf("[KAFKA] partition error (topic=%s partition=%d): %v", topic, partition, err)
 		})
 	}
 }
