@@ -10,6 +10,7 @@ import (
 
 	"github.com/golly-go/golly"
 	"github.com/sirupsen/logrus"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -69,6 +70,8 @@ func (h *consumerHandle) run(ctx context.Context) error {
 	lastEmptyLog := time.Time{}
 
 	retries := 0
+
+	DebugKafkaLag(ctx, h.client, h.topic, h.groupID)
 
 	for {
 		if err := ctx.Err(); err != nil {
@@ -149,6 +152,10 @@ func (h *consumerHandle) run(ctx context.Context) error {
 						record.Topic, record.Partition, record.Offset, err)
 				}
 			}
+		})
+
+		fetches.EachError(func(topic string, partition int32, err error) {
+			log.Errorf("partition error (topic=%s partition=%d): %v", topic, partition, err)
 		})
 	}
 }
@@ -265,6 +272,41 @@ func (cm *ConsumerManager) startConsumer(subscriptionID string, handle *consumer
 		}
 	}(handle)
 	return nil
+}
+
+// DebugKafkaLag logs lag for a single topic/group in the current env.
+func DebugKafkaLag(ctx context.Context, client *kgo.Client, topic, group string) {
+	log := golly.Logger().WithField("component", "kafka-lag-debug")
+
+	// Reuse your createClient so we hit the same brokers/TLS/SASL as the consumers.
+	adm := kadm.NewClient(client)
+	defer adm.Close()
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	// Group offsets for this topic
+	offs, err := adm.FetchOffsetsForTopics(ctx, group, topic)
+	if err != nil {
+		log.Errorf("FetchOffsetsForTopics error: %v", err)
+		return
+	}
+
+	// End offsets (latest) for this topic
+	ends, err := adm.ListEndOffsets(ctx, topic)
+	if err != nil {
+		log.Errorf("ListEndOffsets error: %v", err)
+		return
+	}
+
+	// Log partition-by-partition info
+	for tp, po := range offs.Offsets() {
+		for partition, offset := range po {
+			end := ends.Offsets()[tp][partition]
+			log.Infof("topic=%s partition=%d committed=%d end=%d lag=%d",
+				tp, partition, offset.At, end.At, end.At-offset.At)
+		}
+	}
 }
 
 // createConsumerClient creates a Kafka client configured for the given consumer handle
