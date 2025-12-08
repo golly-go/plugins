@@ -1,8 +1,6 @@
 package kafka
 
 import (
-	"fmt"
-
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -44,12 +42,8 @@ func createClient(config Config, kgoOpts ...kgo.Opt) (*kgo.Client, error) {
 	}
 
 	// Configure SASL authentication
-	if config.SASL != "" {
-		sasl, err := saslMechanism(config)
-		if err != nil {
-			return nil, fmt.Errorf("failed to configure SASL authentication: %w", err)
-		}
-		opts = append(opts, sasl)
+	if config.SASLMechanism != nil {
+		opts = append(opts, kgo.SASL(config.SASLMechanism))
 	}
 
 	// Add TLS if enabled

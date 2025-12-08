@@ -78,12 +78,3 @@ func TestWithCredentials(t *testing.T) {
 		t.Errorf("expected Password 'pass', got '%s'", cfg.Password)
 	}
 }
-
-func TestWithSASL(t *testing.T) {
-	cfg := Config{}
-	WithSASL(SASLPlain)(&cfg)
-
-	if cfg.SASL != SASLPlain {
-		t.Errorf("expected SASL PLAIN, got %v", cfg.SASL)
-	}
-}

@@ -29,17 +29,6 @@ const (
 	CompressionZstd   Compression = "zstd"
 )
 
-// SASLMechanism specifies the SASL authentication mechanism
-type SASLMechanism string
-
-const (
-	SASLPlain       SASLMechanism = "PLAIN"
-	SASLScramSHA256 SASLMechanism = "SCRAM-SHA-256"
-	SASLScramSHA512 SASLMechanism = "SCRAM-SHA-512"
-	SASLOAUTHCustom SASLMechanism = "CUSTOM"
-	SASLOAUTHPlain  SASLMechanism = "OAUTHPLAIN" // PLAIN with OAuth token as password
-)
-
 // StartPosition specifies where to start consuming from
 type StartPosition int
 
@@ -63,7 +52,6 @@ type Config struct {
 	// Authentication
 	Username string
 	Password string
-	SASL     SASLMechanism
 
 	// TLS
 	TLSEnabled bool
@@ -222,13 +210,6 @@ func WithRequiredAcks(acks RequiredAcks) Option {
 func WithCompression(compression Compression) Option {
 	return func(c *Config) {
 		c.Compression = compression
-	}
-}
-
-// WithSASL sets the SASL mechanism
-func WithSASL(mechanism SASLMechanism) Option {
-	return func(c *Config) {
-		c.SASL = mechanism
 	}
 }
 
