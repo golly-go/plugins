@@ -213,8 +213,18 @@ func WithCompression(compression Compression) Option {
 	}
 }
 
+// WithSASLMechanism sets a custom SASL authentication mechanism.
 func WithSASLMechanism(mechanism sasl.Mechanism) Option {
 	return func(c *Config) {
 		c.SASLMechanism = mechanism
+	}
+}
+
+// WithGCPOAuth configures OAUTHBEARER authentication for GCP Managed Kafka.
+// This uses Google's default credentials (workload identity, service account, etc.).
+func WithGCPOAuth() Option {
+	return func(c *Config) {
+		c.SASLMechanism = NewGCPOAuthMechanism()
+		c.TLSEnabled = true // GCP Managed Kafka requires TLS
 	}
 }

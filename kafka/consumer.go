@@ -25,6 +25,12 @@ type SubscribeOptions struct {
 	StartPosition StartPosition // Where to start consuming from (only for new groups)
 }
 
+// Header represents a Kafka message header.
+type Header struct {
+	Key   string
+	Value []byte
+}
+
 // Message represents a Kafka message consumed from a topic.
 type Message struct {
 	Topic     string
@@ -32,8 +38,18 @@ type Message struct {
 	Offset    int64
 	Key       []byte
 	Value     []byte
-	Headers   map[string][]byte
+	Headers   []Header
 	Timestamp time.Time
+}
+
+// GetHeader returns the value of the first header with the given key.
+func (m Message) GetHeader(key string) []byte {
+	for _, h := range m.Headers {
+		if h.Key == key {
+			return h.Value
+		}
+	}
+	return nil
 }
 
 // Consumer defines the interface for consuming Kafka messages.
@@ -41,7 +57,7 @@ type Message struct {
 type Consumer interface {
 	// Handler is called for each message. Return an error to prevent offset commit
 	// and trigger redelivery after restart (at-least-once semantics).
-	Handler(ctx context.Context, msg *Message) error
+	Handler(ctx context.Context, msg Message) error
 
 	// SubscribeOptions returns the subscription configuration.
 	SubscribeOptions() SubscribeOptions
@@ -82,7 +98,14 @@ func (h *consumerHandle) run(ctx context.Context) error {
 			retries++
 			backoff := h.calculateBackoff(retries)
 			log.Warnf("poll error, retrying in %v: %v", backoff, err)
-			time.Sleep(backoff)
+
+			timer := time.NewTimer(backoff)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
 			continue
 		}
 
@@ -121,13 +144,28 @@ func (h *consumerHandle) processFetches(ctx context.Context, fetches kgo.Fetches
 		return nil
 	}
 
-	// Process each record
-	fetches.EachRecord(func(record *kgo.Record) {
-		if err := h.processRecord(ctx, record, log); err != nil {
-			// Error already logged in processRecord
-			return
+	// Process all records in the fetch
+	for _, fetch := range fetches {
+		for _, record := range fetch.Topics {
+			for _, partition := range record.Partitions {
+				for _, r := range partition.Records {
+					if err := h.processRecord(ctx, r, log); err != nil {
+						// On error, we stop processing this batch to preserve offset order
+						return err
+					}
+				}
+			}
 		}
-	})
+	}
+
+	// Commit all records in this fetch at once for efficiency
+	if h.groupID != "" {
+		if err := h.client.CommitRecords(ctx, fetches.Records()...); err != nil {
+			log.Warnf("failed to commit offsets for batch: %v", err)
+			// We don't return error here because the messages were processed successfully.
+			// The next commit will include these offsets anyway.
+		}
+	}
 
 	// Log partition-level errors
 	fetches.EachError(func(topic string, partition int32, err error) {
@@ -138,7 +176,7 @@ func (h *consumerHandle) processFetches(ctx context.Context, fetches kgo.Fetches
 }
 
 // processRecord handles a single Kafka record: converts it to a Message,
-// calls the user's Handler, and commits the offset on success.
+// calls the user's Handler. Offsets are committed in batch by processFetches.
 func (h *consumerHandle) processRecord(ctx context.Context, record *kgo.Record, log *logrus.Entry) error {
 	msg := h.convertRecord(record)
 
@@ -149,31 +187,28 @@ func (h *consumerHandle) processRecord(ctx context.Context, record *kgo.Record, 
 		return err
 	}
 
-	// Commit offset after successful processing (if in a consumer group)
-	if h.groupID != "" {
-		if err := h.client.CommitRecords(ctx, record); err != nil {
-			log.Warnf("failed to commit offset (partition=%d offset=%d): %v",
-				record.Partition, record.Offset, err)
-		}
-	}
-
 	return nil
 }
 
 // convertRecord transforms a kgo.Record into our Message type.
-func (h *consumerHandle) convertRecord(record *kgo.Record) *Message {
-	msg := &Message{
+func (h *consumerHandle) convertRecord(record *kgo.Record) Message {
+	msg := Message{
 		Topic:     record.Topic,
 		Partition: record.Partition,
 		Offset:    record.Offset,
 		Key:       record.Key,
 		Value:     record.Value,
-		Headers:   make(map[string][]byte, len(record.Headers)),
 		Timestamp: record.Timestamp,
 	}
 
-	for _, header := range record.Headers {
-		msg.Headers[header.Key] = header.Value
+	if len(record.Headers) > 0 {
+		msg.Headers = make([]Header, len(record.Headers))
+		for i, header := range record.Headers {
+			msg.Headers[i] = Header{
+				Key:   header.Key,
+				Value: header.Value,
+			}
+		}
 	}
 
 	return msg
@@ -245,17 +280,15 @@ func (cm *ConsumerManager) Start() error {
 	golly.Logger().Infof("[kafka] starting %d consumers", len(cm.consumers))
 
 	// Start all consumers, collecting any errors
-	var firstErr error
+	var errs []error
 	for id, handle := range cm.consumers {
 		if err := cm.startConsumer(id, handle); err != nil {
 			golly.Logger().WithError(err).Errorf("[kafka] failed to start consumer %s", id)
-			if firstErr == nil {
-				firstErr = err
-			}
+			errs = append(errs, err)
 		}
 	}
 
-	return firstErr
+	return errors.Join(errs...)
 }
 
 // Stop gracefully stops all consumers and waits for them to finish.

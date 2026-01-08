@@ -7,12 +7,12 @@ import (
 
 // Mock consumer for testing
 type MockConsumer struct {
-	handledMessages []*Message
+	handledMessages []Message
 	opts            SubscribeOptions
 	shouldError     bool
 }
 
-func (m *MockConsumer) Handler(ctx context.Context, msg *Message) error {
+func (m *MockConsumer) Handler(ctx context.Context, msg Message) error {
 	m.handledMessages = append(m.handledMessages, msg)
 	if m.shouldError {
 		return context.Canceled // Use a real error type
@@ -25,7 +25,7 @@ func (m *MockConsumer) SubscribeOptions() SubscribeOptions {
 }
 
 func (m *MockConsumer) ProcessEvent(ctx context.Context) error {
-	return m.Handler(ctx, nil)
+	return m.Handler(ctx, Message{})
 }
 
 func TestConsumerSubscribeOptions(t *testing.T) {
@@ -121,7 +121,7 @@ func TestMockConsumer(t *testing.T) {
 
 	// Test handler
 	ctx := context.Background()
-	msg := &Message{
+	msg := Message{
 		Topic: "test-topic",
 		Value: []byte("test-message"),
 	}
@@ -135,7 +135,7 @@ func TestMockConsumer(t *testing.T) {
 		t.Errorf("expected 1 message, got %d", len(consumer.handledMessages))
 	}
 
-	if consumer.handledMessages[0] != msg {
+	if consumer.handledMessages[0].Topic != msg.Topic {
 		t.Error("expected handled message to match input message")
 	}
 

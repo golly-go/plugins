@@ -4,12 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/golly-go/golly"
-	"github.com/google/uuid"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -21,7 +19,6 @@ type Producer struct {
 	// config contains the producer configuration
 	config Config
 
-	wg      sync.WaitGroup
 	running atomic.Bool
 	cancel  context.CancelFunc
 	ctx     context.Context
@@ -45,12 +42,13 @@ func NewProducer(client *kgo.Client, config Config) *Producer {
 //
 // This method blocks until the message is acknowledged by Kafka or an error occurs.
 // For async publishing with manual concurrency control, manage goroutines in your application layer.
+// Publish sends a message to the given topic. It uses franz-go's internal
+// batching and buffering for high performance.
 func (p *Producer) Publish(ctx context.Context, topic string, payload any) error {
-
 	trace("publishing message to topic %s", topic)
 
-	// Generate key
-	var key []byte = []byte(uuid.New().String())
+	// Generate key only if KeyFunc is provided
+	var key []byte
 	if p.config.KeyFunc != nil {
 		key = p.config.KeyFunc(topic, payload)
 	}
@@ -61,30 +59,20 @@ func (p *Producer) Publish(ctx context.Context, topic string, payload any) error
 		return fmt.Errorf("kafka: publish: %w", err)
 	}
 
-	// Create message
-	msg := &kgo.Record{
+	// Create record
+	record := &kgo.Record{
 		Topic: topic,
 		Key:   key,
 		Value: payloadBytes,
 	}
 
-	// franz-go has optimistic calling of the callback which means events were being lost if we used async
-	// so we are going to wrap this with our own waitgroup and make sure we flush correctly
-	p.wg.Add(1)
-
-	// TODO we will want to capture the errors and return them to the caller
-	go func() {
-		defer p.wg.Done()
-
-		// Send synchronously and wait for result
-		results := p.client.ProduceSync(ctx, msg)
-		if err := results.FirstErr(); err != nil {
-			golly.Logger().Errorf("kafka: publish: failed to publish message to %s: %v", topic, err)
-			return
+	// Use async Produce to allow franz-go to batch messages efficiently.
+	// The client handles internal synchronization and buffering.
+	p.client.Produce(ctx, record, func(r *kgo.Record, err error) {
+		if err != nil {
+			golly.Logger().Errorf("kafka: publish: failed to deliver message to %s: %v", topic, err)
 		}
-
-		trace("successfully published message to %s", topic)
-	}()
+	})
 
 	return nil
 }
@@ -94,21 +82,11 @@ func (p *Producer) Publish(ctx context.Context, topic string, payload any) error
 func (p *Producer) Flush(ctx context.Context) error {
 	trace("flushing producer - ensuring all messages are sent")
 
-	// Use franz-go's built-in flush method
-	p.client.Flush(ctx)
-
-	// Wait for waitgroup with context timeout
-	done := make(chan struct{})
-	go func() {
-		p.wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-ctx.Done():
-		trace("flush timed out waiting for pending publishes")
-		return ctx.Err()
-	case <-done:
+	// Use franz-go's built-in flush method which waits for all
+	// buffered records to be acknowledged.
+	if err := p.client.Flush(ctx); err != nil {
+		trace("flush failed: %v", err)
+		return err
 	}
 
 	trace("producer flush completed")
