@@ -136,7 +136,7 @@ func seedEvents(ctx context.Context, t *testing.T, n int) []Event {
 	t.Helper()
 	db := orm.DB(ctx)
 	// ensure schema
-	assert.NoError(t, db.AutoMigrate(&Event{}))
+	assert.NoError(t, db.AutoMigrate(&Event{}, &EventSourceVersion{}))
 
 	events := make([]Event, n)
 	for i := 0; i < n; i++ {

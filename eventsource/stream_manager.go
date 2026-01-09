@@ -3,31 +3,40 @@ package eventsource
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 
 	"github.com/golly-go/golly"
 )
 
 // StreamManager manages streams and coordinates dispatch.
 type StreamManager struct {
-	mu      sync.RWMutex
-	streams []StreamPublisher
+	mu      sync.Mutex // Used only for Add (copy-on-write)
+	streams atomic.Pointer[[]StreamPublisher]
 }
 
 // NewStreamManager initializes a new StreamManager.
-func NewStreamManager() *StreamManager { return &StreamManager{} }
+func NewStreamManager() *StreamManager {
+	sm := &StreamManager{}
+	sm.streams.Store(&[]StreamPublisher{})
+	return sm
+}
 
 // Add registers streams for publish fanout.
 func (sm *StreamManager) Add(streams ...StreamPublisher) {
 	sm.mu.Lock()
-	sm.streams = append(sm.streams, streams...)
-	sm.mu.Unlock()
+	defer sm.mu.Unlock()
+
+	current := *sm.streams.Load()
+	newStreams := make([]StreamPublisher, len(current)+len(streams))
+	copy(newStreams, current)
+	copy(newStreams[len(current):], streams)
+
+	sm.streams.Store(&newStreams)
 }
 
 // Publish publishes events to all streams.
 func (sm *StreamManager) Publish(ctx context.Context, topic string, events ...Event) {
-	sm.mu.RLock()
-	streams := append([]StreamPublisher(nil), sm.streams...)
-	sm.mu.RUnlock()
+	streams := *sm.streams.Load()
 
 	if len(streams) == 0 || len(events) == 0 {
 		return
@@ -77,11 +86,7 @@ func (sm *StreamManager) Start() {
 }
 
 func (sm *StreamManager) getStreams() []StreamPublisher {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
-	cp := make([]StreamPublisher, len(sm.streams))
-	copy(cp, sm.streams)
-	return cp
+	return *sm.streams.Load()
 }
 
 // Stop stops streams that implement lifecycle.

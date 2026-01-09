@@ -61,22 +61,24 @@ func NewStream(opts StreamOptions) *Stream {
 // InternalStream is a simple stream for projections and in-memory subscriptions
 // No complex ordering - just process events as they arrive
 type InternalStream struct {
-	name     string
-	mu       sync.RWMutex
-	handlers map[string][]StreamHandler
-	jobs     chan Job
-	stop     chan struct{}
-	stopped  bool
-	wg       sync.WaitGroup
+	name       string
+	mu         sync.RWMutex
+	handlers   map[string][]StreamHandler
+	handlerBuf []StreamHandler
+	jobs       chan Job
+	stop       chan struct{}
+	stopped    bool
+	wg         sync.WaitGroup
 }
 
 // NewInternalStream creates a simple internal stream for projections
 func NewInternalStream(name string) *InternalStream {
 	return &InternalStream{
-		name:     name,
-		handlers: make(map[string][]StreamHandler),
-		jobs:     make(chan Job, 1000),
-		stop:     make(chan struct{}),
+		name:       name,
+		handlers:   make(map[string][]StreamHandler),
+		handlerBuf: make([]StreamHandler, 0, 24),
+		jobs:       make(chan Job, 1000),
+		stop:       make(chan struct{}),
 	}
 }
 
@@ -165,7 +167,8 @@ func (s *InternalStream) run() {
 // handleEvent processes a single event
 func (s *InternalStream) handleEvent(ctx context.Context, event Event) {
 	s.mu.RLock()
-	hs := make([]StreamHandler, 0, 8)
+	// Reuse slice capacity
+	hs := s.handlerBuf[:0]
 
 	defer func() {
 		if r := recover(); r != nil {

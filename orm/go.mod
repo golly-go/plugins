@@ -4,7 +4,7 @@ go 1.25
 
 require (
 	github.com/glebarez/sqlite v1.11.0
-	github.com/golly-go/golly v0.7.1-0.20260109210615-29fcbcc0c633
+	github.com/golly-go/golly v0.7.1-0.20260109212210-f918f67ea62e
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/sirupsen/logrus v1.9.3

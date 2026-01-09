@@ -29,6 +29,10 @@ type EventSourceVersion struct {
 	Version int64  `gorm:"not null"`
 }
 
+func (EventSourceVersion) TableName() string {
+	return "event_source_versions"
+}
+
 var (
 	ErrVersionNotFound = errors.New("version not found")
 
