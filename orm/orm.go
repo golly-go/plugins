@@ -83,7 +83,7 @@ func FromContext(ctx context.Context) *gorm.DB {
 }
 
 func CreateTestContext(c context.Context, modelsToMigration ...interface{}) context.Context {
-	return context.WithValue(c, contextKey, NewInMemoryConnection(modelsToMigration...))
+	return golly.WithValue(c, contextKey, NewInMemoryConnection(modelsToMigration...))
 }
 
 func Close(c context.Context) error {
