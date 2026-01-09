@@ -130,19 +130,30 @@ func Plugin() *EventsourcePlugin {
 }
 
 func DefaultEngine() *Engine {
+
 	if plugin := Plugin(); plugin != nil {
 		return plugin.engine
 	}
 	return nil
 }
 
-func GetEngine(ctx context.Context) *Engine {
-	if engine, ok := ctx.Value(engineKey).(*Engine); ok {
-		return engine
+func GetEngine(tracker golly.ApplicationTracker) *Engine {
+	p := golly.GetPlugin[*EventsourcePlugin](tracker, PluginName)
+	if p == nil {
+		return nil
 	}
-	return DefaultEngine()
+
+	return p.engine
+}
+
+func FromApp(app *golly.Application) *Engine {
+	plugin := golly.GetPluginFromApp[*EventsourcePlugin](app, PluginName)
+	if plugin == nil {
+		return nil
+	}
+	return plugin.engine
 }
 
 func SetEngine(parent context.Context, engine *Engine) context.Context {
-	return context.WithValue(parent, engineKey, engine)
+	return golly.WithValue(parent, engineKey, engine)
 }
