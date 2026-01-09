@@ -137,7 +137,7 @@ func DefaultEngine() *Engine {
 	return nil
 }
 
-func GetEngine(tracker golly.ApplicationTracker) *Engine {
+func GetEngine(tracker any) *Engine {
 	p := golly.GetPlugin[*EventsourcePlugin](tracker, PluginName)
 	if p == nil {
 		return nil
