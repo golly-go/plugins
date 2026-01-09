@@ -3,8 +3,7 @@ module github.com/golly-go/plugins/kafka
 go 1.25
 
 require (
-	github.com/golly-go/golly v0.7.1-0.20251121222621-02227c385490
-	github.com/google/uuid v1.6.0
+	github.com/golly-go/golly v0.7.1-0.20260109081756-2e76ce05e008
 	github.com/sirupsen/logrus v1.9.3
 	github.com/twmb/franz-go v1.20.1
 	golang.org/x/oauth2 v0.33.0
@@ -31,5 +30,4 @@ require (
 	golang.org/x/sys v0.37.0 // indirect
 	golang.org/x/term v0.36.0 // indirect
 	golang.org/x/text v0.30.0 // indirect
-	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 )

@@ -87,12 +87,8 @@ func (s *InternalStream) Name() string { return s.name }
 func (s *InternalStream) Publish(ctx context.Context, topic string, evt any) error {
 	e := evt.(Event)
 
-	golly.Logger().Tracef("publish event to internal stream %s topic=%s", s.name, topic)
-
-	// Use background context for async processing to prevent cancellation
-	// when the originating request completes. Events should be self-contained.
-	// We don't check ctx.Done() because events cannot be lost.
-	bgCtx := context.Background()
+	// Detach the context to prevent cancellation when the originating request completes
+	bgCtx := golly.ToGollyContext(ctx).Detach()
 
 	select {
 	case s.jobs <- Job{Ctx: bgCtx, Event: e}:
