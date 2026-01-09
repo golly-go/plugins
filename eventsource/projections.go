@@ -74,7 +74,7 @@ type ProjectionManager struct {
 	topicHandlers map[string][]ProjectionHandler // topic -> handlers
 
 	// Async processing with graceful shutdown
-	jobs    chan Event
+	jobs    chan Job
 	stop    chan struct{}
 	wg      sync.WaitGroup
 	running atomic.Bool // Lockless check for running state
@@ -86,7 +86,7 @@ func NewProjectionManager() *ProjectionManager {
 		projections:   make(map[string]Projection),
 		eventHandlers: make(map[string][]ProjectionHandler),
 		topicHandlers: make(map[string][]ProjectionHandler),
-		jobs:          make(chan Event, 1000), // Buffered for throughput
+		jobs:          make(chan Job, 1000), // Buffered for throughput
 		stop:          make(chan struct{}),
 	}
 }
@@ -132,7 +132,6 @@ func (pm *ProjectionManager) Register(projs ...Projection) {
 					golly.Logger().Errorf("panic in projection %s: %v", resolveInterfaceName(proj), r)
 				}
 			}()
-
 			return projectEvent(ctx, proj, event, true)
 		}
 
@@ -191,16 +190,16 @@ func (pm *ProjectionManager) run() {
 
 	for {
 		select {
-		case evt := <-pm.jobs:
-			pm.handleEvent(context.Background(), evt)
+		case job := <-pm.jobs:
+			pm.handleEvent(job.Ctx, job.Event)
 
 		case <-pm.stop:
 			// Drain remaining events before shutdown
 			trace("draining projection events")
 			for {
 				select {
-				case evt := <-pm.jobs:
-					pm.handleEvent(context.Background(), evt)
+				case job := <-pm.jobs:
+					pm.handleEvent(job.Ctx, job.Event)
 				default:
 					trace("projection drain complete")
 					return
@@ -211,16 +210,18 @@ func (pm *ProjectionManager) run() {
 }
 
 // dispatch enqueues an event for async projection processing
-func (pm *ProjectionManager) dispatch(evt Event) {
+func (pm *ProjectionManager) dispatch(ctx context.Context, evt Event) {
 	if !pm.running.Load() {
 		golly.Logger().Warnf("projection manager not running, dropping event")
 		return
 	}
 
+	detached := golly.ToGollyContext(ctx).Detach()
+
 	// Use background context for async processing to prevent cancellation
 	// when the originating request completes
 	select {
-	case pm.jobs <- evt:
+	case pm.jobs <- Job{Ctx: detached, Event: evt}:
 		// Enqueued successfully
 	default:
 		golly.Logger().Errorf("projection queue full, dropping event")

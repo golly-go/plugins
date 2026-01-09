@@ -281,7 +281,7 @@ func handleExecutionError(ctx context.Context, agg Aggregate, cmd Command, err e
 func (eng *Engine) Send(ctx context.Context, events ...Event) {
 	// Dispatch to projections first (internal)
 	for i := range events {
-		eng.projections.dispatch(events[i])
+		eng.projections.dispatch(ctx, events[i])
 	}
 
 	// Then publish to external streams (Kafka, etc)

@@ -167,6 +167,12 @@ func (s *InternalStream) handleEvent(ctx context.Context, event Event) {
 	s.mu.RLock()
 	hs := make([]StreamHandler, 0, 8)
 
+	defer func() {
+		if r := recover(); r != nil {
+			golly.Logger().Errorf("panic in event handler: %v", r)
+		}
+	}()
+
 	if h, ok := s.handlers[event.Topic]; ok {
 		hs = append(hs, h...)
 		golly.Logger().Tracef("Found %d handlers for topic %s", len(h), event.Topic)
