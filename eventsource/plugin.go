@@ -138,6 +138,16 @@ func DefaultEngine() *Engine {
 }
 
 func GetEngine(tracker any) *Engine {
+	ctx, ok := tracker.(context.Context)
+	if !ok || ctx == nil {
+		goto cont
+	}
+
+	if e, ok := ctx.Value(engineKey).(*Engine); ok && e != nil {
+		return e
+	}
+
+cont:
 	p := golly.GetPlugin[*EventsourcePlugin](tracker, PluginName)
 	if p == nil {
 		return nil
