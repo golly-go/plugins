@@ -11,8 +11,8 @@ github.com/fsnotify/fsnotify v1.9.0 h1:2Ml+OJNzbYCTzsxtv8vKSFD9PbJjmhYF14k/jKC7S
 github.com/fsnotify/fsnotify v1.9.0/go.mod h1:8jBTzvmWwFyi3Pb8djgCCO5IBqzKJ/Jwo8TRcHyHii0=
 github.com/go-viper/mapstructure/v2 v2.4.0 h1:EBsztssimR/CONLSZZ04E8qAkxNYq4Qp9LvH92wZUgs=
 github.com/go-viper/mapstructure/v2 v2.4.0/go.mod h1:oJDH3BJKyqBA2TXFhDsKDGDTlndYOZ6rGS0BRZIxGhM=
-github.com/golly-go/golly v0.7.1-0.20260109212210-f918f67ea62e h1:yZIbY2jlfyhAhq/8RJj8HeGiNu3uGXtye3d866yq1wE=
-github.com/golly-go/golly v0.7.1-0.20260109212210-f918f67ea62e/go.mod h1:3upooV+dhwQCS++qwB9EBfzURBMeMPN7ZxfvoipQKgg=
+github.com/golly-go/golly v0.7.1-0.20260109224627-9c80f90f3096 h1:iAKysab2ZNDv2QP4PZzft5c3f511OldLoVkaNsVjXXU=
+github.com/golly-go/golly v0.7.1-0.20260109224627-9c80f90f3096/go.mod h1:3upooV+dhwQCS++qwB9EBfzURBMeMPN7ZxfvoipQKgg=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=

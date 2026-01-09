@@ -15,8 +15,8 @@ github.com/glebarez/sqlite v1.11.0 h1:wSG0irqzP6VurnMEpFGer5Li19RpIRi2qvQz++w0GM
 github.com/glebarez/sqlite v1.11.0/go.mod h1:h8/o8j5wiAsqSPoWELDUdJXhjAhsVliSn7bWZjOhrgQ=
 github.com/go-viper/mapstructure/v2 v2.4.0 h1:EBsztssimR/CONLSZZ04E8qAkxNYq4Qp9LvH92wZUgs=
 github.com/go-viper/mapstructure/v2 v2.4.0/go.mod h1:oJDH3BJKyqBA2TXFhDsKDGDTlndYOZ6rGS0BRZIxGhM=
-github.com/golly-go/golly v0.7.1-0.20260109212210-f918f67ea62e h1:yZIbY2jlfyhAhq/8RJj8HeGiNu3uGXtye3d866yq1wE=
-github.com/golly-go/golly v0.7.1-0.20260109212210-f918f67ea62e/go.mod h1:3upooV+dhwQCS++qwB9EBfzURBMeMPN7ZxfvoipQKgg=
+github.com/golly-go/golly v0.7.1-0.20260109224627-9c80f90f3096 h1:iAKysab2ZNDv2QP4PZzft5c3f511OldLoVkaNsVjXXU=
+github.com/golly-go/golly v0.7.1-0.20260109224627-9c80f90f3096/go.mod h1:3upooV+dhwQCS++qwB9EBfzURBMeMPN7ZxfvoipQKgg=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e h1:ijClszYn+mADRFY17kjQEVQ1XRhq2/JR1M3sGqeJoxs=
