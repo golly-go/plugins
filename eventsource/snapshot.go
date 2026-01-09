@@ -24,7 +24,7 @@ func NewSnapshot(aggregate Aggregate) Event {
 	}
 
 	snapEvent := AggregateSnapshotted{State: state}
-	event := NewEvent(snapEvent, EventStateApplied, nil)
+	event := NewEvent(snapEvent, EventStateApplied)
 
 	event.AggregateID = aggregate.GetID()
 	event.AggregateType = ObjectName(aggregate)

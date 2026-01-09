@@ -1,6 +1,10 @@
 package eventsource
 
-import "github.com/golly-go/golly"
+import (
+	"context"
+
+	"github.com/golly-go/golly"
+)
 
 type AggregateDefinition struct {
 	Aggregate Aggregate
@@ -8,9 +12,11 @@ type AggregateDefinition struct {
 }
 
 type TestEngineOptions struct {
-	Aggregates  []AggregateDefinition
-	Projections []Projection
-	Data        []any
+	Aggregates   []AggregateDefinition
+	Projections  []Projection
+	Data         []any
+	Streams      []StreamPublisher
+	UserInfoFunc func(context.Context) UserInfo
 }
 
 type TestEventData struct {
@@ -32,6 +38,11 @@ func NewInMemoryEngine(opts TestEngineOptions) *Engine {
 	engine := NewEngine(
 		WithStore(&InMemoryStore{data: buildInMemoryEvents(opts.Data)}),
 	)
+
+	// this is bad, but it's the only way to set the user info func
+	if opts.UserInfoFunc != nil {
+		SetUserInfoFunc(opts.UserInfoFunc)
+	}
 
 	for _, agg := range opts.Aggregates {
 		engine.RegisterAggregate(agg.Aggregate, agg.Events)
@@ -65,7 +76,7 @@ func buildInMemoryEvents(data []any) []Event {
 }
 
 func testEventToEvent(e TestEventData, version int64) Event {
-	evt := NewEvent(e.Data, EventStateCompleted, e.Metadata)
+	evt := NewEvent(e.Data, EventStateCompleted)
 	evt.Data = e.Data
 
 	evt.AggregateID = e.AggregateID

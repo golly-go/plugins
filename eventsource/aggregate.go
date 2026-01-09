@@ -118,7 +118,7 @@ func (ab *AggregateBase) RecordWithMetadata(data any, metadata map[string]any) {
 		version = ab.Version() + 1
 	}
 
-	event := NewEvent(data, EventStateReady, nil)
+	event := NewEvent(data, EventStateReady)
 	event.Version = version
 
 	ab.AppendChanges(event)
@@ -148,11 +148,11 @@ func (ab *AggregateBase) ProcessChanges(ctx context.Context, ag Aggregate) error
 		// For now put this here till i can find a better way todo this
 		// perhaps we move Identity to be top level in Golly
 		if userInfoFunc != nil {
-			change.UserInfo = userInfoFunc(ctx)
-		}
+			userInfo := userInfoFunc(ctx)
 
-		change.TenantID = change.UserInfo.TenantID
-		change.UserID = change.UserInfo.UserID
+			change.TenantID = userInfo.TenantID
+			change.UserID = userInfo.UserID
+		}
 
 		change.AggregateID = ag.GetID()
 		change.AggregateType = ObjectName(ag)

@@ -314,6 +314,8 @@ func (eng *Engine) Stop() {
 	eng.mu.Unlock()
 
 	eng.projections.Stop() // Drain all projection events first
+
+	SetUserInfoFunc(nil) // for now
 }
 
 func HasValidID(agg Aggregate) bool {

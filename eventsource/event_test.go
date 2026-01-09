@@ -53,7 +53,7 @@ func TestNewEvent(t *testing.T) {
 		Amount float64
 	}{Amount: 100.0}
 
-	event := NewEvent(mockData, EventStateReady, nil)
+	event := NewEvent(mockData, EventStateReady)
 
 	assert.NotNil(t, event.ID, "Event ID should be generated")
 	assert.Equal(t, "struct { Amount float64 }", event.Type, "Event type should match data type")

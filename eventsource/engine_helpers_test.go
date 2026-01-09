@@ -12,19 +12,16 @@ type sampleEvent struct {
 }
 
 func Test_testEventToEvent_BuildsCorrectEvent(t *testing.T) {
-	meta := map[string]any{"k": "v"}
 	input := TestEventData{
 		AggregateID:   "agg-1",
 		AggregateType: "SampleAgg",
 		Data:          sampleEvent{Name: "a"},
-		Metadata:      meta,
 	}
 
 	out := testEventToEvent(input, 5)
 
 	assert.Equal(t, "agg-1", out.AggregateID)
 	assert.Equal(t, "SampleAgg", out.AggregateType)
-	assert.Equal(t, meta, out.Metadata)
 	// Type derived from the data's concrete type
 	expectedType := golly.TypeNoPtr(input.Data).String()
 	assert.Equal(t, expectedType, out.Type)
@@ -37,17 +34,16 @@ func Test_testEventToEvent_BuildsCorrectEvent(t *testing.T) {
 }
 
 func Test_buildInMemoryEvents_MixedInputs(t *testing.T) {
-	meta := map[string]any{"m": "x"}
 	// Pre-constructed event that should pass through unchanged
-	pre := NewEvent(sampleEvent{Name: "pre"}, EventStateApplied, meta)
+	pre := NewEvent(sampleEvent{Name: "pre"}, EventStateApplied)
 	pre.AggregateID = "agg-pre"
 	pre.AggregateType = "PreAgg"
 	pre.Type = golly.TypeNoPtr(sampleEvent{}).String()
 	pre.GlobalVersion = 99
 
 	inputs := []any{
-		TestEventData{AggregateID: "agg-1", AggregateType: "Agg", Data: sampleEvent{Name: "one"}, Metadata: meta},
-		TestEventData{AggregateID: "agg-2", AggregateType: "Agg", Data: sampleEvent{Name: "two"}, Metadata: meta},
+		TestEventData{AggregateID: "agg-1", AggregateType: "Agg", Data: sampleEvent{Name: "one"}},
+		TestEventData{AggregateID: "agg-2", AggregateType: "Agg", Data: sampleEvent{Name: "two"}},
 		pre,
 	}
 

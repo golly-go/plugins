@@ -14,11 +14,6 @@ func mapToDB(evt *eventsource.Event) (Event, error) {
 	var err error
 	ret := Event{Event: *evt}
 
-	ret.RawMetadata.RawMessage, err = json.Marshal(evt.Metadata)
-	if err != nil {
-		return ret, err
-	}
-
 	ret.RawData.RawMessage, err = json.Marshal(evt.Data)
 	if err != nil {
 		return ret, err
