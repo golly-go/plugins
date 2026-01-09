@@ -3,6 +3,8 @@ package eventsource
 import (
 	"context"
 	"sync"
+
+	"github.com/golly-go/golly"
 )
 
 // StreamManager manages streams and coordinates dispatch.
@@ -35,7 +37,7 @@ func (sm *StreamManager) Publish(ctx context.Context, topic string, events ...Ev
 	// when the originating request completes. Events should be self-contained.
 	// Note: We don't use WithTimeout here because many publishers (like Kafka)
 	// are async and the timeout would fire before they complete.
-	bgCtx := context.Background()
+	bgCtx := golly.ToGollyContext(ctx).Detach()
 
 	for i := range streams {
 		for j := range events {
