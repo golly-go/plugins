@@ -3,7 +3,7 @@ module github.com/golly-go/plugins/kafka
 go 1.25
 
 require (
-	github.com/golly-go/golly v0.7.1-0.20260109230831-daab30eef9bd
+	github.com/golly-go/golly v0.8.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/twmb/franz-go v1.20.1
 	golang.org/x/oauth2 v0.33.0
@@ -18,6 +18,8 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/sagikazarmark/locafero v0.12.0 // indirect
+	github.com/segmentio/asm v1.1.3 // indirect
+	github.com/segmentio/encoding v0.5.3 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/cobra v1.10.1 // indirect
