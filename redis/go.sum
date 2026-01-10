@@ -13,8 +13,8 @@ github.com/go-redis/redis/v8 v8.11.5 h1:AcZZR7igkdvfVmQTPnu9WE37LRrO/YrBH5zWyjDC
 github.com/go-redis/redis/v8 v8.11.5/go.mod h1:gREzHqY1hg6oD9ngVRbLStwAWKhA0FEgq8Jd4h5lpwo=
 github.com/go-viper/mapstructure/v2 v2.4.0 h1:EBsztssimR/CONLSZZ04E8qAkxNYq4Qp9LvH92wZUgs=
 github.com/go-viper/mapstructure/v2 v2.4.0/go.mod h1:oJDH3BJKyqBA2TXFhDsKDGDTlndYOZ6rGS0BRZIxGhM=
-github.com/golly-go/golly v0.8.1 h1:tzMO+xhUdZ1lQiZzr1+uZfT7vpJb9FhyYpQDL1DON8M=
-github.com/golly-go/golly v0.8.1/go.mod h1:SN+ZfRRmOXWgbQRFpMu2ne1sZxD+cuXWnfhhV5ViApc=
+github.com/golly-go/golly v0.8.2-0.20260110082309-495411026bf5 h1:PghJ24G1qp+xfXqkaC0OZVUIVsrMCK5BaP3Vm6Fvb2o=
+github.com/golly-go/golly v0.8.2-0.20260110082309-495411026bf5/go.mod h1:SN+ZfRRmOXWgbQRFpMu2ne1sZxD+cuXWnfhhV5ViApc=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=

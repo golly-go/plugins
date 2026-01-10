@@ -4,10 +4,9 @@ go 1.25
 
 require (
 	github.com/glebarez/sqlite v1.11.0
-	github.com/golly-go/golly v0.8.1
+	github.com/golly-go/golly v0.8.2-0.20260110082309-495411026bf5
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.6
-	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.10.1
 	github.com/stretchr/testify v1.11.1
 	gorm.io/driver/postgres v1.6.0

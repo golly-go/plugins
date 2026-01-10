@@ -124,7 +124,7 @@ func (s *InternalStream) Unsubscribe(topic string, handler StreamHandler) {
 
 // Start begins processing events
 func (s *InternalStream) Start() {
-	golly.Logger().Tracef("starting internal stream %s", s.name)
+	golly.DefaultLogger().Tracef("starting internal stream %s", s.name)
 	s.wg.Add(1)
 	go s.run()
 }
@@ -172,22 +172,22 @@ func (s *InternalStream) handleEvent(ctx context.Context, event Event) {
 
 	defer func() {
 		if r := recover(); r != nil {
-			golly.Logger().Errorf("panic in event handler: %v", r)
+			golly.DefaultLogger().Errorf("panic in event handler: %v", r)
 		}
 	}()
 
 	if h, ok := s.handlers[event.Topic]; ok {
 		hs = append(hs, h...)
-		golly.Logger().Tracef("Found %d handlers for topic %s", len(h), event.Topic)
+		golly.DefaultLogger().Tracef("Found %d handlers for topic %s", len(h), event.Topic)
 	}
 
 	if h, ok := s.handlers[AllEvents]; ok {
 		hs = append(hs, h...)
-		golly.Logger().Tracef("Found %d handlers for AllEvents (*)", len(h))
+		golly.DefaultLogger().Tracef("Found %d handlers for AllEvents (*)", len(h))
 	}
 	s.mu.RUnlock()
 
-	golly.Logger().Tracef("Total handlers for event %s: %d", event.Topic, len(hs))
+	golly.DefaultLogger().Tracef("Total handlers for event %s: %d", event.Topic, len(hs))
 	for i := range hs {
 		hs[i](ctx, event)
 	}

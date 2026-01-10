@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/golly-go/golly"
-	"github.com/sirupsen/logrus"
 )
 
 type testType struct{}
@@ -76,9 +75,9 @@ func Test_fileInfo(t *testing.T) {
 
 func Test_trace_NoPanic(t *testing.T) {
 	// Bump to trace and ensure calling trace does not panic
-	logger := golly.Logger()
-	prev := logger.Level
-	logger.SetLevel(logrus.TraceLevel)
+	logger := golly.DefaultLogger()
+	prev := logger.Level()
+	logger.SetLevel(golly.LogLevelTrace)
 	t.Cleanup(func() { logger.SetLevel(prev) })
 
 	// Ensure no panic

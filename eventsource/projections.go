@@ -129,7 +129,7 @@ func (pm *ProjectionManager) Register(projs ...Projection) {
 		fnc := func(ctx context.Context, event Event) error {
 			defer func() {
 				if r := recover(); r != nil {
-					golly.Logger().Errorf("panic in projection %s: %v", resolveInterfaceName(proj), r)
+					golly.DefaultLogger().Errorf("panic in projection %s: %v", resolveInterfaceName(proj), r)
 				}
 			}()
 			return projectEvent(ctx, proj, event, true)
@@ -212,7 +212,7 @@ func (pm *ProjectionManager) run() {
 // dispatch enqueues an event for async projection processing
 func (pm *ProjectionManager) dispatch(ctx context.Context, evt Event) {
 	if !pm.running.Load() {
-		golly.Logger().Warnf("projection manager not running, dropping event")
+		golly.DefaultLogger().Warnf("projection manager not running, dropping event")
 		return
 	}
 
@@ -224,7 +224,7 @@ func (pm *ProjectionManager) dispatch(ctx context.Context, evt Event) {
 	case pm.jobs <- Job{Ctx: detached, Event: evt}:
 		// Enqueued successfully
 	default:
-		golly.Logger().Errorf("projection queue full, dropping event")
+		golly.DefaultLogger().Errorf("projection queue full, dropping event")
 	}
 }
 
@@ -248,7 +248,7 @@ func (pm *ProjectionManager) handleEvent(ctx context.Context, evt Event) {
 	// Process handlers without holding lock
 	for pos := range handlers {
 		if err := handlers[pos](ctx, evt); err != nil {
-			golly.Logger().Errorf("error in projection handler %s: %v", resolveInterfaceName(handlers[pos]), err)
+			golly.DefaultLogger().Errorf("error in projection handler %s: %v", resolveInterfaceName(handlers[pos]), err)
 		}
 	}
 }

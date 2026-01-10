@@ -97,7 +97,7 @@ func Close(c context.Context) error {
 
 func trace(format string, args ...interface{}) {
 	// Ensure Trace always prints when LOG_LEVEL=trace
-	lg := golly.Logger()
+	lg := golly.DefaultLogger()
 	if lg != nil {
 		lg.Tracef("[ORM] "+format, args...)
 	}

@@ -44,7 +44,7 @@ func Subscribe(topic string, consumer Consumer) error {
 func Publish(ctx context.Context, topic string, payload any) error {
 	producer := GetProducer()
 	if producer == nil {
-		golly.Logger().Warnf("[KAFKA] attempted to publish to %s but producer is not available (EnableProducer=false?)", topic)
+		golly.DefaultLogger().Warnf("[KAFKA] attempted to publish to %s but producer is not available (EnableProducer=false?)", topic)
 		return fmt.Errorf("kafka producer not available")
 	}
 	return producer.Publish(ctx, topic, payload)
@@ -52,5 +52,5 @@ func Publish(ctx context.Context, topic string, payload any) error {
 
 // trace logs a formatted message with the Kafka prefix
 func trace(msg string, args ...any) {
-	golly.Logger().Tracef("[KAFKA] %s", fmt.Sprintf(msg, args...))
+	golly.DefaultLogger().Tracef("[KAFKA] %s", fmt.Sprintf(msg, args...))
 }

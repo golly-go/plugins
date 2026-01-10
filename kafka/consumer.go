@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/golly-go/golly"
-	"github.com/sirupsen/logrus"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -139,7 +138,7 @@ func (h *consumerHandle) poll(ctx context.Context) (kgo.Fetches, error) {
 }
 
 // processFetches handles all records in a fetch result.
-func (h *consumerHandle) processFetches(ctx context.Context, fetches kgo.Fetches, log *logrus.Entry) error {
+func (h *consumerHandle) processFetches(ctx context.Context, fetches kgo.Fetches, log *golly.Entry) error {
 	if fetches.NumRecords() == 0 {
 		return nil
 	}
@@ -177,7 +176,7 @@ func (h *consumerHandle) processFetches(ctx context.Context, fetches kgo.Fetches
 
 // processRecord handles a single Kafka record: converts it to a Message,
 // calls the user's Handler. Offsets are committed in batch by processFetches.
-func (h *consumerHandle) processRecord(ctx context.Context, record *kgo.Record, log *logrus.Entry) error {
+func (h *consumerHandle) processRecord(ctx context.Context, record *kgo.Record, log *golly.Entry) error {
 	msg := h.convertRecord(record)
 
 	// Call user handler
@@ -226,7 +225,7 @@ func (h *consumerHandle) calculateBackoff(retries int) time.Duration {
 // closeClient safely closes the Kafka client and handles panics.
 func (h *consumerHandle) closeClient() {
 	if r := recover(); r != nil {
-		golly.Logger().Errorf("[kafka] panic in consumer (topic=%s group=%s): %v", h.topic, h.groupID, r)
+		golly.DefaultLogger().Errorf("[kafka] panic in consumer (topic=%s group=%s): %v", h.topic, h.groupID, r)
 	}
 	if h.client != nil {
 		h.client.Close()
@@ -234,8 +233,8 @@ func (h *consumerHandle) closeClient() {
 }
 
 // logger creates a structured logger for this consumer.
-func (h *consumerHandle) logger() *logrus.Entry {
-	return golly.Logger().WithFields(logrus.Fields{
+func (h *consumerHandle) logger() *golly.Entry {
+	return golly.DefaultLogger().WithFields(golly.Fields{
 		"topic": h.topic,
 		"group": h.groupID,
 	})
@@ -277,13 +276,13 @@ func (cm *ConsumerManager) Start() error {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
-	golly.Logger().Infof("[kafka] starting %d consumers", len(cm.consumers))
+	golly.DefaultLogger().Infof("[kafka] starting %d consumers", len(cm.consumers))
 
 	// Start all consumers, collecting any errors
 	var errs []error
 	for id, handle := range cm.consumers {
 		if err := cm.startConsumer(id, handle); err != nil {
-			golly.Logger().WithError(err).Errorf("[kafka] failed to start consumer %s", id)
+			golly.DefaultLogger().Errorf("[kafka] failed to start consumer %s", err)
 			errs = append(errs, err)
 		}
 	}
@@ -297,7 +296,7 @@ func (cm *ConsumerManager) Stop() error {
 		return nil // Already stopped
 	}
 
-	golly.Logger().Info("[kafka] stopping consumers")
+	golly.DefaultLogger().Info("[kafka] stopping consumers")
 
 	// Cancel context to signal all consumers to stop
 	if cm.cancel != nil {
@@ -316,7 +315,7 @@ func (cm *ConsumerManager) Stop() error {
 	}
 	cm.mu.RUnlock()
 
-	golly.Logger().Info("[kafka] all consumers stopped")
+	golly.DefaultLogger().Info("[kafka] all consumers stopped")
 	return nil
 }
 
@@ -338,7 +337,7 @@ func (cm *ConsumerManager) Subscribe(topic string, consumer Consumer) error {
 	cm.consumers[subscriptionID] = handle
 	cm.mu.Unlock()
 
-	golly.Logger().Tracef("[kafka] registered consumer (topic=%s group=%s)", topic, opts.GroupID)
+	golly.DefaultLogger().Tracef("[kafka] registered consumer (topic=%s group=%s)", topic, opts.GroupID)
 
 	// If manager is already running, start this consumer immediately
 	if cm.ctx != nil && cm.running.Load() {
@@ -364,12 +363,12 @@ func (cm *ConsumerManager) startConsumer(id string, handle *consumerHandle) erro
 	go func(h *consumerHandle) {
 		defer cm.wg.Done()
 		if err := h.run(cm.ctx); err != nil && !errors.Is(err, context.Canceled) {
-			golly.Logger().Errorf("[kafka] consumer error (topic=%s group=%s): %v",
+			golly.DefaultLogger().Errorf("[kafka] consumer error (topic=%s group=%s): %v",
 				h.topic, h.groupID, err)
 		}
 	}(handle)
 
-	golly.Logger().Infof("[kafka] consumer started (topic=%s group=%s)", handle.topic, handle.groupID)
+	golly.DefaultLogger().Infof("[kafka] consumer started (topic=%s group=%s)", handle.topic, handle.groupID)
 	return nil
 }
 
@@ -381,12 +380,12 @@ func createConsumerClient(handle *consumerHandle, config Config) (*kgo.Client, e
 		kgo.RequestTimeoutOverhead(60 * time.Second),
 	}
 
-	// Enable franz-go internal logging at trace level
-	if golly.Logger().Level == logrus.TraceLevel {
-		opts = append(opts, kgo.WithLogger(
-			kgo.BasicLogger(golly.Logger().WriterLevel(logrus.TraceLevel), kgo.LogLevelInfo, nil),
-		))
-	}
+	// // Enable franz-go internal logging at trace level
+	// if golly.DefaultLogger().Level() == golly.LogLevelTrace {
+	// 	opts = append(opts, kgo.WithLogger(
+	// 		kgo.BasicLogger(golly.DefaultLogger(), kgo.LogLevelInfo, nil),
+	// 	))
+	// }
 
 	// Configure consumer group options
 	if handle.groupID != "" {

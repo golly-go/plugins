@@ -35,7 +35,7 @@ func sqliteConnection(config SQLiteConfig, modelsToMigrate ...any) (*gorm.DB, er
 func NewSQLiteConnection(config SQLiteConfig, modelToMigrate ...interface{}) (*gorm.DB, error) {
 	connectionString := makeConnectionString(config)
 
-	golly.Logger().Tracef("Connecting to sqlite database: %s", connectionString)
+	golly.DefaultLogger().Tracef("Connecting to sqlite database: %s", connectionString)
 
 	db, _ := gorm.Open(sqlite.Open(connectionString), &gorm.Config{Logger: NewLogger(connectionString, !config.Logger)})
 

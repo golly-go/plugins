@@ -3,8 +3,7 @@ module github.com/golly-go/plugins/kafka
 go 1.25
 
 require (
-	github.com/golly-go/golly v0.8.1
-	github.com/sirupsen/logrus v1.9.3
+	github.com/golly-go/golly v0.8.2-0.20260110082309-495411026bf5
 	github.com/twmb/franz-go v1.20.1
 	golang.org/x/oauth2 v0.33.0
 )

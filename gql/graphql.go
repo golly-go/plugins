@@ -137,7 +137,7 @@ func (g *GraphQL) Perform(wctx *golly.WebContext) {
 
 	var ident golly.Identity
 	if identityFunc != nil {
-		ident = identityFunc(wctx.Context)
+		ident = identityFunc(wctx)
 	}
 
 	resolverCtx := newResolverContext(wctx, ident)

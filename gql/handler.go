@@ -71,7 +71,7 @@ func NewHandler(handler HandlerFunc, options ...Option) graphql.FieldResolveFn {
 
 		wctx := rc.WebContext
 
-		wctx = wctx.WithContext(golly.WithLoggerFields(wctx.Context, metadata(p)))
+		wctx = wctx.WithContext(golly.WithLoggerFields(wctx, metadata(p)))
 		rc.WebContext = wctx
 
 		identity := rc.Identity()

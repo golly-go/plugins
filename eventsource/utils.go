@@ -7,7 +7,6 @@ import (
 	"unicode"
 
 	"github.com/golly-go/golly"
-	"github.com/sirupsen/logrus"
 )
 
 func capitalizeFirstCharASCII(str string) string {
@@ -49,11 +48,11 @@ func ObjectPath(object any) string {
 }
 
 func trace(message string, args ...any) {
-	if golly.Logger().Level == logrus.TraceLevel {
+	if golly.DefaultLogger().Level() == golly.LogLevelTrace {
 
 		msg := fmt.Sprintf(message, args...)
 		pc, file, line := fileInfo(3)
-		golly.Logger().Tracef("[ES] %s caller=%s:%d %s", msg, file, line, runtime.FuncForPC(pc).Name())
+		golly.DefaultLogger().Tracef("[ES] %s caller=%s:%d %s", msg, file, line, runtime.FuncForPC(pc).Name())
 	}
 }
 

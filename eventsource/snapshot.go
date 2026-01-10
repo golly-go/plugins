@@ -19,7 +19,7 @@ type AggregateSnapshotted struct {
 func NewSnapshot(aggregate Aggregate) Event {
 	state, err := json.Marshal(aggregate)
 	if err != nil {
-		golly.Logger().Warnf("Failed to serialize aggregate: %v", err)
+		golly.DefaultLogger().Warnf("Failed to serialize aggregate: %v", err)
 		return Event{}
 	}
 

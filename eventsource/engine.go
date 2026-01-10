@@ -296,7 +296,7 @@ func (eng *Engine) Send(ctx context.Context, events ...Event) {
 
 // Start marks the engine running and starts projections and streams
 func (eng *Engine) Start() {
-	golly.Logger().Tracef("Starting engine")
+	golly.DefaultLogger().Tracef("Starting engine")
 
 	eng.mu.Lock()
 	eng.running = true
@@ -307,7 +307,7 @@ func (eng *Engine) Start() {
 
 // Stop stops the engine, gracefully draining all projection events
 func (eng *Engine) Stop() {
-	golly.Logger().Tracef("Stopping engine")
+	golly.DefaultLogger().Tracef("Stopping engine")
 
 	eng.mu.Lock()
 	eng.running = false

@@ -9,20 +9,19 @@ import (
 	"time"
 
 	"github.com/golly-go/golly"
-	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
 type Logger struct {
-	logger *logrus.Entry
+	logger *golly.Entry
 }
 
 func NewLogger(driver string, disableLogger bool) *Logger {
-	lg := golly.Logger()
+	lg := golly.NewLogger()
 
 	if disableLogger {
-		lg.SetLevel(logrus.WarnLevel)
+		lg.SetLevel(golly.LogLevelWarn)
 	}
 
 	return &Logger{
@@ -30,7 +29,7 @@ func NewLogger(driver string, disableLogger bool) *Logger {
 	}
 }
 
-func (l Logger) WithSourceFields() *logrus.Entry {
+func (l Logger) WithSourceFields() *golly.Entry {
 	return l.logger.WithField("caller", FileWithLineNum())
 }
 
@@ -60,7 +59,7 @@ func (l Logger) Trace(ctx context.Context, begin time.Time, fc func() (string, i
 	elapsed := time.Since(begin)
 	duration := float64(elapsed.Nanoseconds()) / 1e6
 
-	logger := l.WithSourceFields().WithFields(logrus.Fields{
+	logger := l.WithSourceFields().WithFields(golly.Fields{
 		"elapsed":  duration,
 		"duration": fmt.Sprintf("%v", duration),
 	})

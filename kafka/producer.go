@@ -70,7 +70,9 @@ func (p *Producer) Publish(ctx context.Context, topic string, payload any) error
 	// The client handles internal synchronization and buffering.
 	p.client.Produce(ctx, record, func(r *kgo.Record, err error) {
 		if err != nil {
-			golly.Logger().Errorf("kafka: publish: failed to deliver message to %s: %v", topic, err)
+			golly.
+				DefaultLogger().
+				Errorf("kafka: publish: failed to deliver message to %s: %v", topic, err)
 		}
 	})
 
