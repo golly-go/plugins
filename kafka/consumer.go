@@ -380,12 +380,12 @@ func createConsumerClient(handle *consumerHandle, config Config) (*kgo.Client, e
 		kgo.RequestTimeoutOverhead(60 * time.Second),
 	}
 
-	// // Enable franz-go internal logging at trace level
-	// if golly.DefaultLogger().Level() == golly.LogLevelTrace {
-	// 	opts = append(opts, kgo.WithLogger(
-	// 		kgo.BasicLogger(golly.DefaultLogger(), kgo.LogLevelInfo, nil),
-	// 	))
-	// }
+	// Enable franz-go internal logging at trace level
+	if golly.DefaultLogger().Level() == golly.LogLevelTrace {
+		opts = append(opts, kgo.WithLogger(
+			kgo.BasicLogger(&logWriter{golly.DefaultLogger(), golly.LogLevelTrace}, kgo.LogLevelInfo, nil),
+		))
+	}
 
 	// Configure consumer group options
 	if handle.groupID != "" {
@@ -413,4 +413,14 @@ func createConsumerClient(handle *consumerHandle, config Config) (*kgo.Client, e
 // generateSubscriptionID creates a unique ID for a topic+group subscription.
 func generateSubscriptionID(topic string, opts SubscribeOptions) string {
 	return topic + "-" + opts.GroupID
+}
+
+type logWriter struct {
+	lg    *golly.Logger
+	level golly.Level
+}
+
+func (w *logWriter) Write(p []byte) (n int, err error) {
+	w.lg.Log(w.level, string(p))
+	return len(p), nil
 }
