@@ -24,7 +24,7 @@ type SQLiteConfig struct {
 
 func sqliteConnection(config SQLiteConfig, modelsToMigrate ...any) (*gorm.DB, error) {
 	if config.InMemory {
-		return NewInMemoryConnection(modelsToMigrate...), nil
+		return NewInMemoryConnection("", modelsToMigrate...), nil
 	}
 
 	return NewSQLiteConnection(config, modelsToMigrate...)
@@ -62,8 +62,13 @@ func getDisableLogger() bool {
 
 // this is used for testing makes things easier.
 // NewInMemoryConnection creates a new database connection and migrates any passed in model
-func NewInMemoryConnection(modelToMigrate ...interface{}) *gorm.DB {
-	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+func NewInMemoryConnection(fileName string, modelToMigrate ...interface{}) *gorm.DB {
+	if fileName == "" {
+		fileName = ":memory:"
+	}
+	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", fileName)
+
+	db, _ := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger: NewLogger("in-memory", getDisableLogger()),
 	})
 

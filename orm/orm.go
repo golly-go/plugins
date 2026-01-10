@@ -2,9 +2,11 @@ package orm
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/golly-go/golly"
+	"github.com/google/uuid"
 
 	"gorm.io/gorm"
 )
@@ -83,7 +85,9 @@ func FromContext(ctx context.Context) *gorm.DB {
 }
 
 func CreateTestContext(c context.Context, modelsToMigration ...interface{}) context.Context {
-	return golly.WithValue(c, contextKey, NewInMemoryConnection(modelsToMigration...))
+	fileName := fmt.Sprintf("memdb_%s", uuid.New().String())
+
+	return golly.WithValue(c, contextKey, NewInMemoryConnection(fileName, modelsToMigration...))
 }
 
 func Close(c context.Context) error {
