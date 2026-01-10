@@ -15,8 +15,8 @@ github.com/go-sql-driver/mysql v1.5.0/go.mod h1:DCzpHaOWr8IXmIStZouvnhqoel9Qv2LB
 github.com/go-viper/mapstructure/v2 v2.4.0 h1:EBsztssimR/CONLSZZ04E8qAkxNYq4Qp9LvH92wZUgs=
 github.com/go-viper/mapstructure/v2 v2.4.0/go.mod h1:oJDH3BJKyqBA2TXFhDsKDGDTlndYOZ6rGS0BRZIxGhM=
 github.com/golang-sql/civil v0.0.0-20190719163853-cb61b32ac6fe/go.mod h1:8vg3r2VgvsThLBIFL93Qb5yWzgyZWhEmBwUJWevAkK0=
-github.com/golly-go/golly v0.8.2-0.20260110082309-495411026bf5 h1:PghJ24G1qp+xfXqkaC0OZVUIVsrMCK5BaP3Vm6Fvb2o=
-github.com/golly-go/golly v0.8.2-0.20260110082309-495411026bf5/go.mod h1:SN+ZfRRmOXWgbQRFpMu2ne1sZxD+cuXWnfhhV5ViApc=
+github.com/golly-go/golly v0.8.2-0.20260110202548-267b596046cf h1:nUlZG6l9eQoNUhbKj5uK5I0EuBk7UFKYtS6Py1MIj5c=
+github.com/golly-go/golly v0.8.2-0.20260110202548-267b596046cf/go.mod h1:SN+ZfRRmOXWgbQRFpMu2ne1sZxD+cuXWnfhhV5ViApc=
 github.com/golly-go/plugins/eventsource v0.0.0-20250116025601-68e319567989 h1:G7c51NzFk3IfkxIa0h1tKhaly4QiUAkP+wpGLiG52fI=
 github.com/golly-go/plugins/eventsource v0.0.0-20250116025601-68e319567989/go.mod h1:naZooq37eTeNxjR722fd/dpi3mFcLgQgj3Iz1Nro9mw=
 github.com/golly-go/plugins/orm v0.0.0-20250116025601-68e319567989 h1:b9iSu7cpEMEPqovv/yp1GFQnqtPDLkR/TDJlIMw4gJg=
