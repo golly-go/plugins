@@ -127,35 +127,28 @@ type postData struct {
 }
 
 // Perform executes a GraphQL query or mutation using the instance schema.
+
+// Perform executes a GraphQL query or mutation using the instance schema.
 func (g *GraphQL) Perform(wctx *golly.WebContext) {
-	schema, err := g.Schema()
-	if err != nil {
-		wctx.Logger().Error("GraphQL schema initialization error: ", err)
-		wctx.Response().WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	var ident golly.Identity
-	if identityFunc != nil {
-		ident = identityFunc(wctx)
-	}
-
-	resolverCtx := newResolverContext(wctx, ident)
 
 	var p postData
 	if err := wctx.Marshal(&p); err != nil {
-		wctx.Logger().Error("Failed to parse request body: ", err)
+		wctx.Logger().WithError(err).Error("Failed to parse request body")
 		wctx.Response().WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	result := graphql.Do(graphql.Params{
-		Schema:         schema,
-		RequestString:  p.Query,
-		VariableValues: p.Variables,
-		OperationName:  p.Operation,
-		Context:        resolverCtx,
+	ctx := golly.WithLoggerFields(wctx.Context(), map[string]interface{}{
+		"gql.operation.type": p.Operation,
+		"gql.operation.name": p.Query,
 	})
+
+	result, err := g.Execute(ctx, p.Query, p.Variables, p.Operation)
+	if err != nil {
+		wctx.Logger().WithError(err).Error("Failed to execute GraphQL query", p.Operation)
+		wctx.Response().WriteHeader(http.StatusInternalServerError)
+		return
+	}
 
 	wctx.RenderJSON(result)
 }

@@ -53,7 +53,7 @@ func GlobalConnection() *gorm.DB {
 func middlewareWithConnection(db *gorm.DB) golly.MiddlewareFunc {
 	return func(next golly.HandlerFunc) golly.HandlerFunc {
 		return func(wctx *golly.WebContext) {
-			wctx.WithContext(golly.WithValue(wctx, contextKey, db))
+			wctx.WithContext(golly.WithValue(wctx.Context(), contextKey, db))
 			next(wctx)
 		}
 	}

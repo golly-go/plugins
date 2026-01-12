@@ -1,58 +1,71 @@
 # Golly Plugins
 
-This repository contains the official plugin collection for the [Golly](https://github.com/golly-go/golly) framework.
+The official, curated extension ecosystem for the [Golly](https://github.com/golly-go/golly) framework.
 
-These plugins are designed to be modular and lightweight, allowing you to opt-in to specific functionality without bloating your core application or dependencies.
+> **Opt-in Power. Zero Bloat.**
 
-## Plugins
+Golly's core philosophy is to keep the runtime lightweight. We don't force a database, a message broker, or a specific API style on you. Instead, we provide these capabilities as **Plugins**—independent, production-hardened modules that you can snap into your application when you need them.
 
-| Plugin          | Import Path                               | Description                                                                              |
-| --------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------- |
-| **ORM**         | `github.com/golly-go/plugins/orm`         | Persistence layer using [GORM](https://gorm.io) with support for PostgreSQL and SQLite.  |
-| **Eventsource** | `github.com/golly-go/plugins/eventsource` | A lightweight Event Sourcing engine for building event-driven systems.                   |
-| **Kafka**       | `github.com/golly-go/plugins/kafka`       | Producer and Consumer implementation using [Franz-go](https://github.com/twmb/franz-go). |
-| **Redis**       | `github.com/golly-go/plugins/redis`       | Redis client integration for caching and key-value storage.                              |
-| **GraphQL**     | `github.com/golly-go/plugins/gql`         | GraphQL integration for Golly applications.                                              |
+## 🗺 The Ecosystem
 
-## Installation
+```mermaid
+graph TD
+    App[Your App] --> Core[Golly Core]
+    App --> P_ORM[ORM Plugin]
+    App --> P_ES[Eventsource Plugin]
+    App --> P_Kafka[Kafka Plugin]
+    App --> P_Redis[Redis Plugin]
 
-Since Golly plugins are managed as separate Go modules (using a Go workspace locally), you should install only what you need:
-
-```bash
-# Install ORM
-go get github.com/golly-go/plugins/orm
-
-# Install Kafka
-go get github.com/golly-go/plugins/kafka
+    P_ORM -.-> DB[(Postgres / SQLite)]
+    P_ES -.-> P_Kafka
+    P_Kafka -.-> Broker[(Kafka Cluster)]
+    P_ES --> Store[(Event Store)]
 ```
 
-## Usage
+## 🚀 Feature Highlights
 
-### ORM Plugin
+### 💾 ORM: Battle-Tested Persistence
 
-The ORM plugin provides a configured GORM instance attached to your Golly Application.
+Don't waste time wiring up databases. The **ORM Plugin** gives you a pre-configured [GORM](https://gorm.io) instance, fully integrated with Golly's context and logger.
 
-```go
-package main
+- **Drivers**: PostgreSQL, SQLite.
+- **Features**: Auto-migrations, connection pooling, context propagation.
+- **Import**: `github.com/golly-go/plugins/orm`
 
-import (
-	"github.com/golly-go/golly"
-	"github.com/golly-go/plugins/orm"
-)
+### ⏳ Eventsource: Time-Travel for Data
 
-func main() {
-	app := golly.New()
+Build complex, event-driven systems without the headache. The **Eventsource Plugin** provides a robust engine for managing aggregates and event streams.
 
-	// Initialize ORM
-	app.RegisterModule(orm.Module())
+- **Pattern**: CQRS + Event Sourcing made simple.
+- **Storage**: Pluggable backends (ORM, etc).
+- **Import**: `github.com/golly-go/plugins/eventsource`
 
-    app.Run()
-}
-```
+### 📨 Kafka: The Streaming Backbone
 
-### Eventsource Plugin
+High-throughput messaging powered by [Franz-go](https://github.com/twmb/franz-go), the fastest Kafka client for Go.
 
-The Eventsource plugin allows you to define aggregates and event handlers.
+- **Performance**: Zero-copy consumer paths.
+- **Integration**: Automatic graceful shutdown and health checks.
+- **Import**: `github.com/golly-go/plugins/kafka`
+
+### ⚡ Redis: High-Speed Caching
+
+Instant access to your hot data.
+
+- **Client**: Built on `go-redis`.
+- **Import**: `github.com/golly-go/plugins/redis`
+
+### 🕸️ GraphQL: Modern API Layer
+
+Expose your data with a flexible, strongly-typed query language.
+
+- **Import**: `github.com/golly-go/plugins/gql`
+
+---
+
+## 🛠 Real-World Production Example
+
+Mix and match plugins to build exactly what you need. Here is a full-stack equivalent application:
 
 ```go
 package main
@@ -60,21 +73,54 @@ package main
 import (
 	"github.com/golly-go/golly"
 	"github.com/golly-go/plugins/eventsource"
+	"github.com/golly-go/plugins/kafka"
+	"github.com/golly-go/plugins/orm"
 )
 
 func main() {
-    app := golly.New()
+	golly.Run(golly.Options{
+		Name:    "payment-processor",
+		Version: "1.0.0",
 
-    // Register the Eventsource engine
-    app.RegisterModule(eventsource.Module())
+		// 1. Register Plugins
+		Plugins: []golly.Plugin{
+			// Database
+			orm.NewPlugin(orm.Config{Driver: "postgres"}),
 
-    app.Run()
+			// Event Bus
+			kafka.NewPlugin(kafka.Config{Brokers: []string{"localhost:9092"}}),
+
+			// Event Sourcing Engine (using ORM and Kafka)
+			eventsource.NewPlugin(
+				eventsource.WithStore(&orm.EventStore{}),
+				eventsource.WithDispatcher(&kafka.Dispatcher{}),
+			),
+		},
+
+		// 2. Initialize Logic
+		Initializer: func(app *golly.Application) error {
+			// Your domain logic here
+			return nil
+		},
+	})
 }
+```
+
+## 📦 Installation
+
+Plugins are separate modules to keep your dependency tree clean.
+
+```bash
+# Add the database layer
+go get github.com/golly-go/plugins/orm
+
+# Add event streaming
+go get github.com/golly-go/plugins/kafka
 ```
 
 ## Contributing
 
-Contributions are welcome! Please ensure any new plugins follow the existing pattern of being self-contained modules.
+We welcome contributions! Please see the [Contributing Guide](CONTRIBUTING.md) for details on how to propose new plugins or improvements.
 
 ## License
 

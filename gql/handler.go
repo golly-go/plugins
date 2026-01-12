@@ -24,7 +24,7 @@ var (
 
 // This plugins provides golly wrappers to allow easy to use GQL integration
 
-type HandlerFunc func(*golly.WebContext, graphql.ResolveParams) (interface{}, error)
+type HandlerFunc func(*golly.Context, graphql.ResolveParams) (interface{}, error)
 
 type Option func(*Options)
 
@@ -64,26 +64,24 @@ func NewHandler(handler HandlerFunc, options ...Option) graphql.FieldResolveFn {
 	}
 
 	return func(p graphql.ResolveParams) (interface{}, error) {
-		rc, ok := p.Context.(*ResolverContext)
-		if !ok || rc.WebContext == nil {
-			return nil, ErrorInvalidContext
-		}
+		defer func() {
+			if r := recover(); r != nil {
+				golly.DefaultLogger().Errorf("panic in GQL handler: %v", r)
+			}
+		}()
 
-		wctx := rc.WebContext
+		gctx := golly.ToGollyContext(p.Context)
 
-		wctx = wctx.WithContext(golly.WithLoggerFields(wctx, metadata(p)))
-		rc.WebContext = wctx
-
-		identity := rc.Identity()
+		identity := golly.IdentityFromContext[golly.Identity](gctx)
 		if !cfg.Public {
 			if identity == nil || identity.IsValid() != nil {
 				return nil, golly.NewError(http.StatusUnauthorized, ErrorUnauthenticated)
 			}
 		}
 
-		result, err := handler(wctx, p)
+		result, err := handler(gctx, p)
 		if err != nil {
-			wctx.Logger().Errorf("error in GQL handler: %v", err)
+			gctx.Logger().Errorf("error in GQL handler: %v", err)
 			if gqlErr, ok := err.(*gqlerrors.Error); ok {
 				return result, gqlErr
 			}
@@ -94,9 +92,6 @@ func NewHandler(handler HandlerFunc, options ...Option) graphql.FieldResolveFn {
 
 			return result, golly.NewError(http.StatusInternalServerError, ErrorInternalServer)
 		}
-
-		// Ensure the modified context is passed back
-		p.Context = rc
 
 		return result, nil
 	}
