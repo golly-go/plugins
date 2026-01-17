@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 
@@ -248,7 +249,10 @@ func (pm *ProjectionManager) handleEvent(ctx context.Context, evt Event) {
 	// Process handlers without holding lock
 	for pos := range handlers {
 		if err := handlers[pos](ctx, evt); err != nil {
-			golly.DefaultLogger().Errorf("error in projection handler %s: %v", resolveInterfaceName(handlers[pos]), err)
+			debug.PrintStack()
+
+			golly.DefaultLogger().Errorf("XXX error in projection handler %v: %#v", err, evt)
+
 		}
 	}
 }
