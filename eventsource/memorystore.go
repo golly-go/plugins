@@ -203,15 +203,71 @@ var _ EventStore = (*InMemoryStore)(nil)
 func applyInMemoryFilters(events []Event, f EventFilter) []Event {
 	var out []Event
 	for _, e := range events {
-		gv := e.Version
 
-		// Filter by fromVersion/toVersion
-		if f.FromVersion > 0 && gv < int64(f.FromVersion) {
+		// Filter by AggregateType
+		if f.AggregateType != "" && e.AggregateType != f.AggregateType {
 			continue
 		}
-		if f.ToVersion > 0 && gv > int64(f.ToVersion) {
+		// Filter by AggregateID
+		if f.AggregateID != "" && e.AggregateID != f.AggregateID {
 			continue
 		}
+		// Filter by AggregateTypes
+		if len(f.AggregateTypes) > 0 {
+			found := false
+			for _, at := range f.AggregateTypes {
+				if e.AggregateType == at {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+		}
+		// Filter by EventType
+		if len(f.EventType) > 0 {
+			found := false
+			for _, et := range f.EventType {
+				if e.Type == et {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+		}
+		// Filter by Topics
+		if len(f.Topics) > 0 {
+			found := false
+			for _, t := range f.Topics {
+				if e.Topic == t {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+		}
+
+		// Filter by version (aggregate-local)
+		if f.FromVersion > 0 && e.Version < int64(f.FromVersion) {
+			continue
+		}
+		if f.ToVersion > 0 && e.Version > int64(f.ToVersion) {
+			continue
+		}
+
+		// Filter by GlobalVersion
+		if f.FromGlobalVersion > 0 && e.GlobalVersion < int64(f.FromGlobalVersion) {
+			continue
+		}
+		if f.ToGlobalVersion > 0 && e.GlobalVersion > int64(f.ToGlobalVersion) {
+			continue
+		}
+
 		// Filter by time
 		if !f.FromTime.IsZero() && e.CreatedAt.Before(f.FromTime) {
 			continue
@@ -219,8 +275,6 @@ func applyInMemoryFilters(events []Event, f EventFilter) []Event {
 		if !f.ToTime.IsZero() && e.CreatedAt.After(f.ToTime) {
 			continue
 		}
-		// Filter by aggregate type/ID, event type, etc. if needed
-		// ...
 
 		out = append(out, e)
 		if f.Limit > 0 && len(out) >= f.Limit {
