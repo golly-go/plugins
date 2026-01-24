@@ -74,7 +74,7 @@ func NewHandler(handler HandlerFunc, options ...Option) graphql.FieldResolveFn {
 
 		identity := golly.IdentityFromContext[golly.Identity](gctx)
 		if !cfg.Public {
-			if identity == nil || identity.IsValid() != nil {
+			if identity == nil || !identity.IsValid() {
 				return nil, golly.NewError(http.StatusUnauthorized, ErrorUnauthenticated)
 			}
 		}

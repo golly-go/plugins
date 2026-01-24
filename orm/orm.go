@@ -16,12 +16,12 @@ const (
 )
 
 const (
-	contextKey golly.ContextKey = "database"
-
 	InMemoryDriver Driver = "in-memory"
 	SQLiteDriver   Driver = "sqlite"
 	PostgresDriver Driver = "postgres"
 )
+
+var contextKey golly.ContextKey
 
 type Driver string
 

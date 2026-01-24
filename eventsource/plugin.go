@@ -34,7 +34,7 @@ import (
 // }
 
 var (
-	engineKey golly.ContextKey = "eventsource.engine"
+	engineKey golly.ContextKey
 )
 
 type PluginOptions struct {
