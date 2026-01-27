@@ -21,7 +21,7 @@ const (
 	PostgresDriver Driver = "postgres"
 )
 
-var contextKey golly.ContextKey
+var contextKey = &golly.ContextKey{}
 
 type Driver string
 
