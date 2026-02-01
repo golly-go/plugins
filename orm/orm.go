@@ -21,7 +21,9 @@ const (
 	PostgresDriver Driver = "postgres"
 )
 
-var contextKey = &struct{}{}
+type contextKeyT struct{}
+
+var contextKey = &contextKeyT{}
 
 type Driver string
 
