@@ -2,6 +2,7 @@ package eventsource
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"time"
 
@@ -211,4 +212,15 @@ func EventDataToMap(data any) (map[string]any, error) {
 	}
 
 	return m, nil
+}
+
+func applyUserInfo(ctx context.Context, e *Event) {
+	if userInfoFunc == nil {
+		return
+	}
+
+	userInfo := userInfoFunc(ctx)
+
+	e.TenantID = userInfo.TenantID
+	e.UserID = userInfo.UserID
 }

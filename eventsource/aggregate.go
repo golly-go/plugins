@@ -147,12 +147,7 @@ func (ab *AggregateBase) ProcessChanges(ctx context.Context, ag Aggregate) error
 
 		// For now put this here till i can find a better way todo this
 		// perhaps we move Identity to be top level in Golly
-		if userInfoFunc != nil {
-			userInfo := userInfoFunc(ctx)
-
-			change.TenantID = userInfo.TenantID
-			change.UserID = userInfo.UserID
-		}
+		applyUserInfo(ctx, &change)
 
 		change.AggregateID = ag.GetID()
 		change.AggregateType = ObjectName(ag)
@@ -165,7 +160,11 @@ func (ab *AggregateBase) ProcessChanges(ctx context.Context, ag Aggregate) error
 	ag.SetChanges(changes)
 
 	if ShouldSnapshot(int(version), int(ag.Version())) {
-		ag.AppendChanges(NewSnapshot(ag))
+		evt := NewSnapshot(ag)
+
+		applyUserInfo(ctx, &evt)
+
+		ag.AppendChanges(evt)
 	}
 
 	return nil
