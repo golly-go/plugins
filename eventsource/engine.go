@@ -120,7 +120,7 @@ func (eng *Engine) CommitAggregateChanges(ctx context.Context, agg Aggregate) er
 	}
 
 	eng.Send(ctx, changes...)
-	agg.Changes().MarkComplete()
+	agg.ClearChanges()
 
 	return nil
 }
