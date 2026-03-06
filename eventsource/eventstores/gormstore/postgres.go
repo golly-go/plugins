@@ -72,7 +72,7 @@ func (s *Store) LoadEvents(ctx context.Context, filters ...eventsource.EventFilt
 	var events []Event
 	query := orm.DB(ctx)
 
-	applyFilters(query, filters...)
+	query = applyFilters(query, filters...)
 
 	err := query.Find(&events).Error
 
@@ -101,7 +101,7 @@ func (s *Store) LoadEventsInBatches(
 	baseQuery := orm.DB(ctx).Model(&Event{}).Order("global_version ASC")
 
 	// Apply user-provided filters (e.g., FromVersion, FromTime, etc.)
-	applyFilters(baseQuery, filters...)
+	baseQuery = applyFilters(baseQuery, filters...)
 
 	offset := 0
 	for {
@@ -176,7 +176,10 @@ func (s *Store) Save(ctx context.Context, events ...*eventsource.Event) error {
 		}
 
 		if currentVersion != desiredStartVersion {
-			return eventsource.ErrVersionConflict
+			return errors.Join(
+				eventsource.ErrVersionConflict,
+				fmt.Errorf("current version: %d, desired version: %d", currentVersion, desiredStartVersion),
+			)
 		}
 
 		if err := tx.CreateInBatches(batch, len(batch)).Error; err != nil {

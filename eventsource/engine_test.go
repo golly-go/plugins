@@ -151,6 +151,34 @@ func TestEngine_RegisterProjection(t *testing.T) {
 	}
 }
 
+// TestEngine_Execute_SequentialCallsSameAggregate is a regression test for a bug
+// where calling Execute back-to-back on the same aggregate pointer caused a version
+// conflict. The root cause was that CommitAggregateChanges called MarkComplete()
+// (whose result was discarded) instead of ClearChanges(), leaving stale replayed
+// events in Changes(). The Replay guard (len(agg.Changes()) > 0) then skipped
+// re-replay on the second call, leaving the aggregate at a stale version.
+func TestEngine_Execute_SequentialCallsSameAggregate(t *testing.T) {
+	engine := NewEngine(WithStore(NewInMemoryStore()))
+	engine.RegisterAggregate(&TestAggregate{}, []any{testEvent{}})
+
+	ctx := golly.NewContext(context.Background())
+	agg := &TestAggregate{ID: "plan-sequential-test"}
+
+	// First Execute — creates version 1
+	err := engine.Execute(ctx, agg, &TestCommand{name: "first"})
+	require.NoError(t, err, "first Execute should succeed")
+	assert.Equal(t, int64(1), agg.Version(), "version should be 1 after first Execute")
+	assert.Equal(t, "first", agg.Name, "aggregate state should reflect first command")
+	assert.Empty(t, agg.Changes(), "changes should be cleared after commit")
+
+	// Second Execute on the SAME pointer — should re-replay and create version 2
+	err = engine.Execute(ctx, agg, &TestCommand{name: "second"})
+	require.NoError(t, err, "second Execute on same pointer should not cause a version conflict")
+	assert.Equal(t, int64(2), agg.Version(), "version should be 2 after second Execute")
+	assert.Equal(t, "second", agg.Name, "aggregate state should reflect second command")
+	assert.Empty(t, agg.Changes(), "changes should be cleared after second commit")
+}
+
 func TestEngine_ExecuteCommand(t *testing.T) {
 	engine := NewEngine(WithStore(NewInMemoryStore()))
 	ctx := golly.NewContext(context.Background())

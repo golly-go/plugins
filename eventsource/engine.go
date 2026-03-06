@@ -2,6 +2,7 @@ package eventsource
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -125,7 +126,13 @@ func (eng *Engine) CommitAggregateChanges(ctx context.Context, agg Aggregate) er
 	return nil
 }
 
-// Execute handles command execution, including loading the aggregate, replaying events, validating, and persisting changes.
+// Execute handles command execution: replay → validate → perform → process → commit.
+//
+// If CommitAggregateChanges returns ErrVersionConflict (a concurrent writer raced in
+// between Replay and Save), Execute will re-replay to pick up the interleaved events,
+// re-number the already-computed pending events, and retry the save — without calling
+// Perform again. This is safe for commands with external side effects (e.g. Stripe API
+// calls) as Perform is guaranteed to run exactly once.
 func (eng *Engine) Execute(ctx context.Context, agg Aggregate, cmd Command) (err error) {
 	if eng == nil {
 		return fmt.Errorf("engine is nil")
@@ -133,6 +140,7 @@ func (eng *Engine) Execute(ctx context.Context, agg Aggregate, cmd Command) (err
 
 	trace("executing command %s aggregate=%s aggregateID=%s", golly.TypeNoPtr(cmd).Name(), golly.TypeNoPtr(agg).Name(), agg.GetID())
 
+	// === Phase 1: run once — replay, validate, perform, process ===
 	if HasValidID(agg) {
 		if err = eng.Replay(ctx, agg); err != nil {
 			return handleExecutionError(ctx, agg, cmd, err)
@@ -157,7 +165,43 @@ func (eng *Engine) Execute(ctx context.Context, agg Aggregate, cmd Command) (err
 		return handleExecutionError(ctx, agg, cmd, ErrorNoAggregateID)
 	}
 
-	return eng.CommitAggregateChanges(ctx, agg)
+	// === Phase 2: commit, retrying only the save on version conflict ===
+	const maxSaveRetries = 3
+	for attempt := 0; attempt < maxSaveRetries; attempt++ {
+		err = eng.CommitAggregateChanges(ctx, agg)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, ErrVersionConflict) {
+			return err
+		}
+		if attempt == maxSaveRetries-1 {
+			break
+		}
+
+		// A concurrent writer (e.g. a Stripe webhook) raced in between our Replay
+		// and Save. Capture the pending events, re-replay to get the latest aggregate
+		// version, re-number those events, and retry — without calling Perform again.
+		pending := agg.Changes().Uncommitted()
+		agg.ClearChanges()
+
+		trace("version conflict on attempt %d for %s %s, re-versioning and retrying",
+			attempt+1, golly.TypeNoPtr(agg).Name(), agg.GetID())
+
+		if e := eng.Replay(ctx, agg); e != nil {
+			return e
+		}
+
+		base := agg.Version()
+		for i := range pending {
+			base++
+			pending[i].Version = base
+		}
+		agg.SetChanges(pending)
+		agg.SetVersion(base)
+	}
+
+	return err
 }
 
 func (eng *Engine) Replay(ctx context.Context, agg Aggregate) error {
