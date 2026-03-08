@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/segmentio/encoding/json"
@@ -105,7 +104,7 @@ func main() {
 
 	if err := engine.Execute(ctx, order, cmd); err != nil {
 		fmt.Printf("Failed to execute command: %v", err)
-		os.Exit(1)
+		return
 	}
 
 	time.Sleep(time.Millisecond * 100)

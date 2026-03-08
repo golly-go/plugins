@@ -170,6 +170,8 @@ func (pm *ProjectionManager) Start() {
 
 // Stop gracefully shuts down projection processing, draining all in-flight events
 func (pm *ProjectionManager) Stop() {
+	trace("stopped called in projection manger")
+
 	if !pm.running.Swap(false) {
 		return // Already stopped
 	}
@@ -184,28 +186,31 @@ func (pm *ProjectionManager) Stop() {
 
 // run processes events in a single goroutine with drain on shutdown
 func (pm *ProjectionManager) run() {
-	defer pm.wg.Done()
+	defer func() {
+		// Close jobs so that drain()'s range loop terminates.
+		close(pm.jobs)
+		pm.drain()
+		pm.wg.Done()
+	}()
 
 	trace("starting projection manager")
 
-	for {
+	for pm.running.Load() {
 		select {
 		case job := <-pm.jobs:
 			pm.handleEvent(job.Ctx, job.Event)
 
 		case <-pm.stop:
-			// Drain remaining events before shutdown
-			trace("draining projection events")
-			for {
-				select {
-				case job := <-pm.jobs:
-					pm.handleEvent(job.Ctx, job.Event)
-				default:
-					trace("projection drain complete")
-					return
-				}
-			}
+			return
 		}
+	}
+}
+
+func (pm *ProjectionManager) drain() {
+	trace("draining projection events")
+
+	for job := range pm.jobs {
+		pm.handleEvent(job.Ctx, job.Event)
 	}
 }
 
