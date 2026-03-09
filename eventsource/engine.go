@@ -47,7 +47,8 @@ func NewEngine(opts ...Option) *Engine {
 }
 
 // Store returns the underlying event store (if you need direct access)
-func (eng *Engine) Store() EventStore { return eng.store }
+func (eng *Engine) Store() EventStore       { return eng.store }
+func (eng *Engine) Streams() *StreamManager { return eng.streams }
 
 // Projections returns the underlying projection manager
 func (eng *Engine) Projections() *ProjectionManager { return eng.projections }
