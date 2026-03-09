@@ -64,10 +64,10 @@ func applyFilters(query *gorm.DB, filters ...eventsource.EventFilter) *gorm.DB {
 			query = query.Where("version <= ?", filter.ToVersion)
 		}
 		if !filter.FromTime.IsZero() {
-			query = query.Where("timestamp >= ?", filter.FromTime)
+			query = query.Where("created_at >= ?", filter.FromTime)
 		}
 		if !filter.ToTime.IsZero() {
-			query = query.Where("timestamp <= ?", filter.ToTime)
+			query = query.Where("created_at <= ?", filter.ToTime)
 		}
 		if filter.FromGlobalVersion > 0 {
 			query = query.Where("global_version >= ", filter.FromGlobalVersion)
