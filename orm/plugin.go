@@ -87,6 +87,11 @@ func (p *OrmPlugin[T]) Deinitialize(app *golly.Application) error { return nil }
 func (p *OrmPlugin[T]) AfterDeinitialize(app *golly.Application) error {
 	connection := GlobalConnection()
 
+	// we are not started
+	if connection == nil {
+		return nil
+	}
+
 	lock.Lock()
 	defer lock.Unlock()
 
