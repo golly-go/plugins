@@ -22,6 +22,8 @@ var ErrQueueDraining = errors.New("queue is draining and not accepting new event
 type Job struct {
 	Ctx   context.Context
 	Event Event
+
+	wait chan struct{}
 }
 
 // StreamNamed provides a debug/metrics-friendly name for a stream.

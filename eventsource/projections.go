@@ -198,12 +198,26 @@ func (pm *ProjectionManager) run() {
 	for pm.running.Load() {
 		select {
 		case job := <-pm.jobs:
-			pm.handleEvent(job.Ctx, job.Event)
+			if job.wait != nil {
+				close(job.wait)
+				continue
+			}
 
+			pm.handleEvent(job.Ctx, job.Event)
 		case <-pm.stop:
 			return
 		}
 	}
+}
+
+func (pm *ProjectionManager) Wait() {
+	if !pm.running.Load() {
+		return
+	}
+
+	wait := make(chan struct{})
+	pm.jobs <- Job{wait: wait}
+	<-wait
 }
 
 func (pm *ProjectionManager) drain() {
@@ -212,6 +226,7 @@ func (pm *ProjectionManager) drain() {
 	for job := range pm.jobs {
 		pm.handleEvent(job.Ctx, job.Event)
 	}
+
 }
 
 // dispatch enqueues an event for async projection processing
