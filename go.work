@@ -1,6 +1,7 @@
-go 1.25
+go 1.26
 
 use ./kafka
+
 use ./orm
 
 // use ./orm/drivers/postgres

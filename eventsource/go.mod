@@ -1,9 +1,9 @@
 module github.com/golly-go/plugins/eventsource
 
-go 1.25
+go 1.26
 
 require (
-	github.com/golly-go/golly v0.9.6-0.20260131200035-892e5d6c21c0
+	github.com/golly-go/golly v0.9.7-0.20260416224000-f7ea19822dff
 	github.com/google/uuid v1.6.0
 	github.com/segmentio/encoding v0.5.3
 	github.com/spf13/cobra v1.10.1
@@ -26,9 +26,9 @@ require (
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/sync v0.17.0 // indirect
-	golang.org/x/sys v0.37.0 // indirect
-	golang.org/x/term v0.36.0 // indirect
-	golang.org/x/text v0.30.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/term v0.41.0 // indirect
+	golang.org/x/text v0.35.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

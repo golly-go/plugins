@@ -9,10 +9,12 @@ import (
 
 // GetPlugin retrieves the Kafka plugin from the golly application
 func GetPlugin() *Plugin {
-	if plugin, ok := golly.App().Plugins().Get(PluginName).(*Plugin); ok {
-		return plugin
+	plugin := golly.GetPlugin[*Plugin](golly.App(), PluginName)
+	if plugin == nil {
+		return nil
 	}
-	return nil
+
+	return plugin
 }
 
 // GetProducer retrieves the Kafka producer from the application
@@ -37,7 +39,7 @@ func Subscribe(topic string, consumer Consumer) error {
 	if consumers := GetConsumerManager(); consumers != nil {
 		return consumers.Subscribe(topic, consumer)
 	}
-	return fmt.Errorf("kafka consumers not found")
+	return fmt.Errorf("[KAFKA] consumer manager not found")
 }
 
 // Publish is a convenience function to publish a message using the global producer
@@ -45,7 +47,7 @@ func Publish(ctx context.Context, topic string, payload any) error {
 	producer := GetProducer()
 	if producer == nil {
 		golly.DefaultLogger().Warnf("[KAFKA] attempted to publish to %s but producer is not available (EnableProducer=false?)", topic)
-		return fmt.Errorf("kafka producer not available")
+		return fmt.Errorf("[KAFKA] producer not available")
 	}
 	return producer.Publish(ctx, topic, payload)
 }
