@@ -35,11 +35,19 @@ func GetConsumerManager() *ConsumerManager {
 }
 
 // Subscribe registers a consumer for a topic using the consumer manager
-func Subscribe(topic string, consumer Consumer) error {
-	if consumers := GetConsumerManager(); consumers != nil {
-		return consumers.Subscribe(topic, consumer)
+func Subscribe(tracker any, topic string, consumer Consumer) error {
+	plugin := golly.GetPlugin[*Plugin](golly.App(), PluginName)
+
+	if plugin == nil {
+		return fmt.Errorf("[KAFKA] plugin not found")
 	}
-	return fmt.Errorf("[KAFKA] consumer manager not found")
+
+	consumers := plugin.consumers()
+	if consumers == nil {
+		return fmt.Errorf("[KAFKA] consumer manager not found")
+	}
+
+	return consumers.Subscribe(topic, consumer)
 }
 
 // Publish is a convenience function to publish a message using the global producer
