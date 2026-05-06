@@ -85,7 +85,11 @@ func NameToTopicUnicode(obj any) string {
 	case string:
 		s = o
 	default:
-		s = golly.InfNameNoPackage(obj)
+		if i, ok := obj.(interface{ Topic() string }); ok {
+			s = i.Topic()
+		} else {
+			s = golly.InfNameNoPackage(obj)
+		}
 	}
 
 	var b strings.Builder
