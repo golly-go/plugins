@@ -16,9 +16,10 @@ type StreamOptions struct {
 
 // Options holds all possible configuration parameters that can be adjusted via Option functions.
 type Options struct {
-	Store   EventStore
-	Stream  *StreamOptions
-	Streams []StreamPublisher
+	Store      EventStore
+	Stream     *StreamOptions
+	Streams    []StreamPublisher
+	MaxRetries int // minimum 10; defaults to 10 if unset or below minimum
 }
 
 // WithStore configures the Engine to use the provided EventStore
@@ -54,11 +55,21 @@ func WithStreams(streams ...StreamPublisher) Option {
 	}
 }
 
+// WithMaxRetries sets the maximum number of version-conflict retries in Execute.
+// The minimum enforced value is 10.
+func WithMaxRetries(n int) Option {
+	return func(o *Options) {
+		o.MaxRetries = n
+	}
+}
+
 func handleOptions(opts ...Option) *Options {
 	options := &Options{}
 	for _, opt := range opts {
 		opt(options)
 	}
-
+	if options.MaxRetries < 10 {
+		options.MaxRetries = 10
+	}
 	return options
 }

@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"sync"
+	"time"
 
 	"github.com/golly-go/golly"
 	"github.com/google/uuid"
@@ -21,8 +23,9 @@ type Engine struct {
 	aggregates  *AggregateRegistry
 	streams     *StreamManager
 
-	mu      sync.RWMutex
-	running bool
+	mu         sync.RWMutex
+	running    bool
+	maxRetries int
 }
 
 // NewEngine allows configuring the engine via Option by building a config first.
@@ -41,6 +44,7 @@ func NewEngine(opts ...Option) *Engine {
 		projections: NewProjectionManager(),
 		aggregates:  NewAggregateRegistry(),
 		streams:     streams,
+		maxRetries:  cfg.MaxRetries,
 	}
 
 	return eng
@@ -166,9 +170,14 @@ func (eng *Engine) Execute(ctx context.Context, agg Aggregate, cmd Command) (err
 		return handleExecutionError(ctx, agg, cmd, ErrorNoAggregateID)
 	}
 
-	// === Phase 2: commit, retrying only the save on version conflict ===
-	const maxSaveRetries = 3
-	for attempt := 0; attempt < maxSaveRetries; attempt++ {
+	// === Phase 2: commit with exponential backoff on version conflict ===
+	// Backoff: 4ms → 8ms → 16ms → 32ms → 60ms (capped), ±25% jitter.
+	// With default 10 retries the worst-case total wait is ~390ms.
+	const (
+		retryBase = 4 * time.Millisecond
+		retryMax  = 60 * time.Millisecond
+	)
+	for attempt := 0; attempt < eng.maxRetries; attempt++ {
 		err = eng.CommitAggregateChanges(ctx, agg)
 		if err == nil {
 			return nil
@@ -176,13 +185,20 @@ func (eng *Engine) Execute(ctx context.Context, agg Aggregate, cmd Command) (err
 		if !errors.Is(err, ErrVersionConflict) {
 			return err
 		}
-		if attempt == maxSaveRetries-1 {
+		if attempt == eng.maxRetries-1 {
 			break
 		}
 
-		// A concurrent writer (e.g. a Stripe webhook) raced in between our Replay
-		// and Save. Capture the pending events, re-replay to get the latest aggregate
-		// version, re-number those events, and retry — without calling Perform again.
+		// Exponential backoff with ±25% jitter before re-replay + retry.
+		delay := retryBase << uint(attempt)
+		if delay > retryMax {
+			delay = retryMax
+		}
+		delay += time.Duration(rand.Int63n(int64(delay) / 4))
+		time.Sleep(delay)
+
+		// A concurrent writer raced in between our Replay and Save.
+		// Re-replay to get the latest version, re-number pending events, retry.
 		pending := agg.Changes().Uncommitted()
 		agg.ClearChanges()
 
