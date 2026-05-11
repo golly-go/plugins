@@ -27,10 +27,10 @@ type PostgresConfig struct {
 	URL      string // Optional: Use a full database URL if provided.
 	Logger   bool   // Disable logger if false.
 
-	MaxIdleConns    int
-	MaxOpenConns    int
-	ConnMaxLifetime time.Duration
-	MaxIdleTime     time.Duration
+	MaxIdleConns int
+	MaxOpenConns int
+	MaxLifetime  time.Duration
+	MaxIdleTime  time.Duration
 
 	ConnectionTimeout time.Duration
 
@@ -106,6 +106,13 @@ func NewPostgresConnection(config PostgresConfig) (*gorm.DB, error) {
 	return gormDB, nil
 }
 
+// setConnectionPoolSettings configures the sql.DB connection pool.
+//
+// When using IAM-based auth (AuthTokenFnc), tokens are fetched on each new
+// physical connection via BeforeConnect. To avoid hammering the token endpoint,
+// keep MaxIdleConns > 0 so the pool reuses warm connections, and set
+// ConnMaxLifetime to slightly less than your IAM token TTL so connections
+// are recycled before the token expires (rather than mid-query).
 func setConnectionPoolSettings(db *sql.DB, config PostgresConfig) {
 	if config.MaxIdleConns > 0 {
 		db.SetMaxIdleConns(config.MaxIdleConns)
@@ -113,15 +120,11 @@ func setConnectionPoolSettings(db *sql.DB, config PostgresConfig) {
 	if config.MaxOpenConns > 0 {
 		db.SetMaxOpenConns(config.MaxOpenConns)
 	}
-	if config.ConnMaxLifetime > 0 {
-		db.SetConnMaxLifetime(config.ConnMaxLifetime)
+	if config.MaxLifetime > 0 {
+		db.SetConnMaxLifetime(config.MaxLifetime)
 	}
 	if config.MaxIdleTime > 0 {
 		db.SetConnMaxIdleTime(config.MaxIdleTime)
-	}
-
-	if config.ConnectionTimeout > 0 {
-		db.SetConnMaxLifetime(config.ConnectionTimeout)
 	}
 }
 
