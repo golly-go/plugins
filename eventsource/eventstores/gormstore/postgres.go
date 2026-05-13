@@ -2,6 +2,7 @@ package gormstore
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 
@@ -137,6 +138,31 @@ func (s *Store) LoadEventsInBatches(
 	return nil
 }
 
+func inTx(db *gorm.DB) bool {
+	if db == nil {
+		return false
+	}
+
+	if db.Statement != nil {
+		if _, ok := db.Statement.ConnPool.(*sql.Tx); ok {
+			return true
+		}
+	}
+
+	// // Fallback to direct sql.Tx assertion
+	_, ok := db.ConnPool.(*sql.Tx)
+	return ok
+}
+
+func transaction(db *gorm.DB, f func(db *gorm.DB) error) error {
+	if db == nil || inTx(db) {
+		return f(db)
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		return f(tx)
+	})
+}
+
 // Save persists one or more events to the database with concurrency checks.
 func (s *Store) Save(ctx context.Context, events ...*eventsource.Event) error {
 	if len(events) == 0 {
@@ -150,15 +176,13 @@ func (s *Store) Save(ctx context.Context, events ...*eventsource.Event) error {
 
 	desiredStartVersion := batch[0].Version - 1
 
-	db := orm.NewDB(ctx)
-
+	db := orm.DB(ctx)
 	// Use the same DB connection in a transaction, so advisory lock is maintained
-	return db.Transaction(func(tx *gorm.DB) error {
-		if db.Dialector.Name() == "postgres" {
+	return transaction(db, func(tx *gorm.DB) error {
+		if tx.Dialector.Name() == "postgres" {
 			// 1) Acquire advisory lock
 			lockKey := aggregatorLockKey(batch[0].AggregateType, batch[0].AggregateID)
-
-			if err := tx.Exec("SELECT pg_advisory_xact_lock(?);", lockKey).Error; err != nil {
+			if err := db.Exec("SELECT pg_advisory_xact_lock(?);", lockKey).Error; err != nil {
 				return err
 			}
 		}
