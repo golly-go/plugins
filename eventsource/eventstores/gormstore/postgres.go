@@ -98,8 +98,13 @@ func (s *Store) LoadEventsInBatches(
 	handler func([]eventsource.PersistedEvent) error,
 	filters ...eventsource.EventFilter,
 ) error {
-	// We'll build the base query in ascending global_version:
-	baseQuery := orm.DB(ctx).Model(&Event{}).Order("global_version ASC")
+	// Default ordering is global_version (cross-aggregate projections).
+	// Single-aggregate replay uses version ASC for monotonic correctness.
+	order := "global_version ASC"
+	if len(filters) > 0 && filters[0].OrderByVersion {
+		order = "version ASC, global_version ASC"
+	}
+	baseQuery := orm.DB(ctx).Model(&Event{}).Order(order)
 
 	// Apply user-provided filters (e.g., FromVersion, FromTime, etc.)
 	baseQuery = applyFilters(baseQuery, filters...)
@@ -180,9 +185,10 @@ func (s *Store) Save(ctx context.Context, events ...*eventsource.Event) error {
 	// Use the same DB connection in a transaction, so advisory lock is maintained
 	return transaction(db, func(tx *gorm.DB) error {
 		if tx.Dialector.Name() == "postgres" {
-			// 1) Acquire advisory lock
+			// 1) Acquire advisory lock — MUST use tx, not db, so the lock is held
+			// for the duration of the transaction (xact-level advisory lock).
 			lockKey := aggregatorLockKey(batch[0].AggregateType, batch[0].AggregateID)
-			if err := db.Exec("SELECT pg_advisory_xact_lock(?);", lockKey).Error; err != nil {
+			if err := tx.Exec("SELECT pg_advisory_xact_lock(?);", lockKey).Error; err != nil {
 				return err
 			}
 		}
@@ -251,13 +257,16 @@ func (*Store) DeleteEvent(ctx context.Context, eventID uuid.UUID) error {
 }
 
 // SaveSnapshot persists an aggregate snapshot.
-func (store *Store) SaveSnapshot(ctx context.Context, aggregate eventsource.Aggregate) error {
-	snapshot := eventsource.NewSnapshot(aggregate)
-
+func (store *Store) SaveSnapshot(ctx context.Context, snapshot eventsource.Event) error {
+	if snapshot.Kind != eventsource.EventKindSnapshot {
+		return errors.New("event is not a snapshot")
+	}
 	return store.Save(ctx, &snapshot)
 }
 
 // LoadSnapshot retrieves the latest snapshot for an aggregate.
+// Orders by version DESC (not id DESC) because concurrent flood writes can produce
+// snapshot UUIDs out of aggregate-version order — highest UUID != highest version.
 func (*Store) LoadSnapshot(ctx context.Context, aggregateType, aggregateID string) (eventsource.PersistedEvent, error) {
 	var snapshot Event
 
@@ -267,7 +276,7 @@ func (*Store) LoadSnapshot(ctx context.Context, aggregateType, aggregateID strin
 			aggregateID,
 			aggregateType,
 			eventsource.EventKindSnapshot).
-		Order("id DESC").
+		Order("version DESC, id DESC").
 		First(&snapshot).
 		Error
 
@@ -411,3 +420,5 @@ func QueryInBatches(
 
 // 	return nil
 // }
+
+var _ eventsource.EventStore = (*Store)(nil)

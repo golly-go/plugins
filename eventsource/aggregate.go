@@ -52,6 +52,8 @@ type Aggregate interface {
 
 	Version() int64
 	SetVersion(int64)
+
+	CreateSnapshot(ctx context.Context, agg Aggregate) Event
 }
 
 type AggregateBase struct {
@@ -160,14 +162,19 @@ func (ab *AggregateBase) ProcessChanges(ctx context.Context, ag Aggregate) error
 	ag.SetChanges(changes)
 
 	if ShouldSnapshot(int(version), int(ag.Version())) {
-		evt := NewSnapshot(ag)
-
-		applyUserInfo(ctx, &evt)
-
-		ag.AppendChanges(evt)
+		ag.AppendChanges(ag.CreateSnapshot(ctx, ag))
 	}
 
 	return nil
+}
+
+// CreateSnapshot creates a new snapshot event for the aggregate.
+func (ab *AggregateBase) CreateSnapshot(ctx context.Context, ag Aggregate) Event {
+	evt := NewSnapshot(ag)
+
+	applyUserInfo(ctx, &evt)
+
+	return evt
 }
 
 func ApplySnapshot(ag Aggregate, event Event) error {
@@ -186,6 +193,11 @@ func ApplySnapshot(ag Aggregate, event Event) error {
 			return err
 		}
 	}
+
+	// The snapshot blob may include a serialized `changes` slice from when it was
+	// captured. Those events are already committed — clear them so they don't get
+	// re-numbered and re-submitted as "uncommitted" on the next save attempt.
+	ag.ClearChanges()
 
 	ag.SetVersion(event.Version)
 

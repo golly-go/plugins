@@ -31,6 +31,15 @@ type EventFilter struct {
 	ToTime time.Time // Events created before this time
 	Limit  int       // Maximum number of events to return
 
+	// ExcludeKinds filters out events of specific kinds (e.g. EventKindSnapshot).
+	// Used by Replay to skip snapshot rows that were written mid-stream during floods.
+	ExcludeKinds []EventKind
+
+	// OrderByVersion orders results by aggregate version ASC instead of global_version ASC.
+	// Use for single-aggregate replay to guarantee version monotonicity even when
+	// concurrent flood writes left events with the same aggregate version but
+	// out-of-global-order timestamps.
+	OrderByVersion bool
 }
 
 // EventStore is an interface for managing event persistence and retrieval.
@@ -57,7 +66,7 @@ type EventStore interface {
 	DeleteEvent(ctx context.Context, eventID uuid.UUID) error
 
 	// AggregateSnapshot persists a snapshot of an aggregate state.
-	SaveSnapshot(ctx context.Context, snapshot Aggregate) error
+	SaveSnapshot(ctx context.Context, snapshot Event) error
 
 	// LoadSnapshot retrieves the latest snapshot of an aggregate for faster loading.
 	LoadSnapshot(ctx context.Context, aggregateType, aggregateID string) (PersistedEvent, error)

@@ -160,8 +160,10 @@ func (s *InMemoryStore) Exists(ctx context.Context, eventID uuid.UUID) (bool, er
 }
 
 // SaveSnapshot persists a snapshot of an aggregate in memory.
-func (s *InMemoryStore) SaveSnapshot(ctx context.Context, agg Aggregate) error {
-	snapshot := NewSnapshot(agg)
+func (s *InMemoryStore) SaveSnapshot(ctx context.Context, snapshot Event) error {
+	if snapshot.Kind != EventKindSnapshot {
+		return errors.New("event is not a snapshot")
+	}
 	return s.Save(ctx, &snapshot)
 }
 

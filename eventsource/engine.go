@@ -218,7 +218,89 @@ func (eng *Engine) Execute(ctx context.Context, agg Aggregate, cmd Command) (err
 		agg.SetVersion(base)
 	}
 
-	return err
+	// === Phase 3: snapshot-corruption recovery (last resort) ===
+	// All normal retries exhausted with a persistent version conflict.
+	// If the aggregate has a snapshot, the snapshot index may be corrupt
+	// (e.g. concurrent flood produced out-of-order or duplicate snapshots).
+	// Only in that case do we pay the cost of a full event scan — for
+	// snapshot-less aggregates, Replay already reads everything from scratch,
+	// so a full rebuild changes nothing and we return the conflict directly.
+	if !errors.Is(err, ErrVersionConflict) {
+		return err
+	}
+
+	snap, snapErr := eng.store.LoadSnapshot(ctx, ObjectName(agg), agg.GetID())
+	if snapErr != nil {
+		return errors.Join(err, snapErr)
+	}
+
+	if snap == nil {
+		return err
+	}
+
+	trace("snapshot corruption suspected for %s %s — rebuilding from raw events",
+		golly.TypeNoPtr(agg).Name(), agg.GetID())
+
+	pending := agg.Changes().Uncommitted()
+	agg.ClearChanges()
+
+	if e := eng.replayFromZero(ctx, agg); e != nil {
+		return e
+	}
+
+	// Write a clean snapshot to replace the corrupt one so future
+	// loads are fast and won't hit this path again.
+
+	snapshot := agg.CreateSnapshot(ctx, agg)
+	if e := eng.store.SaveSnapshot(ctx, snapshot); e != nil {
+		trace("failed to write recovery snapshot for %s %s: %v",
+			golly.TypeNoPtr(agg).Name(), agg.GetID(), e)
+	}
+
+	base := agg.Version()
+	for i := range pending {
+		base++
+		pending[i].Version = base
+	}
+
+	agg.SetChanges(pending)
+	agg.SetVersion(base)
+
+	return eng.CommitAggregateChanges(ctx, agg)
+
+}
+
+// replayFromZero rebuilds aggregate state by scanning all events from the
+// beginning, skipping snapshots entirely. This is the recovery path for
+// corrupt or out-of-order snapshots produced by concurrent write floods.
+// It is intentionally expensive — call only as a last resort.
+func (eng *Engine) replayFromZero(ctx context.Context, agg Aggregate) error {
+	id := agg.GetID()
+	if id == "" {
+		return nil
+	}
+
+	agg.ClearChanges()
+
+	return eng.store.LoadEventsInBatches(ctx, 500,
+		func(pEvents []PersistedEvent) error {
+			for i := range pEvents {
+				e, err := pEvents[i].Hydrate(eng)
+				if err != nil {
+					return err
+				}
+				if err := agg.ReplayOne(agg, e); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+		EventFilter{
+			AggregateType:  ObjectName(agg),
+			AggregateID:    id,
+			ExcludeKinds:   []EventKind{EventKindSnapshot},
+			OrderByVersion: true,
+		})
 }
 
 func (eng *Engine) Replay(ctx context.Context, agg Aggregate) error {
@@ -230,8 +312,6 @@ func (eng *Engine) Replay(ctx context.Context, agg Aggregate) error {
 	if len(agg.Changes()) > 0 {
 		return nil
 	}
-
-	agg.ClearChanges()
 
 	snap, err := eng.store.LoadSnapshot(ctx, ObjectName(agg), agg.GetID())
 	if err == nil && snap != nil {
@@ -263,6 +343,15 @@ func (eng *Engine) Replay(ctx context.Context, agg Aggregate) error {
 			AggregateType: ObjectName(agg),
 			AggregateID:   id,
 			FromVersion:   int(agg.Version()) + 1,
+			// Exclude snapshot rows — they were already applied above.
+			// During write floods, concurrent snapshots get interleaved into the
+			// event stream. Re-applying them via ReplayOne would reset Version
+			// backwards, causing permanent OCC conflicts on every save.
+			ExcludeKinds: []EventKind{EventKindSnapshot},
+			// Order by aggregate version, not global_version. The flood wrote events
+			// with the same aggregate version but different global_versions, so
+			// global_version ordering can walk aggregate version backwards mid-replay.
+			OrderByVersion: true,
 		})
 }
 

@@ -80,6 +80,10 @@ func applyFilters(query *gorm.DB, filters ...eventsource.EventFilter) *gorm.DB {
 			query = query.Limit(filter.Limit)
 		}
 
+		if len(filter.ExcludeKinds) > 0 {
+			query = query.Where("kind NOT IN ?", filter.ExcludeKinds)
+		}
+
 	}
 
 	return query

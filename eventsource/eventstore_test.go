@@ -83,7 +83,7 @@ func (m *MockStore) DeleteEvent(ctx context.Context, eventID uuid.UUID) error {
 	return args.Error(0)
 }
 
-func (m *MockStore) SaveSnapshot(ctx context.Context, snapshot Aggregate) error {
+func (m *MockStore) SaveSnapshot(ctx context.Context, snapshot Event) error {
 	args := m.Called(ctx, snapshot)
 	return args.Error(0)
 }
