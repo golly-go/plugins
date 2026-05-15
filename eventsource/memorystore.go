@@ -292,6 +292,20 @@ func applyInMemoryFilters(events []Event, f EventFilter) []Event {
 			continue
 		}
 
+		// ExcludeKinds
+		if len(f.ExcludeKinds) > 0 {
+			excluded := false
+			for _, k := range f.ExcludeKinds {
+				if e.Kind == k {
+					excluded = true
+					break
+				}
+			}
+			if excluded {
+				continue
+			}
+		}
+
 		out = append(out, e)
 		if f.Limit > 0 && len(out) >= f.Limit {
 			break
