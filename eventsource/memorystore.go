@@ -3,6 +3,7 @@ package eventsource
 import (
 	"context"
 	"errors"
+	"sort"
 	"sync"
 	"sync/atomic"
 
@@ -159,31 +160,44 @@ func (s *InMemoryStore) Exists(ctx context.Context, eventID uuid.UUID) (bool, er
 	return false, nil
 }
 
-// SaveSnapshot persists a snapshot of an aggregate in memory.
+// SaveSnapshot persists a snapshot event, bypassing the OCC version check.
+// Snapshots share the aggregate version of the last applied event so the
+// standard Save path (which checks MAX(version)==desired-1) would conflict.
 func (s *InMemoryStore) SaveSnapshot(ctx context.Context, snapshot Event) error {
 	if snapshot.Kind != EventKindSnapshot {
 		return errors.New("event is not a snapshot")
 	}
-	return s.Save(ctx, &snapshot)
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	s.data = append(s.data, snapshot)
+	return nil
 }
 
-// LoadSnapshot retrieves the latest snapshot for an aggregate as a PersistedEvent.
+// LoadSnapshot retrieves the highest-version snapshot for an aggregate.
+// Iterates the full set to find max version, matching gormstore's ORDER BY version DESC.
 func (s *InMemoryStore) LoadSnapshot(ctx context.Context, aggregateType, aggregateID string) (PersistedEvent, error) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
-	// Find the most recent snapshot. For simplicity, we'll return the *first* we find
-	// matching your criteria. Or you might iterate to find the max version.
-	for i := len(s.data) - 1; i >= 0; i-- {
-		event := s.data[i]
-		if event.AggregateID == aggregateID &&
-			event.Kind == EventKindSnapshot &&
-			event.AggregateType == aggregateType {
-			// Return it wrapped as PersistedEvent
-			return InMemoryEvent{event}, nil
+	var best *Event
+	for i := range s.data {
+		e := &s.data[i]
+		if e.AggregateID != aggregateID ||
+			e.AggregateType != aggregateType ||
+			e.Kind != EventKindSnapshot {
+			continue
+		}
+		if best == nil || e.Version > best.Version {
+			best = e
 		}
 	}
-	return nil, errors.New("record not found")
+
+	if best == nil {
+		return nil, errors.New("record not found")
+	}
+	return InMemoryEvent{*best}, nil
 }
 
 // DeleteEvent removes an event by ID.
@@ -283,6 +297,16 @@ func applyInMemoryFilters(events []Event, f EventFilter) []Event {
 			break
 		}
 	}
+
+	if f.OrderByVersion {
+		sort.Slice(out, func(i, j int) bool {
+			if out[i].Version != out[j].Version {
+				return out[i].Version < out[j].Version
+			}
+			return out[i].GlobalVersion < out[j].GlobalVersion
+		})
+	}
+
 	return out
 }
 
