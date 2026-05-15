@@ -256,12 +256,21 @@ func (*Store) DeleteEvent(ctx context.Context, eventID uuid.UUID) error {
 	return orm.DB(ctx).Where("id = ?", eventID).Delete(&Event{}).Error
 }
 
-// SaveSnapshot persists an aggregate snapshot.
+// SaveSnapshot persists a snapshot event, bypassing the OCC version check.
+// Snapshots share the aggregate version of the last applied event, so the
+// standard Save path (which requires MAX(version) == desired-1) would always
+// conflict. We insert directly after validating the event kind.
 func (store *Store) SaveSnapshot(ctx context.Context, snapshot eventsource.Event) error {
 	if snapshot.Kind != eventsource.EventKindSnapshot {
 		return errors.New("event is not a snapshot")
 	}
-	return store.Save(ctx, &snapshot)
+
+	row, err := mapToDB(&snapshot)
+	if err != nil {
+		return err
+	}
+
+	return orm.DB(ctx).Create(&row).Error
 }
 
 // LoadSnapshot retrieves the latest snapshot for an aggregate.
