@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"iter"
 	"sync"
 	"sync/atomic"
@@ -13,6 +14,11 @@ import (
 
 const (
 	projectionBatchSize = 100
+
+	// defaultProjectionWorkers is the number of parallel projection goroutines.
+	// Events are routed by hash(AggregateID) % workers, so per-aggregate ordering
+	// is preserved while independent aggregates project concurrently.
+	defaultProjectionWorkers = 8
 )
 
 type IDdProjection interface {
@@ -66,6 +72,13 @@ func (p *ProjectionBase) Reset(ctx context.Context) error {
 }
 
 // ProjectionManager manages multiple projections, each identified by a key.
+//
+// Events are dispatched to N hash-partitioned worker goroutines. Each worker
+// owns a dedicated channel and processes events sequentially — so per-aggregate
+// ordering is always guaranteed. Different aggregates fan out across workers and
+// project concurrently, eliminating the head-of-line blocking that the original
+// single-goroutine design caused under write bursts (e.g. graph nodes emitting
+// 17 corpus texts + 11 entity creates in rapid succession).
 type ProjectionManager struct {
 	mu          sync.RWMutex
 	projections map[string]Projection // id -> projection
@@ -73,20 +86,40 @@ type ProjectionManager struct {
 	eventHandlers map[string][]ProjectionHandler // eventType -> handlers
 	topicHandlers map[string][]ProjectionHandler // topic -> handlers
 
-	// Async processing with graceful shutdown
-	jobs    chan Job
+	// Hash-partitioned workers.
+	workers    []chan Job
+	numWorkers int
+
 	stop    chan struct{}
 	wg      sync.WaitGroup
-	running atomic.Bool // Lockless check for running state
+	running atomic.Bool
 }
 
-// NewProjectionManager creates a ProjectionManager with an empty registry.
+// NewProjectionManager creates a ProjectionManager with defaultProjectionWorkers.
 func NewProjectionManager() *ProjectionManager {
+	return NewProjectionManagerWithWorkers(defaultProjectionWorkers)
+}
+
+// NewProjectionManagerWithWorkers creates a ProjectionManager with n workers.
+func NewProjectionManagerWithWorkers(n int) *ProjectionManager {
+	if n < 1 {
+		n = 1
+	}
+	// Distribute the total buffer across workers; each gets at least 128 slots.
+	perWorker := 1000 / n
+	if perWorker < 128 {
+		perWorker = 128
+	}
+	workers := make([]chan Job, n)
+	for i := range workers {
+		workers[i] = make(chan Job, perWorker)
+	}
 	return &ProjectionManager{
 		projections:   make(map[string]Projection),
 		eventHandlers: make(map[string][]ProjectionHandler),
 		topicHandlers: make(map[string][]ProjectionHandler),
-		jobs:          make(chan Job, 1000), // Buffered for throughput
+		workers:       workers,
+		numWorkers:    n,
 		stop:          make(chan struct{}),
 	}
 }
@@ -157,20 +190,22 @@ func (pm *ProjectionManager) Register(projs ...Projection) {
 	}
 }
 
-// Start begins async processing of projection events
+// Start begins async processing of projection events.
+// One goroutine is launched per worker slot.
 func (pm *ProjectionManager) Start() {
 	if pm.running.Swap(true) {
 		return // Already running
 	}
 
-	pm.wg.Add(1)
-
-	go pm.run()
+	for i := range pm.workers {
+		pm.wg.Add(1)
+		go pm.runWorker(i)
+	}
 }
 
-// Stop gracefully shuts down projection processing, draining all in-flight events
+// Stop gracefully shuts down all workers, draining in-flight events before returning.
 func (pm *ProjectionManager) Stop() {
-	trace("stopped called in projection manger")
+	trace("stopped called in projection manager")
 
 	if !pm.running.Swap(false) {
 		return // Already stopped
@@ -179,30 +214,31 @@ func (pm *ProjectionManager) Stop() {
 	trace("stopping projection manager, draining events")
 
 	close(pm.stop)
-	pm.wg.Wait() // Block until all events drained
+	pm.wg.Wait()
 
 	trace("projection manager stopped")
 }
 
-// run processes events in a single goroutine with drain on shutdown
-func (pm *ProjectionManager) run() {
+// runWorker processes events for one hash partition.
+// Events are routed here by aggregateWorkerIndex so same-aggregate ordering
+// is preserved within this goroutine while other workers run concurrently.
+func (pm *ProjectionManager) runWorker(idx int) {
 	defer func() {
-		// Close jobs so that drain()'s range loop terminates.
-		close(pm.jobs)
-		pm.drain()
+		// Drain remaining events from this worker's channel before exiting.
+		pm.drainWorker(pm.workers[idx])
 		pm.wg.Done()
 	}()
 
-	trace("starting projection manager")
+	trace("starting projection worker %d", idx)
 
-	for pm.running.Load() {
+	ch := pm.workers[idx]
+	for {
 		select {
-		case job := <-pm.jobs:
+		case job := <-ch:
 			if job.wait != nil {
 				close(job.wait)
 				continue
 			}
-
 			pm.handleEvent(job.Ctx, job.Event)
 		case <-pm.stop:
 			return
@@ -210,26 +246,45 @@ func (pm *ProjectionManager) run() {
 	}
 }
 
+// Wait blocks until all workers have processed every event that was enqueued
+// before this call. A sentinel Job is sent to every worker; when all sentinels
+// are acknowledged we know the queues are fully drained.
 func (pm *ProjectionManager) Wait() {
 	if !pm.running.Load() {
 		return
 	}
 
-	wait := make(chan struct{})
-	pm.jobs <- Job{wait: wait}
-	<-wait
-}
-
-func (pm *ProjectionManager) drain() {
-	trace("draining projection events")
-
-	for job := range pm.jobs {
-		pm.handleEvent(job.Ctx, job.Event)
+	var wg sync.WaitGroup
+	for _, ch := range pm.workers {
+		wg.Add(1)
+		wait := make(chan struct{})
+		ch <- Job{wait: wait}
+		go func(w chan struct{}) {
+			<-w
+			wg.Done()
+		}(wait)
 	}
-
+	wg.Wait()
 }
 
-// dispatch enqueues an event for async projection processing
+func (pm *ProjectionManager) drainWorker(ch chan Job) {
+	for {
+		select {
+		case job := <-ch:
+			if job.wait != nil {
+				close(job.wait)
+				continue
+			}
+			pm.handleEvent(job.Ctx, job.Event)
+		default:
+			return
+		}
+	}
+}
+
+// dispatch routes an event to the worker responsible for the event's aggregate.
+// Routing is deterministic: same AggregateID always maps to the same worker,
+// preserving per-aggregate event ordering.
 func (pm *ProjectionManager) dispatch(ctx context.Context, evt Event) {
 	if !pm.running.Load() {
 		golly.DefaultLogger().Warnf("projection manager not running, dropping event")
@@ -237,15 +292,24 @@ func (pm *ProjectionManager) dispatch(ctx context.Context, evt Event) {
 	}
 
 	detached := golly.ToGollyContext(ctx).Detach()
+	idx := aggregateWorkerIndex(evt.AggregateID, pm.numWorkers)
 
-	// Use background context for async processing to prevent cancellation
-	// when the originating request completes
 	select {
-	case pm.jobs <- Job{Ctx: detached, Event: evt}:
-		// Enqueued successfully
+	case pm.workers[idx] <- Job{Ctx: detached, Event: evt}:
 	default:
-		golly.DefaultLogger().Errorf("projection queue full, dropping event")
+		golly.DefaultLogger().Errorf("projection queue full (worker %d), dropping event", idx)
 	}
+}
+
+// aggregateWorkerIndex returns a stable worker slot for the given aggregate ID.
+// Uses FNV-32a so distribution is fast, uniform, and allocation-free.
+func aggregateWorkerIndex(aggregateID string, n int) int {
+	if n <= 1 {
+		return 0
+	}
+	h := fnv.New32a()
+	h.Write([]byte(aggregateID))
+	return int(h.Sum32()) % n
 }
 
 // handleEvent routes event to relevant projections using dual indexes
