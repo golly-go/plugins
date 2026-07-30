@@ -69,6 +69,14 @@ type consumerHandle struct {
 	opts     SubscribeOptions // Subscription options
 	topic    string           // Topic name
 	groupID  string           // Consumer group ID
+	tracker  any              // Optional caller-supplied label, used only for logging
+
+	// ctx/cancel are derived from the manager's context when this handle is
+	// started. Cancelling them stops only this subscription - unlike the
+	// manager's own context, which stops every subscription at once.
+	ctx    context.Context
+	cancel context.CancelFunc
+	done   chan struct{} // closed when run() returns, so unsubscribe can wait for cleanup
 }
 
 // run is the main polling loop for a consumer. It continuously polls Kafka for messages,
@@ -235,8 +243,9 @@ func (h *consumerHandle) closeClient() {
 // logger creates a structured logger for this consumer.
 func (h *consumerHandle) logger() *golly.Entry {
 	return golly.DefaultLogger().WithFields(golly.Fields{
-		"topic": h.topic,
-		"group": h.groupID,
+		"topic":   h.topic,
+		"group":   h.groupID,
+		"tracker": h.tracker,
 	})
 }
 
@@ -249,6 +258,33 @@ type ConsumerManager struct {
 	wg        sync.WaitGroup
 	mu        sync.RWMutex
 	running   atomic.Bool
+	nextID    atomic.Uint64
+}
+
+// Subscription represents a single call to Subscribe. Use Stop to tear down
+// just that subscription - its Kafka client, its goroutine, and its
+// bookkeeping in the manager - without touching any other subscription,
+// even one registered for the same topic and group.
+//
+// Callers that Subscribe on behalf of something with its own lifecycle
+// (a websocket/SSE connection, a job, a request) must Stop the returned
+// Subscription when that thing goes away. Nothing does this automatically:
+// each Subscribe call gets its own independent Kafka client, so failing to
+// Stop it leaks that client and its goroutines for the remaining lifetime
+// of the process.
+type Subscription struct {
+	id string
+	cm *ConsumerManager
+}
+
+// Stop cancels this subscription and blocks until its goroutine has exited
+// and its Kafka client has closed. Safe to call more than once, and safe to
+// call on a nil *Subscription.
+func (s *Subscription) Stop() error {
+	if s == nil || s.cm == nil {
+		return nil
+	}
+	return s.cm.unsubscribe(s.id)
 }
 
 // NewConsumerManager creates a new consumer manager.
@@ -320,34 +356,92 @@ func (cm *ConsumerManager) Stop() error {
 }
 
 // Subscribe registers a consumer for a topic. The consumer will start
-// when the manager's Start() method is called.
-func (cm *ConsumerManager) Subscribe(topic string, consumer Consumer) error {
+// immediately if the manager is already running, or when Start() is called
+// otherwise.
+//
+// Each call creates an independent subscription, even if one already exists
+// for the same topic and group - e.g. groupless subscriptions (used for
+// fan-out consumers like pushing a topic to many websocket/SSE connections)
+// always have an empty GroupID and would otherwise be indistinguishable.
+// Use the returned Subscription to stop this one later.
+func (cm *ConsumerManager) Subscribe(topic string, consumer Consumer) (*Subscription, error) {
+	return cm.subscribe(nil, topic, consumer)
+}
+
+// Unsubscribe stops sub. Equivalent to sub.Stop(); provided for callers that
+// prefer an explicit verb over a method on the returned handle.
+func (cm *ConsumerManager) Unsubscribe(sub *Subscription) error {
+	if sub == nil {
+		return nil
+	}
+	return cm.unsubscribe(sub.id)
+}
+
+func (cm *ConsumerManager) subscribe(tracker any, topic string, consumer Consumer) (*Subscription, error) {
 	opts := consumer.SubscribeOptions()
-	subscriptionID := generateSubscriptionID(topic, opts)
+	// Suffix with a counter so this is unique per call, not per topic+group -
+	// generateSubscriptionID alone is just a human-readable label for logs.
+	id := fmt.Sprintf("%s#%d", generateSubscriptionID(topic, opts), cm.nextID.Add(1))
 
 	handle := &consumerHandle{
 		consumer: consumer,
 		opts:     opts,
 		topic:    topic,
 		groupID:  opts.GroupID,
+		tracker:  tracker,
 		client:   nil, // Created lazily when consumer starts
+		done:     make(chan struct{}),
 	}
 
 	cm.mu.Lock()
-	cm.consumers[subscriptionID] = handle
+	cm.consumers[id] = handle
 	cm.mu.Unlock()
 
-	golly.DefaultLogger().Tracef("[kafka] registered consumer (topic=%s group=%s)", topic, opts.GroupID)
+	golly.DefaultLogger().Tracef("[kafka] registered consumer (topic=%s group=%s tracker=%v)", topic, opts.GroupID, tracker)
 
 	// If manager is already running, start this consumer immediately
 	if cm.ctx != nil && cm.running.Load() {
-		return cm.startConsumer(subscriptionID, handle)
+		if err := cm.startConsumer(id, handle); err != nil {
+			cm.mu.Lock()
+			delete(cm.consumers, id)
+			cm.mu.Unlock()
+			return nil, err
+		}
 	}
 
+	return &Subscription{id: id, cm: cm}, nil
+}
+
+// unsubscribe stops one subscription by id: it cancels only that
+// subscription's own context (every other subscription is untouched),
+// removes it from the manager's bookkeeping, and waits for its goroutine -
+// and the Kafka client it owns - to fully shut down.
+func (cm *ConsumerManager) unsubscribe(id string) error {
+	cm.mu.Lock()
+	handle, ok := cm.consumers[id]
+	if ok {
+		delete(cm.consumers, id)
+	}
+	cm.mu.Unlock()
+
+	if !ok {
+		return nil // already stopped, or unknown id
+	}
+
+	if handle.cancel != nil {
+		handle.cancel()
+		<-handle.done
+	}
+
+	golly.DefaultLogger().Infof("[kafka] consumer stopped (topic=%s group=%s tracker=%v)", handle.topic, handle.groupID, handle.tracker)
 	return nil
 }
 
 // startConsumer creates the Kafka client and spawns the consumer goroutine.
+// The handle gets its own context, derived from the manager's, so it can be
+// cancelled independently by unsubscribe without stopping every other
+// consumer. Cancelling the manager's own context (via Stop) still cascades
+// to every handle, since they're all descendants of it.
 func (cm *ConsumerManager) startConsumer(id string, handle *consumerHandle) error {
 	// Create Kafka client if not already created
 	if handle.client == nil {
@@ -358,17 +452,20 @@ func (cm *ConsumerManager) startConsumer(id string, handle *consumerHandle) erro
 		handle.client = client
 	}
 
+	handle.ctx, handle.cancel = context.WithCancel(cm.ctx)
+
 	// Spawn consumer goroutine
 	cm.wg.Add(1)
 	go func(h *consumerHandle) {
 		defer cm.wg.Done()
-		if err := h.run(cm.ctx); err != nil && !errors.Is(err, context.Canceled) {
+		defer close(h.done)
+		if err := h.run(h.ctx); err != nil && !errors.Is(err, context.Canceled) {
 			golly.DefaultLogger().Errorf("[kafka] consumer error (topic=%s group=%s): %v",
 				h.topic, h.groupID, err)
 		}
 	}(handle)
 
-	golly.DefaultLogger().Infof("[kafka] consumer started (topic=%s group=%s)", handle.topic, handle.groupID)
+	golly.DefaultLogger().Infof("[kafka] consumer started (topic=%s group=%s tracker=%v)", handle.topic, handle.groupID, handle.tracker)
 	return nil
 }
 
