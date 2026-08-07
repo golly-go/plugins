@@ -34,15 +34,19 @@ func GetConsumerManager() *ConsumerManager {
 	return nil
 }
 
-// Subscribe registers a consumer for a topic using the consumer manager.
-// tracker is an optional caller-supplied label (shown in logs) identifying
-// who owns this subscription - e.g. a connection ID for a websocket/SSE
-// fan-out consumer. It has no effect on uniqueness: every call to Subscribe
-// creates its own independent subscription regardless of tracker, topic, or
-// group. Callers must Unsubscribe (or call sub.Stop()) when whatever they
+// Subscribe registers a consumer for one or more topics using the consumer
+// manager. Pass every topic this consumer cares about in one call - they
+// all share a single Kafka client and consumer-group session, rather than
+// one client per topic. tracker is an optional caller-supplied label (shown
+// in logs) identifying who owns this subscription - e.g. a connection ID
+// for a websocket/SSE fan-out consumer. It has no effect on uniqueness:
+// every call to Subscribe creates its own independent subscription with its
+// own client, regardless of tracker, topics, or group - so a different
+// consumer/group is never merged with this one, even if it shares a topic.
+// Callers must Unsubscribe (or call sub.Stop()) when whatever they
 // subscribed on behalf of goes away, or the Kafka client and goroutines
 // created here will run for the remaining lifetime of the process.
-func Subscribe(tracker any, topic string, consumer Consumer) (*Subscription, error) {
+func Subscribe(tracker any, consumer Consumer, topics ...string) (*Subscription, error) {
 	plugin := golly.GetPlugin[*Plugin](golly.App(), PluginName)
 
 	if plugin == nil {
@@ -54,7 +58,7 @@ func Subscribe(tracker any, topic string, consumer Consumer) (*Subscription, err
 		return nil, fmt.Errorf("[KAFKA] consumer manager not found")
 	}
 
-	return consumers.subscribe(tracker, topic, consumer)
+	return consumers.subscribe(tracker, consumer, topics...)
 }
 
 // Unsubscribe stops a subscription previously returned by Subscribe.

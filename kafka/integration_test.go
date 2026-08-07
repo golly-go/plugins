@@ -48,7 +48,7 @@ func TestProducerConsumerFlow(t *testing.T) {
 
 	// Subscribe to test topic
 	testTopic := "test-topic"
-	sub, err := consumers.Subscribe(testTopic, testConsumer)
+	sub, err := consumers.Subscribe(testConsumer, testTopic)
 	if err != nil {
 		t.Fatalf("failed to subscribe: %v", err)
 	}

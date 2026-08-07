@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -63,11 +64,16 @@ type Consumer interface {
 }
 
 // consumerHandle wraps a Consumer with its Kafka client and configuration.
+// A single handle can span multiple topics — one kgo.Client subscribed to
+// several topics at once is far cheaper (one set of broker connections, one
+// group-coordination session) than one client per topic, and franz-go
+// supports it natively. Records still carry their own Message.Topic, so a
+// Handler that cares which topic a message came from can still branch on it.
 type consumerHandle struct {
 	client   *kgo.Client      // Kafka client (created lazily)
 	consumer Consumer         // User's consumer implementation
 	opts     SubscribeOptions // Subscription options
-	topic    string           // Topic name
+	topics   []string         // Topic names this client consumes
 	groupID  string           // Consumer group ID
 	tracker  any              // Optional caller-supplied label, used only for logging
 
@@ -85,7 +91,7 @@ func (h *consumerHandle) run(ctx context.Context) error {
 	defer h.closeClient()
 
 	log := h.logger()
-	log.Tracef("consumer starting (topic=%s group=%s)", h.topic, h.groupID)
+	log.Tracef("consumer starting (topics=%s group=%s)", h.topicList(), h.groupID)
 
 	retries := 0
 	for {
@@ -233,17 +239,22 @@ func (h *consumerHandle) calculateBackoff(retries int) time.Duration {
 // closeClient safely closes the Kafka client and handles panics.
 func (h *consumerHandle) closeClient() {
 	if r := recover(); r != nil {
-		golly.DefaultLogger().Errorf("[kafka] panic in consumer (topic=%s group=%s): %v", h.topic, h.groupID, r)
+		golly.DefaultLogger().Errorf("[kafka] panic in consumer (topics=%s group=%s): %v", h.topicList(), h.groupID, r)
 	}
 	if h.client != nil {
 		h.client.Close()
 	}
 }
 
+// topicList joins this handle's topics for logging.
+func (h *consumerHandle) topicList() string {
+	return strings.Join(h.topics, ",")
+}
+
 // logger creates a structured logger for this consumer.
 func (h *consumerHandle) logger() *golly.Entry {
 	return golly.DefaultLogger().WithFields(golly.Fields{
-		"topic":   h.topic,
+		"topics":  h.topicList(),
 		"group":   h.groupID,
 		"tracker": h.tracker,
 	})
@@ -355,17 +366,22 @@ func (cm *ConsumerManager) Stop() error {
 	return nil
 }
 
-// Subscribe registers a consumer for a topic. The consumer will start
-// immediately if the manager is already running, or when Start() is called
-// otherwise.
+// Subscribe registers a consumer for one or more topics. All given topics
+// are consumed by a single Kafka client under one consumer-group session -
+// pass every topic a given consumer cares about in one call rather than
+// calling Subscribe once per topic, which would otherwise create a
+// separate client (and its own broker connections/goroutines) per topic
+// for no reason when it's the same consumer and group. The consumer will
+// start immediately if the manager is already running, or when Start() is
+// called otherwise.
 //
 // Each call creates an independent subscription, even if one already exists
-// for the same topic and group - e.g. groupless subscriptions (used for
+// for the same topics and group - e.g. groupless subscriptions (used for
 // fan-out consumers like pushing a topic to many websocket/SSE connections)
 // always have an empty GroupID and would otherwise be indistinguishable.
 // Use the returned Subscription to stop this one later.
-func (cm *ConsumerManager) Subscribe(topic string, consumer Consumer) (*Subscription, error) {
-	return cm.subscribe(nil, topic, consumer)
+func (cm *ConsumerManager) Subscribe(consumer Consumer, topics ...string) (*Subscription, error) {
+	return cm.subscribe(nil, consumer, topics...)
 }
 
 // Unsubscribe stops sub. Equivalent to sub.Stop(); provided for callers that
@@ -377,16 +393,16 @@ func (cm *ConsumerManager) Unsubscribe(sub *Subscription) error {
 	return cm.unsubscribe(sub.id)
 }
 
-func (cm *ConsumerManager) subscribe(tracker any, topic string, consumer Consumer) (*Subscription, error) {
+func (cm *ConsumerManager) subscribe(tracker any, consumer Consumer, topics ...string) (*Subscription, error) {
 	opts := consumer.SubscribeOptions()
 	// Suffix with a counter so this is unique per call, not per topic+group -
 	// generateSubscriptionID alone is just a human-readable label for logs.
-	id := fmt.Sprintf("%s#%d", generateSubscriptionID(topic, opts), cm.nextID.Add(1))
+	id := fmt.Sprintf("%s#%d", generateSubscriptionID(topics, opts), cm.nextID.Add(1))
 
 	handle := &consumerHandle{
 		consumer: consumer,
 		opts:     opts,
-		topic:    topic,
+		topics:   topics,
 		groupID:  opts.GroupID,
 		tracker:  tracker,
 		client:   nil, // Created lazily when consumer starts
@@ -397,7 +413,7 @@ func (cm *ConsumerManager) subscribe(tracker any, topic string, consumer Consume
 	cm.consumers[id] = handle
 	cm.mu.Unlock()
 
-	golly.DefaultLogger().Tracef("[kafka] registered consumer (topic=%s group=%s tracker=%v)", topic, opts.GroupID, tracker)
+	golly.DefaultLogger().Tracef("[kafka] registered consumer (topics=%s group=%s tracker=%v)", handle.topicList(), opts.GroupID, tracker)
 
 	// If manager is already running, start this consumer immediately
 	if cm.ctx != nil && cm.running.Load() {
@@ -433,7 +449,7 @@ func (cm *ConsumerManager) unsubscribe(id string) error {
 		<-handle.done
 	}
 
-	golly.DefaultLogger().Infof("[kafka] consumer stopped (topic=%s group=%s tracker=%v)", handle.topic, handle.groupID, handle.tracker)
+	golly.DefaultLogger().Infof("[kafka] consumer stopped (topics=%s group=%s tracker=%v)", handle.topicList(), handle.groupID, handle.tracker)
 	return nil
 }
 
@@ -460,19 +476,19 @@ func (cm *ConsumerManager) startConsumer(id string, handle *consumerHandle) erro
 		defer cm.wg.Done()
 		defer close(h.done)
 		if err := h.run(h.ctx); err != nil && !errors.Is(err, context.Canceled) {
-			golly.DefaultLogger().Errorf("[kafka] consumer error (topic=%s group=%s): %v",
-				h.topic, h.groupID, err)
+			golly.DefaultLogger().Errorf("[kafka] consumer error (topics=%s group=%s): %v",
+				h.topicList(), h.groupID, err)
 		}
 	}(handle)
 
-	golly.DefaultLogger().Infof("[kafka] consumer started (topic=%s group=%s tracker=%v)", handle.topic, handle.groupID, handle.tracker)
+	golly.DefaultLogger().Infof("[kafka] consumer started (topics=%s group=%s tracker=%v)", handle.topicList(), handle.groupID, handle.tracker)
 	return nil
 }
 
 // createConsumerClient builds a franz-go client configured for consuming.
 func createConsumerClient(handle *consumerHandle, config Config) (*kgo.Client, error) {
 	opts := []kgo.Opt{
-		kgo.ConsumeTopics(handle.topic),
+		kgo.ConsumeTopics(handle.topics...),
 		kgo.FetchMaxWait(60 * time.Second),
 		kgo.RequestTimeoutOverhead(60 * time.Second),
 	}
@@ -507,9 +523,9 @@ func createConsumerClient(handle *consumerHandle, config Config) (*kgo.Client, e
 	return createClient(config, opts...)
 }
 
-// generateSubscriptionID creates a unique ID for a topic+group subscription.
-func generateSubscriptionID(topic string, opts SubscribeOptions) string {
-	return topic + "-" + opts.GroupID
+// generateSubscriptionID creates a unique ID for a topics+group subscription.
+func generateSubscriptionID(topics []string, opts SubscribeOptions) string {
+	return strings.Join(topics, ",") + "-" + opts.GroupID
 }
 
 type logWriter struct {

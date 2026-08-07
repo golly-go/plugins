@@ -80,31 +80,39 @@ func TestConsumerSubscribeOptions(t *testing.T) {
 func TestGenerateSubscriptionID(t *testing.T) {
 	tests := []struct {
 		name     string
-		topic    string
+		topics   []string
 		opts     SubscribeOptions
 		expected string
 	}{
 		{
-			name:  "with group ID",
-			topic: "events.user",
+			name:   "with group ID",
+			topics: []string{"events.user"},
 			opts: SubscribeOptions{
 				GroupID: "user-service",
 			},
 			expected: "events.user-user-service",
 		},
 		{
-			name:  "without group ID",
-			topic: "notifications",
+			name:   "without group ID",
+			topics: []string{"notifications"},
 			opts: SubscribeOptions{
 				GroupID: "",
 			},
 			expected: "notifications-",
 		},
+		{
+			name:   "multiple topics pooled under one group",
+			topics: []string{"events.investment", "events.document", "events.entity"},
+			opts: SubscribeOptions{
+				GroupID: "corpus",
+			},
+			expected: "events.investment,events.document,events.entity-corpus",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := generateSubscriptionID(tt.topic, tt.opts)
+			result := generateSubscriptionID(tt.topics, tt.opts)
 			if result != tt.expected {
 				t.Errorf("expected %s, got %s", tt.expected, result)
 			}
