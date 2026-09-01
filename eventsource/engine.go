@@ -39,9 +39,18 @@ func NewEngine(opts ...Option) *Engine {
 		streams.Add(cfg.Streams[i])
 	}
 
+	workers := cfg.ProjectionWorkers
+	if workers < 1 {
+		workers = DefaultProjectionWorkers()
+	}
+	bufferSize := cfg.ProjectionBufferSize
+	if bufferSize < 1 {
+		bufferSize = DefaultProjectionBufferSize()
+	}
+
 	eng := &Engine{
 		store:       cfg.Store,
-		projections: NewProjectionManager(),
+		projections: NewProjectionManagerWithConfig(workers, bufferSize),
 		aggregates:  NewAggregateRegistry(),
 		streams:     streams,
 		maxRetries:  cfg.MaxRetries,

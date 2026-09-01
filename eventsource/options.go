@@ -20,6 +20,12 @@ type Options struct {
 	Stream     *StreamOptions
 	Streams    []StreamPublisher
 	MaxRetries int // minimum 10; defaults to 10 if unset or below minimum
+
+	// ProjectionWorkers/ProjectionBufferSize override the projection manager's
+	// worker count / total job buffer for this engine. 0 means "use the
+	// package-level DefaultProjectionWorkers/DefaultProjectionBufferSize".
+	ProjectionWorkers    int
+	ProjectionBufferSize int
 }
 
 // WithStore configures the Engine to use the provided EventStore
@@ -60,6 +66,24 @@ func WithStreams(streams ...StreamPublisher) Option {
 func WithMaxRetries(n int) Option {
 	return func(o *Options) {
 		o.MaxRetries = n
+	}
+}
+
+// WithProjectionWorkers overrides the number of hash-partitioned projection
+// worker goroutines for this engine. If unset (or n < 1), the engine falls
+// back to DefaultProjectionWorkers.
+func WithProjectionWorkers(n int) Option {
+	return func(o *Options) {
+		o.ProjectionWorkers = n
+	}
+}
+
+// WithProjectionBufferSize overrides the total job-channel buffer distributed
+// across projection workers for this engine. If unset (or n < 1), the engine
+// falls back to DefaultProjectionBufferSize.
+func WithProjectionBufferSize(n int) Option {
+	return func(o *Options) {
+		o.ProjectionBufferSize = n
 	}
 }
 

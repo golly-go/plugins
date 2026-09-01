@@ -15,11 +15,67 @@ import (
 const (
 	projectionBatchSize = 100
 
-	// defaultProjectionWorkers is the number of parallel projection goroutines.
-	// Events are routed by hash(AggregateID) % workers, so per-aggregate ordering
-	// is preserved while independent aggregates project concurrently.
-	defaultProjectionWorkers = 8
+	// initialProjectionWorkers is the starting value for defaultProjectionWorkers,
+	// used until/unless SetDefaultProjectionWorkers overrides it.
+	initialProjectionWorkers = 8
+
+	// initialProjectionBufferSize is the starting value for defaultProjectionBufferSize,
+	// used until/unless SetDefaultProjectionBufferSize overrides it.
+	initialProjectionBufferSize = 1000
+
+	// minProjectionWorkerBuffer is the floor applied to each worker's channel
+	// buffer, regardless of how the total buffer divides across workers.
+	minProjectionWorkerBuffer = 128
 )
+
+// defaultProjectionWorkers is the number of parallel projection goroutines used by
+// NewProjectionManager (and, by extension, NewEngine/NewPlugin when no explicit
+// worker count is given). Events are routed by hash(AggregateID) % workers, so
+// per-aggregate ordering is preserved while independent aggregates project
+// concurrently. Stored as an atomic so it can be reconfigured at runtime via
+// SetDefaultProjectionWorkers without a lock.
+var defaultProjectionWorkers atomic.Int32
+
+// defaultProjectionBufferSize is the total job-channel buffer distributed across
+// a ProjectionManager's workers (each worker's channel gets at least
+// minProjectionWorkerBuffer slots). Stored as an atomic so it can be
+// reconfigured at runtime via SetDefaultProjectionBufferSize.
+var defaultProjectionBufferSize atomic.Int32
+
+func init() {
+	defaultProjectionWorkers.Store(initialProjectionWorkers)
+	defaultProjectionBufferSize.Store(initialProjectionBufferSize)
+}
+
+// SetDefaultProjectionWorkers overrides the default worker count used by future
+// NewProjectionManager (and NewEngine/NewPlugin) calls that don't specify one
+// explicitly. n < 1 is treated as 1.
+func SetDefaultProjectionWorkers(n int) {
+	if n < 1 {
+		n = 1
+	}
+	defaultProjectionWorkers.Store(int32(n))
+}
+
+// DefaultProjectionWorkers returns the current default worker count.
+func DefaultProjectionWorkers() int {
+	return int(defaultProjectionWorkers.Load())
+}
+
+// SetDefaultProjectionBufferSize overrides the default total buffer used by
+// future NewProjectionManager (and NewEngine/NewPlugin) calls that don't
+// specify one explicitly. n < 1 is treated as 1.
+func SetDefaultProjectionBufferSize(n int) {
+	if n < 1 {
+		n = 1
+	}
+	defaultProjectionBufferSize.Store(int32(n))
+}
+
+// DefaultProjectionBufferSize returns the current default total buffer size.
+func DefaultProjectionBufferSize() int {
+	return int(defaultProjectionBufferSize.Load())
+}
 
 type IDdProjection interface {
 	ID() string
@@ -95,20 +151,32 @@ type ProjectionManager struct {
 	running atomic.Bool
 }
 
-// NewProjectionManager creates a ProjectionManager with defaultProjectionWorkers.
+// NewProjectionManager creates a ProjectionManager using the current
+// DefaultProjectionWorkers/DefaultProjectionBufferSize values.
 func NewProjectionManager() *ProjectionManager {
-	return NewProjectionManagerWithWorkers(defaultProjectionWorkers)
+	return NewProjectionManagerWithConfig(DefaultProjectionWorkers(), DefaultProjectionBufferSize())
 }
 
-// NewProjectionManagerWithWorkers creates a ProjectionManager with n workers.
+// NewProjectionManagerWithWorkers creates a ProjectionManager with n workers,
+// using the current DefaultProjectionBufferSize for the total job buffer.
 func NewProjectionManagerWithWorkers(n int) *ProjectionManager {
+	return NewProjectionManagerWithConfig(n, DefaultProjectionBufferSize())
+}
+
+// NewProjectionManagerWithConfig creates a ProjectionManager with n workers,
+// distributing totalBuffer job-channel slots across them (each worker gets at
+// least minProjectionWorkerBuffer slots).
+func NewProjectionManagerWithConfig(n, totalBuffer int) *ProjectionManager {
 	if n < 1 {
 		n = 1
 	}
-	// Distribute the total buffer across workers; each gets at least 128 slots.
-	perWorker := 1000 / n
-	if perWorker < 128 {
-		perWorker = 128
+	if totalBuffer < 1 {
+		totalBuffer = 1
+	}
+	// Distribute the total buffer across workers; each gets at least minProjectionWorkerBuffer slots.
+	perWorker := totalBuffer / n
+	if perWorker < minProjectionWorkerBuffer {
+		perWorker = minProjectionWorkerBuffer
 	}
 	workers := make([]chan Job, n)
 	for i := range workers {

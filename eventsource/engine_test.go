@@ -3,6 +3,7 @@ package eventsource
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -194,15 +195,28 @@ func TestEngine_ExecuteCommand(t *testing.T) {
 	assert.Equal(t, "test", agg.Name)
 }
 
-// SendTestProjection for testing Send functionality
+// SendTestProjection for testing Send functionality. HandleEvent runs on a
+// projection worker goroutine while the test goroutine reads Seen(), so
+// access to the underlying slice is guarded by a mutex.
 type SendTestProjection struct {
 	ProjectionBase
-	seen *[]string
+	mu   sync.Mutex
+	seen []string
 }
 
 func (tp *SendTestProjection) HandleEvent(ctx context.Context, evt Event) error {
-	*tp.seen = append(*tp.seen, evt.Topic+":"+evt.Type)
+	tp.mu.Lock()
+	defer tp.mu.Unlock()
+	tp.seen = append(tp.seen, evt.Topic+":"+evt.Type)
 	return nil
+}
+
+func (tp *SendTestProjection) Seen() []string {
+	tp.mu.Lock()
+	defer tp.mu.Unlock()
+	out := make([]string, len(tp.seen))
+	copy(out, tp.seen)
+	return out
 }
 
 func TestEngine_Send_ResolvesTopic(t *testing.T) {
@@ -210,8 +224,7 @@ func TestEngine_Send_ResolvesTopic(t *testing.T) {
 	defer eng.Stop()
 	eng.Start()
 
-	var seen []string
-	proj := &SendTestProjection{seen: &seen}
+	proj := &SendTestProjection{}
 
 	_ = eng.RegisterProjection(proj)
 
@@ -220,21 +233,23 @@ func TestEngine_Send_ResolvesTopic(t *testing.T) {
 		Event{Data: struct{}{}},
 		Event{Type: "Y", Topic: "Y"})
 
-	// Wait for async processing
-	time.Sleep(10 * time.Millisecond)
+	var foundX, foundY bool
+	require.Eventually(t, func() bool {
+		foundX, foundY = false, false
+		for _, s := range proj.Seen() {
+			if s == "X:X" {
+				foundX = true
+			}
+			if s == "Y:Y" {
+				foundY = true
+			}
+		}
+		return foundX && foundY
+	}, 500*time.Millisecond, 5*time.Millisecond, "expected both X and Y events to be seen")
 
 	// Debug: print what we saw
-	t.Logf("Seen events: %v", seen)
+	t.Logf("Seen events: %v", proj.Seen())
 
-	foundX, foundY := false, false
-	for _, s := range seen {
-		if s == "X:X" {
-			foundX = true
-		}
-		if s == "Y:Y" {
-			foundY = true
-		}
-	}
 	assert.True(t, foundX)
 	assert.True(t, foundY)
 }
@@ -269,5 +284,67 @@ func BenchmarkEngine_LoadEvents(b *testing.B) {
 	// Benchmark
 	for i := 0; i < b.N; i++ {
 		_ = eng.LoadEvents(ctx, 100, func(events []Event) error { return nil })
+	}
+}
+
+func TestNewEngine_ProjectionWorkerAndBufferOptions(t *testing.T) {
+	tests := []struct {
+		name               string
+		opts               []Option
+		defaultWorkers     int
+		defaultBufferSize  int
+		expectedNumWorkers int
+		expectedPerWorker  int
+	}{
+		{
+			name:               "no options falls back to package defaults",
+			opts:               nil,
+			defaultWorkers:     5,
+			defaultBufferSize:  500,
+			expectedNumWorkers: 5,
+			expectedPerWorker:  minProjectionWorkerBuffer, // 500/5=100, floored to 128
+		},
+		{
+			name:               "WithProjectionWorkers overrides worker count only",
+			opts:               []Option{WithProjectionWorkers(2)},
+			defaultWorkers:     5,
+			defaultBufferSize:  500,
+			expectedNumWorkers: 2,
+			expectedPerWorker:  250,
+		},
+		{
+			name:               "WithProjectionBufferSize overrides buffer only",
+			opts:               []Option{WithProjectionBufferSize(1000)},
+			defaultWorkers:     5,
+			defaultBufferSize:  500,
+			expectedNumWorkers: 5,
+			expectedPerWorker:  200,
+		},
+		{
+			name:               "both options override the package defaults",
+			opts:               []Option{WithProjectionWorkers(2), WithProjectionBufferSize(1000)},
+			defaultWorkers:     5,
+			defaultBufferSize:  500,
+			expectedNumWorkers: 2,
+			expectedPerWorker:  500,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			withDefaultProjectionWorkers(t, tt.defaultWorkers)
+			withDefaultProjectionBufferSize(t, tt.defaultBufferSize)
+
+			opts := append([]Option{WithStore(NewInMemoryStore())}, tt.opts...)
+			eng := NewEngine(opts...)
+
+			pm := eng.Projections()
+			require.NotNil(t, pm)
+			assert.Equal(t, tt.expectedNumWorkers, pm.numWorkers)
+			require.Len(t, pm.workers, tt.expectedNumWorkers)
+			for _, ch := range pm.workers {
+				assert.Equal(t, tt.expectedPerWorker, cap(ch))
+			}
+		})
 	}
 }

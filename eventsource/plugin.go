@@ -43,6 +43,12 @@ type PluginOptions struct {
 	streams []StreamPublisher
 
 	userInfoFunc func(context.Context) UserInfo
+
+	// projectionWorkers/projectionBufferSize configure the default engine's
+	// projection manager. Ignored if PluginWithEngine supplies an engine
+	// directly — configure that engine via WithProjectionWorkers instead.
+	projectionWorkers    int
+	projectionBufferSize int
 }
 
 type PluginOption func(*PluginOptions)
@@ -61,6 +67,20 @@ func PluginWithEngine(engine *Engine) PluginOption {
 
 func PluginWithStreams(streams ...StreamPublisher) PluginOption {
 	return func(opt *PluginOptions) { opt.streams = append(opt.streams, streams...) }
+}
+
+// PluginWithProjectionWorkers sets the number of hash-partitioned projection
+// worker goroutines on the plugin's default engine. No-op if PluginWithEngine
+// supplies an engine directly.
+func PluginWithProjectionWorkers(n int) PluginOption {
+	return func(opt *PluginOptions) { opt.projectionWorkers = n }
+}
+
+// PluginWithProjectionBufferSize sets the total job-channel buffer distributed
+// across projection workers on the plugin's default engine. No-op if
+// PluginWithEngine supplies an engine directly.
+func PluginWithProjectionBufferSize(n int) PluginOption {
+	return func(opt *PluginOptions) { opt.projectionBufferSize = n }
 }
 
 const (
@@ -83,7 +103,14 @@ func NewPlugin(opts ...PluginOption) *EventsourcePlugin {
 
 	if cfg.engine == nil {
 		// default engine with store only (in-memory stream for projections)
-		cfg.engine = NewEngine(WithStore(cfg.store), WithStreams(cfg.streams...))
+		engineOpts := []Option{WithStore(cfg.store), WithStreams(cfg.streams...)}
+		if cfg.projectionWorkers > 0 {
+			engineOpts = append(engineOpts, WithProjectionWorkers(cfg.projectionWorkers))
+		}
+		if cfg.projectionBufferSize > 0 {
+			engineOpts = append(engineOpts, WithProjectionBufferSize(cfg.projectionBufferSize))
+		}
+		cfg.engine = NewEngine(engineOpts...)
 	}
 
 	return &EventsourcePlugin{engine: cfg.engine}

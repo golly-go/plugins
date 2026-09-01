@@ -601,3 +601,158 @@ func BenchmarkProjectionManager_handleEvent_Parallel(b *testing.B) {
 		}
 	})
 }
+
+// withDefaultProjectionWorkers temporarily overrides the package-level default
+// worker count for the duration of the test, restoring the prior value on cleanup.
+func withDefaultProjectionWorkers(t *testing.T, n int) {
+	t.Helper()
+	prev := DefaultProjectionWorkers()
+	SetDefaultProjectionWorkers(n)
+	t.Cleanup(func() { SetDefaultProjectionWorkers(prev) })
+}
+
+// withDefaultProjectionBufferSize temporarily overrides the package-level default
+// total buffer size for the duration of the test, restoring the prior value on cleanup.
+func withDefaultProjectionBufferSize(t *testing.T, n int) {
+	t.Helper()
+	prev := DefaultProjectionBufferSize()
+	SetDefaultProjectionBufferSize(n)
+	t.Cleanup(func() { SetDefaultProjectionBufferSize(prev) })
+}
+
+func TestSetDefaultProjectionWorkers(t *testing.T) {
+	prev := DefaultProjectionWorkers()
+	t.Cleanup(func() { SetDefaultProjectionWorkers(prev) })
+
+	tests := []struct {
+		name     string
+		set      int
+		expected int
+	}{
+		{name: "positive value is stored as-is", set: 4, expected: 4},
+		{name: "one is the floor", set: 1, expected: 1},
+		{name: "zero is clamped to 1", set: 0, expected: 1},
+		{name: "negative is clamped to 1", set: -5, expected: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			SetDefaultProjectionWorkers(tt.set)
+			assert.Equal(t, tt.expected, DefaultProjectionWorkers())
+		})
+	}
+}
+
+func TestSetDefaultProjectionBufferSize(t *testing.T) {
+	prev := DefaultProjectionBufferSize()
+	t.Cleanup(func() { SetDefaultProjectionBufferSize(prev) })
+
+	tests := []struct {
+		name     string
+		set      int
+		expected int
+	}{
+		{name: "positive value is stored as-is", set: 2000, expected: 2000},
+		{name: "one is the floor", set: 1, expected: 1},
+		{name: "zero is clamped to 1", set: 0, expected: 1},
+		{name: "negative is clamped to 1", set: -100, expected: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			SetDefaultProjectionBufferSize(tt.set)
+			assert.Equal(t, tt.expected, DefaultProjectionBufferSize())
+		})
+	}
+}
+
+func TestDefaultProjectionWorkersAndBufferSize_InitialValues(t *testing.T) {
+	// Sanity check the documented, backwards-compatible defaults (8 workers,
+	// 1000 total buffer) in a fresh process — guards against silently
+	// changing the out-of-the-box behavior existing callers depend on.
+	assert.Equal(t, initialProjectionWorkers, DefaultProjectionWorkers())
+	assert.Equal(t, initialProjectionBufferSize, DefaultProjectionBufferSize())
+}
+
+func TestNewProjectionManagerWithConfig(t *testing.T) {
+	tests := []struct {
+		name                string
+		workers             int
+		totalBuffer         int
+		expectedNumWorkers  int
+		expectedPerWorkerCap int
+	}{
+		{
+			name:                 "distributes buffer evenly above the floor",
+			workers:              4,
+			totalBuffer:          2000,
+			expectedNumWorkers:   4,
+			expectedPerWorkerCap: 500,
+		},
+		{
+			name:                 "floors small per-worker share to minProjectionWorkerBuffer",
+			workers:              100,
+			totalBuffer:          1000,
+			expectedNumWorkers:   100,
+			expectedPerWorkerCap: minProjectionWorkerBuffer,
+		},
+		{
+			name:                 "zero workers clamped to 1",
+			workers:              0,
+			totalBuffer:          1000,
+			expectedNumWorkers:   1,
+			expectedPerWorkerCap: 1000,
+		},
+		{
+			name:                 "negative workers clamped to 1",
+			workers:              -3,
+			totalBuffer:          1000,
+			expectedNumWorkers:   1,
+			expectedPerWorkerCap: 1000,
+		},
+		{
+			name:                 "zero buffer clamped to 1, still floored per worker",
+			workers:              2,
+			totalBuffer:          0,
+			expectedNumWorkers:   2,
+			expectedPerWorkerCap: minProjectionWorkerBuffer,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pm := NewProjectionManagerWithConfig(tt.workers, tt.totalBuffer)
+			require.NotNil(t, pm)
+
+			assert.Equal(t, tt.expectedNumWorkers, pm.numWorkers)
+			require.Len(t, pm.workers, tt.expectedNumWorkers)
+			for i, ch := range pm.workers {
+				assert.Equalf(t, tt.expectedPerWorkerCap, cap(ch), "worker %d buffer capacity", i)
+			}
+		})
+	}
+}
+
+func TestNewProjectionManagerWithWorkers_UsesDefaultBufferSize(t *testing.T) {
+	withDefaultProjectionBufferSize(t, 4000)
+
+	pm := NewProjectionManagerWithWorkers(4)
+
+	assert.Equal(t, 4, pm.numWorkers)
+	for _, ch := range pm.workers {
+		assert.Equal(t, 1000, cap(ch))
+	}
+}
+
+func TestNewProjectionManager_UsesCurrentDefaults(t *testing.T) {
+	withDefaultProjectionWorkers(t, 3)
+	withDefaultProjectionBufferSize(t, 3000)
+
+	pm := NewProjectionManager()
+
+	assert.Equal(t, 3, pm.numWorkers)
+	require.Len(t, pm.workers, 3)
+	for _, ch := range pm.workers {
+		assert.Equal(t, 1000, cap(ch))
+	}
+}

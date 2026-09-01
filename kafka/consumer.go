@@ -251,12 +251,36 @@ func (h *consumerHandle) topicList() string {
 	return strings.Join(h.topics, ",")
 }
 
+// trackerLabel formats a caller-supplied tracker for logging. tracker is
+// documented as a small label (string, ID, etc.), but nothing enforces that -
+// if a caller passes a large struct instead, a raw %v would dump every field
+// (including unexported pointers) into every consumer log line. Only values
+// that print compactly are shown as-is; anything else falls back to its type
+// name.
+func trackerLabel(tracker any) any {
+	if tracker == nil {
+		return nil
+	}
+	if s, ok := tracker.(fmt.Stringer); ok {
+		return s.String()
+	}
+	switch tracker.(type) {
+	case string, error,
+		int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64,
+		float32, float64, bool:
+		return tracker
+	default:
+		return fmt.Sprintf("%T", tracker)
+	}
+}
+
 // logger creates a structured logger for this consumer.
 func (h *consumerHandle) logger() *golly.Entry {
 	return golly.DefaultLogger().WithFields(golly.Fields{
 		"topics":  h.topicList(),
 		"group":   h.groupID,
-		"tracker": h.tracker,
+		"tracker": trackerLabel(h.tracker),
 	})
 }
 
@@ -413,7 +437,7 @@ func (cm *ConsumerManager) subscribe(tracker any, consumer Consumer, topics ...s
 	cm.consumers[id] = handle
 	cm.mu.Unlock()
 
-	golly.DefaultLogger().Tracef("[kafka] registered consumer (topics=%s group=%s tracker=%v)", handle.topicList(), opts.GroupID, tracker)
+	golly.DefaultLogger().Tracef("[kafka] registered consumer (topics=%s group=%s tracker=%v)", handle.topicList(), opts.GroupID, trackerLabel(tracker))
 
 	// If manager is already running, start this consumer immediately
 	if cm.ctx != nil && cm.running.Load() {
@@ -449,7 +473,7 @@ func (cm *ConsumerManager) unsubscribe(id string) error {
 		<-handle.done
 	}
 
-	golly.DefaultLogger().Infof("[kafka] consumer stopped (topics=%s group=%s tracker=%v)", handle.topicList(), handle.groupID, handle.tracker)
+	golly.DefaultLogger().Infof("[kafka] consumer stopped (topics=%s group=%s tracker=%v)", handle.topicList(), handle.groupID, trackerLabel(handle.tracker))
 	return nil
 }
 
@@ -481,7 +505,7 @@ func (cm *ConsumerManager) startConsumer(id string, handle *consumerHandle) erro
 		}
 	}(handle)
 
-	golly.DefaultLogger().Infof("[kafka] consumer started (topics=%s group=%s tracker=%v)", handle.topicList(), handle.groupID, handle.tracker)
+	golly.DefaultLogger().Infof("[kafka] consumer started (topics=%s group=%s tracker=%v)", handle.topicList(), handle.groupID, trackerLabel(handle.tracker))
 	return nil
 }
 
