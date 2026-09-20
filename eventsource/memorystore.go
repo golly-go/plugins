@@ -56,7 +56,10 @@ func (s *InMemoryStore) Save(ctx context.Context, events ...*Event) error {
 	defer s.lock.Unlock()
 
 	for _, evt := range events {
-		s.data = append(s.data, *evt)
+		// State is transient (gorm:"-" in gormstore); don't persist it.
+		c := *evt
+		c.State = ""
+		s.data = append(s.data, c)
 	}
 	return nil
 }

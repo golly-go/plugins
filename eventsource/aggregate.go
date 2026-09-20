@@ -75,6 +75,11 @@ func (ab *AggregateBase) ReplayOne(agg Aggregate, event Event) error {
 		return err
 	}
 
+	// Replayed events are already persisted. Stores may hand back a stale
+	// "applied" state (InMemoryStore copies the struct), which would make
+	// Uncommitted() re-save them on the next commit.
+	event.SetState(EventStateCompleted)
+
 	agg.AppendChanges(event)
 	return nil
 }
@@ -88,10 +93,13 @@ func (a *AggregateBase) Replay(agg Aggregate, events []Event) error {
 	// Sort events by version or created_at timestamp
 	sort.Slice(events, func(i, j int) bool { return events[i].Version < events[j].Version })
 
-	for _, evt := range events {
-		if err := apply(agg, evt); err != nil {
+	for i := range events {
+		if err := apply(agg, events[i]); err != nil {
 			return err
 		}
+		// Already persisted; don't let a stale "applied" state make
+		// Uncommitted() re-save it.
+		events[i].SetState(EventStateCompleted)
 	}
 
 	agg.SetChanges(events)

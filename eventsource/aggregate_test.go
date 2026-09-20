@@ -7,6 +7,7 @@ import (
 	"github.com/golly-go/golly"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type TestAggregate struct {
@@ -167,4 +168,27 @@ func TestProcessChanges(t *testing.T) {
 	assert.Equal(t, EventStateApplied, changes[2].GetState(), "Third event should be marked as APPLIED")
 
 	assert.Equal(t, mockAggregate.GetID(), changes[0].AggregateID, "Aggregate ID should not be updated")
+}
+
+// Stores may hand back events still marked "applied"; replay must not treat
+// them as uncommitted.
+func TestAggregateBase_Replay_MarksEventsNotUncommitted(t *testing.T) {
+	evts := []Event{
+		{Version: 2, Data: testEvent{}, State: EventStateApplied},
+		{Version: 1, Data: testEvent{}, State: EventStateApplied},
+	}
+
+	agg := &TestAggregate{ID: "replay"}
+	require.NoError(t, agg.Replay(agg, evts))
+
+	assert.Len(t, agg.Changes(), 2)
+	assert.Empty(t, agg.Changes().Uncommitted())
+}
+
+func TestAggregateBase_ReplayOne_MarksEventNotUncommitted(t *testing.T) {
+	agg := &TestAggregate{ID: "replay-one"}
+	require.NoError(t, agg.ReplayOne(agg, Event{Version: 1, Data: testEvent{}, State: EventStateApplied}))
+
+	assert.Len(t, agg.Changes(), 1)
+	assert.Empty(t, agg.Changes().Uncommitted())
 }

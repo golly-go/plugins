@@ -348,3 +348,40 @@ func TestNewEngine_ProjectionWorkerAndBufferOptions(t *testing.T) {
 		})
 	}
 }
+
+// Regression: the in-memory store used to keep State=applied on saved events,
+// so replayed events were treated as uncommitted and re-saved (n -> 2n+1).
+func TestEngine_Execute_InMemoryDoesNotDuplicateEvents(t *testing.T) {
+	store := NewInMemoryStore()
+	engine := NewEngine(WithStore(store))
+	engine.RegisterAggregate(&TestAggregate{}, []any{testEvent{}})
+
+	ctx := golly.NewContext(context.Background())
+	agg := &TestAggregate{ID: "no-dupes"}
+
+	const commands = 5
+	for i := 0; i < commands; i++ {
+		require.NoError(t, engine.Execute(ctx, agg, &TestCommand{name: "cmd"}))
+	}
+
+	events, err := store.LoadEvents(ctx)
+	require.NoError(t, err)
+	assert.Len(t, events, commands)
+	assert.Equal(t, int64(commands), agg.Version())
+
+	// Loading a fresh aggregate must not leave anything uncommitted.
+	fresh := &TestAggregate{ID: "no-dupes"}
+	require.NoError(t, engine.Load(ctx, fresh))
+	assert.Empty(t, fresh.Changes().Uncommitted())
+}
+
+func TestInMemoryStore_Save_DoesNotPersistState(t *testing.T) {
+	store := NewInMemoryStore()
+	evt := NewEvent(testEvent{}, EventStateApplied)
+	evt.AggregateID, evt.AggregateType, evt.Version = "a", "TestAggregate", 1
+
+	require.NoError(t, store.Save(context.Background(), &evt))
+
+	assert.Equal(t, EventState(""), store.data[0].State)
+	assert.Equal(t, EventStateApplied, evt.State, "caller's event must be untouched")
+}
