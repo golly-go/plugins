@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -18,6 +19,10 @@ type Producer struct {
 
 	// config contains the producer configuration
 	config Config
+
+	// topics caches logical -> broker topic names so Publish doesn't
+	// allocate a new prefixed string on every call.
+	topics sync.Map // map[string]string
 
 	running atomic.Bool
 	cancel  context.CancelFunc
@@ -36,6 +41,21 @@ func NewProducer(client *kgo.Client, config Config) *Producer {
 	}
 }
 
+// topicName returns the broker topic for topic, applying TopicPrefix once per
+// distinct topic and serving it from cache afterwards.
+func (p *Producer) topicName(topic string) string {
+	if p.config.TopicPrefix == "" {
+		return topic
+	}
+
+	if tp, ok := p.topics.Load(topic); ok {
+		return tp.(string)
+	}
+
+	tp, _ := p.topics.LoadOrStore(topic, p.config.topicName(topic))
+	return tp.(string)
+}
+
 // Publish sends a message to the given topic synchronously, waiting for broker acknowledgment.
 // The payload is JSON-encoded automatically. If a key generation function is configured,
 // it will be used to generate the message key.
@@ -45,7 +65,9 @@ func NewProducer(client *kgo.Client, config Config) *Producer {
 // Publish sends a message to the given topic. It uses franz-go's internal
 // batching and buffering for high performance.
 func (p *Producer) Publish(ctx context.Context, topic string, payload any) error {
-	trace("publishing message to topic %s", topic)
+	tp := p.topicName(topic)
+
+	trace("publishing message to topic %s", tp)
 
 	// Generate key only if KeyFunc is provided
 	var key []byte
@@ -61,7 +83,7 @@ func (p *Producer) Publish(ctx context.Context, topic string, payload any) error
 
 	// Create record
 	record := &kgo.Record{
-		Topic: topic,
+		Topic: tp,
 		Key:   key,
 		Value: payloadBytes,
 	}
@@ -72,7 +94,9 @@ func (p *Producer) Publish(ctx context.Context, topic string, payload any) error
 		if err != nil {
 			golly.
 				DefaultLogger().
-				Errorf("kafka: publish: failed to deliver message to %s: %v", topic, err)
+				WithError(err).
+				Str("topic", tp).
+				Errorf("kafka: publish: failed to deliver message")
 		}
 	})
 

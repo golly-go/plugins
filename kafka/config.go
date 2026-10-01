@@ -49,6 +49,11 @@ type Config struct {
 	WriteTimeout   time.Duration
 	AllowAutoTopic bool
 
+	// TopicPrefix namespaces every topic this plugin produces to or consumes
+	// from as "<prefix>-<topic>", so environments sharing a cluster don't
+	// consume each other's messages. Empty means no prefix.
+	TopicPrefix string
+
 	// Authentication
 	Username string
 	Password string
@@ -97,6 +102,28 @@ func DefaultConfig() Config {
 	}
 }
 
+// topicName returns the topic as it exists on the broker (with prefix applied).
+func (c Config) topicName(topic string) string {
+	if c.TopicPrefix == "" {
+		return topic
+	}
+	return c.TopicPrefix + "-" + topic
+}
+
+// trimTopicPrefix reverses topicName, returning the logical topic name.
+func (c Config) trimTopicPrefix(topic string) string {
+	if c.TopicPrefix == "" {
+		return topic
+	}
+	// Slice rather than strings.TrimPrefix(topic, prefix+"-") so this runs
+	// per consumed record without allocating.
+	p := c.TopicPrefix
+	if len(topic) <= len(p) || topic[len(p)] != '-' || topic[:len(p)] != p {
+		return topic
+	}
+	return topic[len(p)+1:]
+}
+
 // Option configures the Kafka plugin
 type Option func(*Config)
 
@@ -104,6 +131,13 @@ type Option func(*Config)
 func WithWriteTimeout(timeout time.Duration) Option {
 	return func(c *Config) {
 		c.WriteTimeout = timeout
+	}
+}
+
+// WithTopicPrefix prefixes all topics as "<prefix>-<topic>" (e.g. "development-orders")
+func WithTopicPrefix(prefix string) Option {
+	return func(c *Config) {
+		c.TopicPrefix = prefix
 	}
 }
 

@@ -78,3 +78,71 @@ func TestWithCredentials(t *testing.T) {
 		t.Errorf("expected Password 'pass', got '%s'", cfg.Password)
 	}
 }
+
+func TestTopicPrefix(t *testing.T) {
+	cfg := DefaultConfig()
+	if got := cfg.topicName("orders"); got != "orders" {
+		t.Errorf("expected unprefixed topic, got %s", got)
+	}
+	if got := cfg.trimTopicPrefix("development-orders"); got != "development-orders" {
+		t.Errorf("expected topic untouched without prefix, got %s", got)
+	}
+
+	WithTopicPrefix("development")(&cfg)
+	if got := cfg.topicName("orders"); got != "development-orders" {
+		t.Errorf("expected development-orders, got %s", got)
+	}
+
+	trims := map[string]string{
+		"development-orders": "orders",
+		"orders":             "orders",            // not prefixed
+		"developmentorders":  "developmentorders", // missing separator
+		"development-":       "",                  // empty remainder
+		"development":        "development",       // prefix only
+		"staging-orders":     "staging-orders",    // other environment
+		"dev-orders":         "dev-orders",        // shorter prefix
+	}
+	for in, want := range trims {
+		if got := cfg.trimTopicPrefix(in); got != want {
+			t.Errorf("trimTopicPrefix(%q): expected %q, got %q", in, want, got)
+		}
+	}
+}
+
+func TestTrimTopicPrefixNoAllocs(t *testing.T) {
+	cfg := DefaultConfig()
+	WithTopicPrefix("development")(&cfg)
+
+	topic := "development-orders"
+	allocs := testing.AllocsPerRun(100, func() {
+		_ = cfg.trimTopicPrefix(topic)
+	})
+	if allocs != 0 {
+		t.Errorf("expected 0 allocs, got %v", allocs)
+	}
+}
+
+func TestProducerTopicName(t *testing.T) {
+	cfg := DefaultConfig()
+	p := NewProducer(nil, cfg)
+	if got := p.topicName("orders"); got != "orders" {
+		t.Errorf("expected unprefixed topic, got %s", got)
+	}
+
+	WithTopicPrefix("development")(&cfg)
+	p = NewProducer(nil, cfg)
+	if got := p.topicName("orders"); got != "development-orders" {
+		t.Errorf("expected development-orders, got %s", got)
+	}
+	if got := p.topicName("users"); got != "development-users" {
+		t.Errorf("expected development-users, got %s", got)
+	}
+
+	// Cached lookups must not allocate.
+	allocs := testing.AllocsPerRun(100, func() {
+		_ = p.topicName("orders")
+	})
+	if allocs != 0 {
+		t.Errorf("expected 0 allocs on cached topic, got %v", allocs)
+	}
+}

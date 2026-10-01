@@ -73,9 +73,11 @@ type consumerHandle struct {
 	client   *kgo.Client      // Kafka client (created lazily)
 	consumer Consumer         // User's consumer implementation
 	opts     SubscribeOptions // Subscription options
-	topics   []string         // Topic names this client consumes
+	topics   []string         // Topic names as named on the broker (TopicPrefix applied)
+	topicStr string           // topics joined, for logging
 	groupID  string           // Consumer group ID
 	tracker  any              // Optional caller-supplied label, used only for logging
+	config   Config           // Plugin config (used to strip TopicPrefix from received topics)
 
 	// ctx/cancel are derived from the manager's context when this handle is
 	// started. Cancelling them stops only this subscription - unlike the
@@ -206,7 +208,7 @@ func (h *consumerHandle) processRecord(ctx context.Context, record *kgo.Record, 
 // convertRecord transforms a kgo.Record into our Message type.
 func (h *consumerHandle) convertRecord(record *kgo.Record) Message {
 	msg := Message{
-		Topic:     record.Topic,
+		Topic:     h.config.trimTopicPrefix(record.Topic),
 		Partition: record.Partition,
 		Offset:    record.Offset,
 		Key:       record.Key,
@@ -246,9 +248,9 @@ func (h *consumerHandle) closeClient() {
 	}
 }
 
-// topicList joins this handle's topics for logging.
+// topicList returns this handle's topics (as named on the broker) for logging.
 func (h *consumerHandle) topicList() string {
-	return strings.Join(h.topics, ",")
+	return h.topicStr
 }
 
 // trackerLabel formats a caller-supplied tracker for logging. tracker is
@@ -423,12 +425,20 @@ func (cm *ConsumerManager) subscribe(tracker any, consumer Consumer, topics ...s
 	// generateSubscriptionID alone is just a human-readable label for logs.
 	id := fmt.Sprintf("%s#%d", generateSubscriptionID(topics, opts), cm.nextID.Add(1))
 
+	// Apply TopicPrefix once here rather than on every log line.
+	brokerTopics := make([]string, len(topics))
+	for i, t := range topics {
+		brokerTopics[i] = cm.config.topicName(t)
+	}
+
 	handle := &consumerHandle{
 		consumer: consumer,
 		opts:     opts,
-		topics:   topics,
+		topics:   brokerTopics,
+		topicStr: strings.Join(brokerTopics, ","),
 		groupID:  opts.GroupID,
 		tracker:  tracker,
+		config:   cm.config,
 		client:   nil, // Created lazily when consumer starts
 		done:     make(chan struct{}),
 	}

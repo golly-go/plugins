@@ -3,6 +3,8 @@ package kafka
 import (
 	"context"
 	"testing"
+
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 // Mock consumer for testing
@@ -151,5 +153,56 @@ func TestMockConsumer(t *testing.T) {
 	opts := consumer.SubscribeOptions()
 	if opts.GroupID != "test-group" {
 		t.Errorf("expected GroupID 'test-group', got '%s'", opts.GroupID)
+	}
+}
+
+func TestSubscribeAppliesTopicPrefix(t *testing.T) {
+	cfg := DefaultConfig()
+	WithTopicPrefix("development")(&cfg)
+	cm := NewConsumerManager(cfg)
+
+	if _, err := cm.Subscribe(&MockConsumer{}, "orders", "users"); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+
+	var h *consumerHandle
+	for _, handle := range cm.consumers {
+		h = handle
+	}
+
+	if len(h.topics) != 2 || h.topics[0] != "development-orders" || h.topics[1] != "development-users" {
+		t.Errorf("expected prefixed broker topics, got %v", h.topics)
+	}
+	if got := h.topicList(); got != "development-orders,development-users" {
+		t.Errorf("expected prefixed topic list, got %s", got)
+	}
+
+	// Handlers see the logical topic name.
+	msg := h.convertRecord(&kgo.Record{Topic: "development-orders"})
+	if msg.Topic != "orders" {
+		t.Errorf("expected message topic orders, got %s", msg.Topic)
+	}
+
+	allocs := testing.AllocsPerRun(100, func() {
+		_ = h.topicList()
+	})
+	if allocs != 0 {
+		t.Errorf("expected 0 allocs for topicList, got %v", allocs)
+	}
+}
+
+func TestSubscribeWithoutTopicPrefix(t *testing.T) {
+	cm := NewConsumerManager(DefaultConfig())
+	if _, err := cm.Subscribe(&MockConsumer{}, "orders"); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+
+	for _, h := range cm.consumers {
+		if h.topicList() != "orders" {
+			t.Errorf("expected orders, got %s", h.topicList())
+		}
+		if msg := h.convertRecord(&kgo.Record{Topic: "orders"}); msg.Topic != "orders" {
+			t.Errorf("expected orders, got %s", msg.Topic)
+		}
 	}
 }

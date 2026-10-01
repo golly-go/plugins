@@ -73,6 +73,9 @@ func Unsubscribe(sub *Subscription) error {
 func Publish(ctx context.Context, topic string, payload any) error {
 	producer := GetProducer()
 	if producer == nil {
+		if plugin := GetPlugin(); plugin != nil {
+			topic = plugin.Config().topicName(topic)
+		}
 		golly.DefaultLogger().Warnf("[KAFKA] attempted to publish to %s but producer is not available (EnableProducer=false?)", topic)
 		return fmt.Errorf("[KAFKA] producer not available")
 	}
