@@ -54,6 +54,11 @@ type Config struct {
 	// consume each other's messages. Empty means no prefix.
 	TopicPrefix string
 
+	// GroupPrefix namespaces consumer groups as "<prefix>-<group>" so
+	// environments sharing a cluster don't share offsets or partitions.
+	// Groupless subscriptions stay groupless. Empty means no prefix.
+	GroupPrefix string
+
 	// Authentication
 	Username string
 	Password string
@@ -110,6 +115,16 @@ func (c Config) topicName(topic string) string {
 	return c.TopicPrefix + "-" + topic
 }
 
+// groupName returns the consumer group as it exists on the broker (with prefix
+// applied). An empty group stays empty: groupless subscriptions must not
+// become a group named "<prefix>-".
+func (c Config) groupName(group string) string {
+	if c.GroupPrefix == "" || group == "" {
+		return group
+	}
+	return c.GroupPrefix + "-" + group
+}
+
 // trimTopicPrefix reverses topicName, returning the logical topic name.
 func (c Config) trimTopicPrefix(topic string) string {
 	if c.TopicPrefix == "" {
@@ -138,6 +153,13 @@ func WithWriteTimeout(timeout time.Duration) Option {
 func WithTopicPrefix(prefix string) Option {
 	return func(c *Config) {
 		c.TopicPrefix = prefix
+	}
+}
+
+// WithGroupPrefix prefixes all consumer groups as "<prefix>-<group>" (e.g. "development-billing")
+func WithGroupPrefix(prefix string) Option {
+	return func(c *Config) {
+		c.GroupPrefix = prefix
 	}
 }
 

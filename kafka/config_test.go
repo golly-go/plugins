@@ -146,3 +146,19 @@ func TestProducerTopicName(t *testing.T) {
 		t.Errorf("expected 0 allocs on cached topic, got %v", allocs)
 	}
 }
+
+func TestGroupPrefix(t *testing.T) {
+	cfg := DefaultConfig()
+	if got := cfg.groupName("billing"); got != "billing" {
+		t.Errorf("expected unprefixed group, got %s", got)
+	}
+
+	WithGroupPrefix("development")(&cfg)
+	if got := cfg.groupName("billing"); got != "development-billing" {
+		t.Errorf("expected development-billing, got %s", got)
+	}
+	// Groupless subscriptions must stay groupless.
+	if got := cfg.groupName(""); got != "" {
+		t.Errorf("expected empty group to stay empty, got %q", got)
+	}
+}

@@ -206,3 +206,24 @@ func TestSubscribeWithoutTopicPrefix(t *testing.T) {
 		}
 	}
 }
+
+func TestSubscribeAppliesGroupPrefix(t *testing.T) {
+	cfg := DefaultConfig()
+	WithGroupPrefix("development")(&cfg)
+	cm := NewConsumerManager(cfg)
+
+	if _, err := cm.Subscribe(&MockConsumer{opts: SubscribeOptions{GroupID: "billing"}}, "orders"); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	if _, err := cm.Subscribe(&MockConsumer{}, "orders"); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+
+	got := map[string]bool{}
+	for _, h := range cm.consumers {
+		got[h.groupID] = true
+	}
+	if !got["development-billing"] || !got[""] || len(got) != 2 {
+		t.Errorf("expected groups {development-billing, \"\"}, got %v", got)
+	}
+}

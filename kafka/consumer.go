@@ -75,7 +75,7 @@ type consumerHandle struct {
 	opts     SubscribeOptions // Subscription options
 	topics   []string         // Topic names as named on the broker (TopicPrefix applied)
 	topicStr string           // topics joined, for logging
-	groupID  string           // Consumer group ID
+	groupID  string           // Consumer group ID as named on the broker (GroupPrefix applied)
 	tracker  any              // Optional caller-supplied label, used only for logging
 	config   Config           // Plugin config (used to strip TopicPrefix from received topics)
 
@@ -425,7 +425,8 @@ func (cm *ConsumerManager) subscribe(tracker any, consumer Consumer, topics ...s
 	// generateSubscriptionID alone is just a human-readable label for logs.
 	id := fmt.Sprintf("%s#%d", generateSubscriptionID(topics, opts), cm.nextID.Add(1))
 
-	// Apply TopicPrefix once here rather than on every log line.
+	// Apply TopicPrefix (and GroupPrefix on the handle) once here rather than
+	// on every log line.
 	brokerTopics := make([]string, len(topics))
 	for i, t := range topics {
 		brokerTopics[i] = cm.config.topicName(t)
@@ -436,7 +437,7 @@ func (cm *ConsumerManager) subscribe(tracker any, consumer Consumer, topics ...s
 		opts:     opts,
 		topics:   brokerTopics,
 		topicStr: strings.Join(brokerTopics, ","),
-		groupID:  opts.GroupID,
+		groupID:  cm.config.groupName(opts.GroupID),
 		tracker:  tracker,
 		config:   cm.config,
 		client:   nil, // Created lazily when consumer starts
@@ -447,7 +448,7 @@ func (cm *ConsumerManager) subscribe(tracker any, consumer Consumer, topics ...s
 	cm.consumers[id] = handle
 	cm.mu.Unlock()
 
-	golly.DefaultLogger().Tracef("[kafka] registered consumer (topics=%s group=%s tracker=%v)", handle.topicList(), opts.GroupID, trackerLabel(tracker))
+	golly.DefaultLogger().Tracef("[kafka] registered consumer (topics=%s group=%s tracker=%v)", handle.topicList(), handle.groupID, trackerLabel(tracker))
 
 	// If manager is already running, start this consumer immediately
 	if cm.ctx != nil && cm.running.Load() {
