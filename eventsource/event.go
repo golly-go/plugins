@@ -93,10 +93,16 @@ func NewEvent(data any, state EventState) Event {
 type Events []Event
 
 func (evts Events) ByState(state EventState) Events {
-	events := Events{}
-
+	n := 0
 	for pos := range evts {
-		if evts[pos].InState(state) { // Use the provided state parameter
+		if evts[pos].InState(state) {
+			n++
+		}
+	}
+
+	events := make(Events, 0, n)
+	for pos := range evts {
+		if evts[pos].InState(state) {
 			events = append(events, evts[pos])
 		}
 	}
@@ -215,11 +221,12 @@ func EventDataToMap(data any) (map[string]any, error) {
 }
 
 func applyUserInfo(ctx context.Context, e *Event) {
-	if userInfoFunc == nil {
+	fn := userInfoFunc.Load()
+	if fn == nil {
 		return
 	}
 
-	userInfo := userInfoFunc(ctx)
+	userInfo := (*fn)(ctx)
 
 	e.TenantID = userInfo.TenantID
 	e.UserID = userInfo.UserID

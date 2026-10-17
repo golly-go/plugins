@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"iter"
 	"sync"
 	"sync/atomic"
@@ -15,12 +14,12 @@ import (
 const (
 	projectionBatchSize = 100
 
-	// initialProjectionWorkers is the starting value for defaultProjectionWorkers,
-	// used until/unless SetDefaultProjectionWorkers overrides it.
+	// initialProjectionWorkers is the value used while defaultProjectionWorkers is unset,
+	// until/unless SetDefaultProjectionWorkers overrides it.
 	initialProjectionWorkers = 8
 
-	// initialProjectionBufferSize is the starting value for defaultProjectionBufferSize,
-	// used until/unless SetDefaultProjectionBufferSize overrides it.
+	// initialProjectionBufferSize is the value used while defaultProjectionBufferSize is unset,
+	// until/unless SetDefaultProjectionBufferSize overrides it.
 	initialProjectionBufferSize = 1000
 
 	// minProjectionWorkerBuffer is the floor applied to each worker's channel
@@ -42,11 +41,6 @@ var defaultProjectionWorkers atomic.Int32
 // reconfigured at runtime via SetDefaultProjectionBufferSize.
 var defaultProjectionBufferSize atomic.Int32
 
-func init() {
-	defaultProjectionWorkers.Store(initialProjectionWorkers)
-	defaultProjectionBufferSize.Store(initialProjectionBufferSize)
-}
-
 // SetDefaultProjectionWorkers overrides the default worker count used by future
 // NewProjectionManager (and NewEngine/NewPlugin) calls that don't specify one
 // explicitly. n < 1 is treated as 1.
@@ -59,7 +53,10 @@ func SetDefaultProjectionWorkers(n int) {
 
 // DefaultProjectionWorkers returns the current default worker count.
 func DefaultProjectionWorkers() int {
-	return int(defaultProjectionWorkers.Load())
+	if n := defaultProjectionWorkers.Load(); n > 0 {
+		return int(n)
+	}
+	return initialProjectionWorkers
 }
 
 // SetDefaultProjectionBufferSize overrides the default total buffer used by
@@ -74,7 +71,10 @@ func SetDefaultProjectionBufferSize(n int) {
 
 // DefaultProjectionBufferSize returns the current default total buffer size.
 func DefaultProjectionBufferSize() int {
-	return int(defaultProjectionBufferSize.Load())
+	if n := defaultProjectionBufferSize.Load(); n > 0 {
+		return int(n)
+	}
+	return initialProjectionBufferSize
 }
 
 type IDdProjection interface {
@@ -139,8 +139,8 @@ type ProjectionManager struct {
 	mu          sync.RWMutex
 	projections map[string]Projection // id -> projection
 
-	eventHandlers map[string][]ProjectionHandler // eventType -> handlers
-	topicHandlers map[string][]ProjectionHandler // topic -> handlers
+	// index is an immutable snapshot swapped by Register; handleEvent reads it lock-free.
+	index atomic.Pointer[handlerIndex]
 
 	// Hash-partitioned workers.
 	workers    []chan Job
@@ -149,6 +149,35 @@ type ProjectionManager struct {
 	stop    chan struct{}
 	wg      sync.WaitGroup
 	running atomic.Bool
+}
+
+// handlerIndex maps event types and topics to handlers. Never mutated after publish.
+type handlerIndex struct {
+	events map[string][]ProjectionHandler // eventType -> handlers
+	topics map[string][]ProjectionHandler // topic -> handlers
+}
+
+func (hi *handlerIndex) clone() *handlerIndex {
+	next := &handlerIndex{
+		events: make(map[string][]ProjectionHandler, len(hi.events)+1),
+		topics: make(map[string][]ProjectionHandler, len(hi.topics)+1),
+	}
+	for k, v := range hi.events {
+		next.events[k] = v
+	}
+	for k, v := range hi.topics {
+		next.topics[k] = v
+	}
+	return next
+}
+
+// appendHandler replaces m[key] with a fresh slice so published slices stay immutable.
+func appendHandler(m map[string][]ProjectionHandler, key string, fn ProjectionHandler) {
+	old := m[key]
+	grown := make([]ProjectionHandler, len(old)+1)
+	copy(grown, old)
+	grown[len(old)] = fn
+	m[key] = grown
 }
 
 // NewProjectionManager creates a ProjectionManager using the current
@@ -182,14 +211,17 @@ func NewProjectionManagerWithConfig(n, totalBuffer int) *ProjectionManager {
 	for i := range workers {
 		workers[i] = make(chan Job, perWorker)
 	}
-	return &ProjectionManager{
-		projections:   make(map[string]Projection),
-		eventHandlers: make(map[string][]ProjectionHandler),
-		topicHandlers: make(map[string][]ProjectionHandler),
-		workers:       workers,
-		numWorkers:    n,
-		stop:          make(chan struct{}),
+	pm := &ProjectionManager{
+		projections: make(map[string]Projection),
+		workers:     workers,
+		numWorkers:  n,
+		stop:        make(chan struct{}),
 	}
+	pm.index.Store(&handlerIndex{
+		events: make(map[string][]ProjectionHandler),
+		topics: make(map[string][]ProjectionHandler),
+	})
+	return pm
 }
 
 // List returns an iterator over all registered projections with their IDs.
@@ -221,6 +253,9 @@ func (pm *ProjectionManager) Register(projs ...Projection) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
+	next := pm.index.Load().clone()
+	defer pm.index.Store(next)
+
 	for _, proj := range projs {
 		hasFilters := false
 
@@ -239,7 +274,7 @@ func (pm *ProjectionManager) Register(projs ...Projection) {
 		if ep, ok := proj.(EventProjection); ok {
 			events := ep.EventTypes()
 			for _, event := range events {
-				pm.eventHandlers[ObjectName(event)] = append(pm.eventHandlers[ObjectName(event)], fnc)
+				appendHandler(next.events, ObjectName(event), fnc)
 			}
 			hasFilters = true
 		}
@@ -247,13 +282,13 @@ func (pm *ProjectionManager) Register(projs ...Projection) {
 		var topics []string = projectionTopics(proj)
 		if len(topics) > 0 {
 			for pos := range topics {
-				pm.topicHandlers[topics[pos]] = append(pm.topicHandlers[topics[pos]], fnc)
+				appendHandler(next.topics, topics[pos], fnc)
 			}
 			hasFilters = true
 		}
 
 		if !hasFilters {
-			pm.eventHandlers[AllEvents] = append(pm.eventHandlers[AllEvents], fnc)
+			appendHandler(next.events, AllEvents, fnc)
 		}
 	}
 }
@@ -359,45 +394,56 @@ func (pm *ProjectionManager) dispatch(ctx context.Context, evt Event) {
 		return
 	}
 
-	detached := golly.ToGollyContext(ctx).Detach()
+	pm.dispatchDetached(golly.ToGollyContext(ctx).Detach(), &evt)
+}
+
+// dispatchDetached is dispatch with an already-detached ctx, letting Send share one
+// context across a batch. A nil ctx means the caller saw the manager not running.
+func (pm *ProjectionManager) dispatchDetached(detached context.Context, evt *Event) {
+	if detached == nil || !pm.running.Load() {
+		golly.DefaultLogger().Warnf("projection manager not running, dropping event")
+		return
+	}
+
 	idx := aggregateWorkerIndex(evt.AggregateID, pm.numWorkers)
 
 	select {
-	case pm.workers[idx] <- Job{Ctx: detached, Event: evt}:
+	case pm.workers[idx] <- Job{Ctx: detached, Event: *evt}:
 	default:
 		golly.DefaultLogger().Errorf("projection queue full (worker %d), dropping event", idx)
 	}
 }
 
 // aggregateWorkerIndex returns a stable worker slot for the given aggregate ID.
-// Uses FNV-32a so distribution is fast, uniform, and allocation-free.
+// Inline FNV-32a over the string: same hash as hash/fnv, no allocation.
 func aggregateWorkerIndex(aggregateID string, n int) int {
 	if n <= 1 {
 		return 0
 	}
-	h := fnv.New32a()
-	h.Write([]byte(aggregateID))
-	return int(h.Sum32()) % n
+
+	const (
+		offset32 = 2166136261
+		prime32  = 16777619
+	)
+
+	h := uint32(offset32)
+	for i := 0; i < len(aggregateID); i++ {
+		h ^= uint32(aggregateID[i])
+		h *= prime32
+	}
+	return int(h) % n
 }
 
 // handleEvent routes event to relevant projections using dual indexes
 func (pm *ProjectionManager) handleEvent(ctx context.Context, evt Event) {
-	// Copy handlers while holding lock, then release before processing
-	pm.mu.RLock()
+	idx := pm.index.Load()
 
-	var handlers []ProjectionHandler
-	if h, ok := pm.eventHandlers[evt.Type]; ok {
-		handlers = append(handlers, h...)
-	}
-	if h, ok := pm.topicHandlers[evt.Topic]; ok {
-		handlers = append(handlers, h...)
-	}
-	if h, ok := pm.eventHandlers[AllEvents]; ok {
-		handlers = append(handlers, h...)
-	}
-	pm.mu.RUnlock()
+	runHandlers(ctx, evt, idx.events[evt.Type])
+	runHandlers(ctx, evt, idx.topics[evt.Topic])
+	runHandlers(ctx, evt, idx.events[AllEvents])
+}
 
-	// Process handlers without holding lock
+func runHandlers(ctx context.Context, evt Event, handlers []ProjectionHandler) {
 	for pos := range handlers {
 		if err := handlers[pos](ctx, evt); err != nil {
 			golly.DefaultLogger().WithError(err).Errorf("error in projection handler %v: %#v", handlers[pos], evt)
@@ -545,7 +591,7 @@ func projectionTopics(p Projection) []string {
 }
 
 // eventTopics determines what topics an event should be published to
-func eventTopic(evt Event) string {
+func eventTopic(evt *Event) string {
 
 	// If the event has a Topic field, use it
 	if evt.Topic != "" {

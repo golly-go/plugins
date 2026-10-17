@@ -5,6 +5,7 @@ import (
 	"iter"
 	"reflect"
 	"sync"
+	"sync/atomic"
 
 	"github.com/segmentio/encoding/json"
 )
@@ -23,17 +24,18 @@ type AggregateRegistryItem struct {
 }
 
 // AggregateRegistry manages mappings of aggregate names to registry items.
-// Internally, it uses a standard map guarded by a sync.RWMutex.
+// Reads are lock-free: items is an immutable snapshot replaced copy-on-write by
+// Register/Clear, which serialize on mu (writers only).
 type AggregateRegistry struct {
-	mu    sync.RWMutex
-	items map[string]*AggregateRegistryItem
+	mu    sync.Mutex
+	items atomic.Pointer[map[string]*AggregateRegistryItem]
 }
 
 // NewAggregateRegistry initializes an empty registry with a normal map.
 func NewAggregateRegistry() *AggregateRegistry {
-	return &AggregateRegistry{
-		items: make(map[string]*AggregateRegistryItem),
-	}
+	r := &AggregateRegistry{}
+	r.items.Store(&map[string]*AggregateRegistryItem{})
+	return r
 }
 
 // List returns an iterator over all registered aggregate types.
@@ -43,12 +45,11 @@ func NewAggregateRegistry() *AggregateRegistry {
 //	    // use agg
 //	}
 func (r *AggregateRegistry) List() iter.Seq[*AggregateRegistryItem] {
-	r.mu.RLock()
-	aggs := make([]*AggregateRegistryItem, 0, len(r.items))
-	for _, agg := range r.items {
+	items := *r.items.Load()
+	aggs := make([]*AggregateRegistryItem, 0, len(items))
+	for _, agg := range items {
 		aggs = append(aggs, agg)
 	}
-	r.mu.RUnlock()
 
 	return func(yield func(*AggregateRegistryItem) bool) {
 		for _, agg := range aggs {
@@ -73,15 +74,25 @@ func (r *AggregateRegistry) Register(agg Aggregate, eventSamples []any) *Aggrega
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Fetch or create the registry item for this aggregate
-	regItem, found := r.items[aggName]
-	if !found {
-		regItem = &AggregateRegistryItem{
-			AggregateType: aggType,
-			Events:        make(map[string]*EventCodec),
-		}
-		r.items[aggName] = regItem
+	cur := *r.items.Load()
+	next := make(map[string]*AggregateRegistryItem, len(cur)+1)
+	for k, v := range cur {
+		next[k] = v
 	}
+
+	// Copy the item so published snapshots stay immutable
+	regItem := &AggregateRegistryItem{
+		AggregateType: aggType,
+		Events:        make(map[string]*EventCodec, len(eventSamples)),
+	}
+	if old, found := cur[aggName]; found {
+		regItem.AggregateType = old.AggregateType
+		regItem.Events = make(map[string]*EventCodec, len(old.Events)+len(eventSamples))
+		for k, v := range old.Events {
+			regItem.Events[k] = v
+		}
+	}
+	next[aggName] = regItem
 
 	// Build codecs for each event sample
 	for _, evtSample := range eventSamples {
@@ -109,15 +120,14 @@ func (r *AggregateRegistry) Register(agg Aggregate, eventSamples []any) *Aggrega
 		}
 	}
 
+	r.items.Store(&next)
+
 	return r
 }
 
 // GetAggregate instantiates a new aggregate for the given name (e.g., "MyAggregate").
 func (r *AggregateRegistry) GetAggregate(aggName string) (Aggregate, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	regItem, ok := r.items[aggName]
+	regItem, ok := (*r.items.Load())[aggName]
 	if !ok {
 		return nil, false
 	}
@@ -144,10 +154,7 @@ func (r *AggregateRegistry) Get(aggName string) (Aggregate, error) {
 
 // GetEventCodec retrieves the EventCodec for (aggregateName, eventName).
 func (r *AggregateRegistry) GetEventCodec(aggName, evtName string) *EventCodec {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	regItem, ok := r.items[aggName]
+	regItem, ok := (*r.items.Load())[aggName]
 	if !ok {
 		return nil
 	}
@@ -161,5 +168,5 @@ func (r *AggregateRegistry) Clear() {
 	defer r.mu.Unlock()
 
 	// Reset the top-level map
-	r.items = make(map[string]*AggregateRegistryItem)
+	r.items.Store(&map[string]*AggregateRegistryItem{})
 }

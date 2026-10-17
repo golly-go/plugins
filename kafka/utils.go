@@ -82,7 +82,15 @@ func Publish(ctx context.Context, topic string, payload any) error {
 	return producer.Publish(ctx, topic, payload)
 }
 
+// traceEnabled lets hot paths skip trace's argument boxing when tracing is off.
+func traceEnabled() bool {
+	return golly.DefaultLogger().IsLevelEnabled(golly.LogLevelTrace)
+}
+
 // trace logs a formatted message with the Kafka prefix
 func trace(msg string, args ...any) {
+	if !traceEnabled() {
+		return
+	}
 	golly.DefaultLogger().Tracef("[KAFKA] %s", fmt.Sprintf(msg, args...))
 }

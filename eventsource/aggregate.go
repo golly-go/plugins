@@ -1,10 +1,11 @@
 package eventsource
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/golly-go/golly"
@@ -80,7 +81,7 @@ func (ab *AggregateBase) ReplayOne(agg Aggregate, event Event) error {
 	// Uncommitted() re-save them on the next commit.
 	event.SetState(EventStateCompleted)
 
-	agg.AppendChanges(event)
+	ab.changes = append(ab.changes, event)
 	return nil
 }
 
@@ -91,7 +92,7 @@ func (a *AggregateBase) Replay(agg Aggregate, events []Event) error {
 	}
 
 	// Sort events by version or created_at timestamp
-	sort.Slice(events, func(i, j int) bool { return events[i].Version < events[j].Version })
+	slices.SortFunc(events, func(a, b Event) int { return cmp.Compare(a.Version, b.Version) })
 
 	for i := range events {
 		if err := apply(agg, events[i]); err != nil {
@@ -109,6 +110,8 @@ func (a *AggregateBase) Replay(agg Aggregate, events []Event) error {
 // Record generates and tracks events for the aggregate, incrementing the version for each event.
 // Events are stored as uncommitted changes, ready for processing by the handler.
 func (ab *AggregateBase) Record(data ...any) {
+	ab.growChanges(len(data))
+
 	for _, d := range data {
 		ab.RecordWithMetadata(d, nil)
 	}
@@ -131,7 +134,18 @@ func (ab *AggregateBase) RecordWithMetadata(data any, metadata map[string]any) {
 	event := NewEvent(data, EventStateReady)
 	event.Version = version
 
-	ab.AppendChanges(event)
+	ab.changes = append(ab.changes, event)
+}
+
+// growChanges reserves room for n more changes so a batch appends without regrowth.
+func (ab *AggregateBase) growChanges(n int) {
+	if n <= 0 || cap(ab.changes)-len(ab.changes) >= n {
+		return
+	}
+
+	grown := make([]Event, len(ab.changes), len(ab.changes)+n)
+	copy(grown, ab.changes)
+	ab.changes = grown
 }
 
 // ProcessChanges applies all uncommitted changes to the aggregate.
@@ -145,26 +159,29 @@ func (ab *AggregateBase) ProcessChanges(ctx context.Context, ag Aggregate) error
 	}
 
 	version := ag.Version()
+	ent := handlerCache.entry(ag)
+	aggType := ObjectName(ag)
+	topic := ent.topicFor(ag)
 
-	for pos, change := range changes {
+	for pos := range changes {
+		change := &changes[pos]
 		if !change.InState(EventStateReady) && !change.InState(EventStateRetry) && !change.InState(EventStateFailed) {
 			continue
 		}
 
-		if err := apply(ag, change); err != nil {
+		if err := apply(ag, *change); err != nil {
 			return err
 		}
 
 		// For now put this here till i can find a better way todo this
 		// perhaps we move Identity to be top level in Golly
-		applyUserInfo(ctx, &change)
+		applyUserInfo(ctx, change)
 
 		change.AggregateID = ag.GetID()
-		change.AggregateType = ObjectName(ag)
-		change.Topic = NameToTopicUnicode(ag)
+		change.AggregateType = aggType
+		change.Topic = topic
 
 		change.SetState(EventStateApplied)
-		changes[pos] = change
 	}
 
 	ag.SetChanges(changes)
@@ -263,25 +280,31 @@ func apply(ag Aggregate, event Event) error {
 			name = name[j+1:]
 		}
 	}
-	methodName := capitalizeFirstCharASCII(name) + "Handler"
 
-	// fetch or build index map once per type
-	handlers := handlerCache.getOrBuildHandlers(ag)
+	// fetch or build the per-type table once; lookup builds no strings
+	ent := handlerCache.entry(ag)
+	idx, ok := ent.byEvent[name]
+	if !ok {
+		// optional noisy logging in dev/test; quiet no-op in prod
+		// logMissingHandler(ag, methodName)
+		return nil
+	}
 
-	// call if present
-	if idx, ok := handlers[methodName]; ok {
-		v := reflect.ValueOf(ag)
-		// make sure we have a pointer receiver value to call Method(idx)
-		if v.Kind() != reflect.Ptr && v.CanAddr() {
-			v = v.Addr()
-		}
+	v := reflect.ValueOf(ag)
+	if v.Kind() != reflect.Ptr {
+		// table indexes the POINTER type; value receivers keep the legacy bound-method call
 		var args [1]reflect.Value
 		args[0] = reflect.ValueOf(event)
 		v.Method(idx).Call(args[:])
 		return nil
 	}
 
-	// optional noisy logging in dev/test; quiet no-op in prod
-	// logMissingHandler(ag, methodName)
+	box := eventBoxPool.Get().(*Event)
+	*box = event
+	args := [2]reflect.Value{v, reflect.ValueOf(box).Elem()}
+	ent.funcs[idx].Call(args[:])
+	*box = Event{}
+	eventBoxPool.Put(box)
+
 	return nil
 }

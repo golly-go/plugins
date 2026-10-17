@@ -401,6 +401,24 @@ func TestProjectionManager_List(t *testing.T) {
 	})
 }
 
+func setEventHandlers(pm *ProjectionManager, key string, hs ...ProjectionHandler) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	next := pm.index.Load().clone()
+	next.events[key] = hs
+	pm.index.Store(next)
+}
+
+func setTopicHandlers(pm *ProjectionManager, key string, hs ...ProjectionHandler) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	next := pm.index.Load().clone()
+	next.topics[key] = hs
+	pm.index.Store(next)
+}
+
 func TestProjectionManager_handleEvent(t *testing.T) {
 	ctx := context.Background()
 
@@ -411,7 +429,7 @@ func TestProjectionManager_handleEvent(t *testing.T) {
 			called = true
 			return nil
 		}
-		pm.eventHandlers["UserCreated"] = []ProjectionHandler{handler}
+		setEventHandlers(pm, "UserCreated", handler)
 
 		pm.handleEvent(ctx, Event{Type: "UserCreated", Topic: "user"})
 		assert.True(t, called)
@@ -424,7 +442,7 @@ func TestProjectionManager_handleEvent(t *testing.T) {
 			called = true
 			return nil
 		}
-		pm.topicHandlers["user"] = []ProjectionHandler{handler}
+		setTopicHandlers(pm, "user", handler)
 
 		pm.handleEvent(ctx, Event{Type: "UserCreated", Topic: "user"})
 		assert.True(t, called)
@@ -443,8 +461,8 @@ func TestProjectionManager_handleEvent(t *testing.T) {
 			return nil
 		}
 
-		pm.eventHandlers["UserCreated"] = []ProjectionHandler{eventHandler}
-		pm.topicHandlers["user"] = []ProjectionHandler{topicHandler}
+		setEventHandlers(pm, "UserCreated", eventHandler)
+		setTopicHandlers(pm, "user", topicHandler)
 
 		pm.handleEvent(ctx, Event{Type: "UserCreated", Topic: "user"})
 		assert.Equal(t, 1, eventCalls)
@@ -453,9 +471,9 @@ func TestProjectionManager_handleEvent(t *testing.T) {
 
 	t.Run("No handlers matched", func(t *testing.T) {
 		pm := NewProjectionManager()
-		pm.eventHandlers["OtherEvent"] = []ProjectionHandler{
+		setEventHandlers(pm, "OtherEvent",
 			func(ctx context.Context, evt Event) error { return nil },
-		}
+		)
 
 		// Should not panic
 		pm.handleEvent(ctx, Event{Type: "UserCreated", Topic: "user"})
@@ -474,7 +492,7 @@ func TestProjectionManager_handleEvent(t *testing.T) {
 			return nil
 		}
 
-		pm.eventHandlers["UserCreated"] = []ProjectionHandler{handler1, handler2}
+		setEventHandlers(pm, "UserCreated", handler1, handler2)
 
 		pm.handleEvent(ctx, Event{Type: "UserCreated", Topic: "user"})
 		assert.Equal(t, 2, calls)
@@ -493,7 +511,7 @@ func TestProjectionManager_handleEvent(t *testing.T) {
 			return nil
 		}
 
-		pm.eventHandlers["UserCreated"] = []ProjectionHandler{handler1, handler2}
+		setEventHandlers(pm, "UserCreated", handler1, handler2)
 
 		pm.handleEvent(ctx, Event{Type: "UserCreated", Topic: "user"})
 		assert.Equal(t, 2, calls, "Both handlers should be called despite error")
@@ -509,7 +527,7 @@ func TestProjectionManager_handleEvent(t *testing.T) {
 			return nil
 		}
 
-		pm.eventHandlers["UserCreated"] = []ProjectionHandler{handler}
+		setEventHandlers(pm, "UserCreated", handler)
 
 		var wg sync.WaitGroup
 		for i := 0; i < 10; i++ {
@@ -530,7 +548,7 @@ func TestProjectionManager_handleEvent(t *testing.T) {
 func BenchmarkProjectionManager_handleEvent_SingleEventHandler(b *testing.B) {
 	pm := NewProjectionManager()
 	handler := func(ctx context.Context, evt Event) error { return nil }
-	pm.eventHandlers["UserCreated"] = []ProjectionHandler{handler}
+	setEventHandlers(pm, "UserCreated", handler)
 
 	evt := Event{Type: "UserCreated", Topic: "user"}
 	ctx := context.Background()
@@ -544,7 +562,7 @@ func BenchmarkProjectionManager_handleEvent_SingleEventHandler(b *testing.B) {
 func BenchmarkProjectionManager_handleEvent_SingleTopicHandler(b *testing.B) {
 	pm := NewProjectionManager()
 	handler := func(ctx context.Context, evt Event) error { return nil }
-	pm.topicHandlers["user"] = []ProjectionHandler{handler}
+	setTopicHandlers(pm, "user", handler)
 
 	evt := Event{Type: "UserCreated", Topic: "user"}
 	ctx := context.Background()
@@ -559,8 +577,8 @@ func BenchmarkProjectionManager_handleEvent_MultipleHandlers(b *testing.B) {
 	pm := NewProjectionManager()
 	handler := func(ctx context.Context, evt Event) error { return nil }
 
-	pm.eventHandlers["UserCreated"] = []ProjectionHandler{handler, handler, handler}
-	pm.topicHandlers["user"] = []ProjectionHandler{handler, handler}
+	setEventHandlers(pm, "UserCreated", handler, handler, handler)
+	setTopicHandlers(pm, "user", handler, handler)
 
 	evt := Event{Type: "UserCreated", Topic: "user"}
 	ctx := context.Background()
@@ -574,8 +592,8 @@ func BenchmarkProjectionManager_handleEvent_MultipleHandlers(b *testing.B) {
 func BenchmarkProjectionManager_handleEvent_NoMatch(b *testing.B) {
 	pm := NewProjectionManager()
 	handler := func(ctx context.Context, evt Event) error { return nil }
-	pm.eventHandlers["OtherEvent"] = []ProjectionHandler{handler}
-	pm.topicHandlers["other"] = []ProjectionHandler{handler}
+	setEventHandlers(pm, "OtherEvent", handler)
+	setTopicHandlers(pm, "other", handler)
 
 	evt := Event{Type: "UserCreated", Topic: "user"}
 	ctx := context.Background()
@@ -589,7 +607,7 @@ func BenchmarkProjectionManager_handleEvent_NoMatch(b *testing.B) {
 func BenchmarkProjectionManager_handleEvent_Parallel(b *testing.B) {
 	pm := NewProjectionManager()
 	handler := func(ctx context.Context, evt Event) error { return nil }
-	pm.eventHandlers["UserCreated"] = []ProjectionHandler{handler}
+	setEventHandlers(pm, "UserCreated", handler)
 
 	evt := Event{Type: "UserCreated", Topic: "user"}
 	ctx := context.Background()
@@ -676,10 +694,10 @@ func TestDefaultProjectionWorkersAndBufferSize_InitialValues(t *testing.T) {
 
 func TestNewProjectionManagerWithConfig(t *testing.T) {
 	tests := []struct {
-		name                string
-		workers             int
-		totalBuffer         int
-		expectedNumWorkers  int
+		name                 string
+		workers              int
+		totalBuffer          int
+		expectedNumWorkers   int
 		expectedPerWorkerCap int
 	}{
 		{

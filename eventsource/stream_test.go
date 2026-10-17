@@ -29,10 +29,7 @@ func TestStream_Subscribe(t *testing.T) {
 
 	s.Subscribe("TestEvent", handler)
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	evHandlers, ok := s.handlers["TestEvent"]
+	evHandlers, ok := (*s.handlers.Load())["TestEvent"]
 	if !ok || len(evHandlers) == 0 {
 		t.Fatal("handler not registered for event type TestEvent")
 	}
@@ -53,11 +50,8 @@ func TestStream_Unsubscribe(t *testing.T) {
 
 	s.Unsubscribe("TestEvent", handler)
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	// Expect only anotherHandler to remain
-	evHandlers := s.handlers["TestEvent"]
+	evHandlers := (*s.handlers.Load())["TestEvent"]
 	if len(evHandlers) != 1 {
 		t.Fatalf("expected 1 handler left, got %d", len(evHandlers))
 	}

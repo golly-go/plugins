@@ -4,6 +4,7 @@ go 1.26
 
 require (
 	github.com/golly-go/golly v0.9.7
+	github.com/segmentio/encoding v0.5.3
 	github.com/twmb/franz-go v1.20.1
 	golang.org/x/oauth2 v0.33.0
 )
@@ -18,7 +19,6 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/sagikazarmark/locafero v0.12.0 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
-	github.com/segmentio/encoding v0.5.3 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/cobra v1.10.1 // indirect

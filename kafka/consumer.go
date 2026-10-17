@@ -25,11 +25,9 @@ type SubscribeOptions struct {
 	StartPosition StartPosition // Where to start consuming from (only for new groups)
 }
 
-// Header represents a Kafka message header.
-type Header struct {
-	Key   string
-	Value []byte
-}
+// Header represents a Kafka message header. Alias of kgo.RecordHeader so
+// Message.Headers shares the record's slice instead of copying it.
+type Header = kgo.RecordHeader
 
 // Message represents a Kafka message consumed from a topic.
 type Message struct {
@@ -213,17 +211,8 @@ func (h *consumerHandle) convertRecord(record *kgo.Record) Message {
 		Offset:    record.Offset,
 		Key:       record.Key,
 		Value:     record.Value,
+		Headers:   record.Headers,
 		Timestamp: record.Timestamp,
-	}
-
-	if len(record.Headers) > 0 {
-		msg.Headers = make([]Header, len(record.Headers))
-		for i, header := range record.Headers {
-			msg.Headers[i] = Header{
-				Key:   header.Key,
-				Value: header.Value,
-			}
-		}
 	}
 
 	return msg

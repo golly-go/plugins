@@ -36,9 +36,7 @@ func (sm *StreamManager) Add(streams ...StreamPublisher) {
 
 // Publish publishes events to all streams.
 func (sm *StreamManager) Publish(ctx context.Context, topic string, events ...Event) {
-	streams := *sm.streams.Load()
-
-	if len(streams) == 0 || len(events) == 0 {
+	if !sm.has() || len(events) == 0 {
 		return
 	}
 
@@ -48,10 +46,45 @@ func (sm *StreamManager) Publish(ctx context.Context, topic string, events ...Ev
 	// are async and the timeout would fire before they complete.
 	bgCtx := golly.ToGollyContext(ctx).Detach()
 
+	if len(events) == 1 {
+		sm.publishDetached(bgCtx, topic, &events[0])
+		return
+	}
+
+	// box each event once, then fan out stream-major (each stream sees events in order)
+	boxed := make([]any, len(events))
+	for j := range events {
+		boxed[j] = events[j]
+	}
+
+	streams := *sm.streams.Load()
 	for i := range streams {
-		for j := range events {
-			_ = streams[i].Publish(bgCtx, topic, events[j])
+		for j := range boxed {
+			publishOne(streams[i], bgCtx, topic, boxed[j], &events[j])
 		}
+	}
+}
+
+func publishOne(st StreamPublisher, ctx context.Context, topic string, boxed any, event *Event) {
+	if err := st.Publish(ctx, topic, boxed); err != nil {
+		golly.DefaultLogger().WithError(err).Errorf("stream publish failed topic=%s eventType=%s aggregateID=%s", topic, event.Type, event.AggregateID)
+	}
+}
+
+// has reports whether any stream is registered.
+func (sm *StreamManager) has() bool { return len(*sm.streams.Load()) > 0 }
+
+// publishDetached fans one event out to every stream with an already-detached ctx.
+// The event is boxed once for all streams. A nil ctx means the caller saw no streams.
+func (sm *StreamManager) publishDetached(detached context.Context, topic string, event *Event) {
+	streams := *sm.streams.Load()
+	if len(streams) == 0 || detached == nil {
+		return
+	}
+
+	boxed := any(*event)
+	for i := range streams {
+		publishOne(streams[i], detached, topic, boxed, event)
 	}
 }
 

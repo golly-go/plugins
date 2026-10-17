@@ -2,7 +2,7 @@ package eventsource
 
 import (
 	"context"
-	"sync"
+	"sync/atomic"
 )
 
 type UserInfo struct {
@@ -11,15 +11,14 @@ type UserInfo struct {
 	Metadata map[string]any
 }
 
-var (
-	userInfoFunc func(context.Context) UserInfo
-
-	lock sync.RWMutex
-)
+// userInfoFunc is a single pointer swapped atomically; reads take no lock.
+var userInfoFunc atomic.Pointer[func(context.Context) UserInfo]
 
 func SetUserInfoFunc(fnc func(context.Context) UserInfo) {
-	lock.Lock()
-	defer lock.Unlock()
+	if fnc == nil {
+		userInfoFunc.Store(nil)
+		return
+	}
 
-	userInfoFunc = fnc
+	userInfoFunc.Store(&fnc)
 }

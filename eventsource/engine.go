@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/golly-go/golly"
@@ -23,8 +23,7 @@ type Engine struct {
 	aggregates  *AggregateRegistry
 	streams     *StreamManager
 
-	mu         sync.RWMutex
-	running    bool
+	running    atomic.Bool
 	maxRetries int
 }
 
@@ -70,9 +69,7 @@ func (eng *Engine) Projections() *ProjectionManager { return eng.projections }
 func (eng *Engine) Aggregates() *AggregateRegistry { return eng.aggregates }
 
 func (eng *Engine) IsRunning() bool {
-	eng.mu.RLock()
-	defer eng.mu.RUnlock()
-	return eng.running
+	return eng.running.Load()
 }
 
 // WithStream adds streams for event publishing (internal or external)
@@ -152,7 +149,9 @@ func (eng *Engine) Execute(ctx context.Context, agg Aggregate, cmd Command) (err
 		return fmt.Errorf("engine is nil")
 	}
 
-	trace("executing command %s aggregate=%s aggregateID=%s", golly.TypeNoPtr(cmd).Name(), golly.TypeNoPtr(agg).Name(), agg.GetID())
+	if traceEnabled() {
+		trace("executing command %s aggregate=%s aggregateID=%s", golly.TypeNoPtr(cmd).Name(), golly.TypeNoPtr(agg).Name(), agg.GetID())
+	}
 
 	// === Phase 1: run once — replay, validate, perform, process ===
 	if HasValidID(agg) {
@@ -211,8 +210,10 @@ func (eng *Engine) Execute(ctx context.Context, agg Aggregate, cmd Command) (err
 		pending := agg.Changes().Uncommitted()
 		agg.ClearChanges()
 
-		trace("version conflict on attempt %d for %s %s, re-versioning and retrying",
-			attempt+1, golly.TypeNoPtr(agg).Name(), agg.GetID())
+		if traceEnabled() {
+			trace("version conflict on attempt %d for %s %s, re-versioning and retrying",
+				attempt+1, golly.TypeNoPtr(agg).Name(), agg.GetID())
+		}
 
 		if e := eng.Replay(ctx, agg); e != nil {
 			return e
@@ -307,9 +308,24 @@ func (eng *Engine) replayFromZero(ctx context.Context, agg Aggregate) error {
 		EventFilter{
 			AggregateType:  ObjectName(agg),
 			AggregateID:    id,
-			ExcludeKinds:   []EventKind{EventKindSnapshot},
+			ExcludeKinds:   excludeSnapshots,
 			OrderByVersion: true,
 		})
+}
+
+// excludeSnapshots is shared read-only by every replay filter; stores must not mutate it.
+var excludeSnapshots = []EventKind{EventKindSnapshot}
+
+// growReplayChanges reserves room for n more replayed events in one allocation.
+func growReplayChanges(agg Aggregate, n int) {
+	ch := agg.Changes()
+	if cap(ch)-len(ch) >= n {
+		return
+	}
+
+	grown := make(Events, len(ch), len(ch)+n)
+	copy(grown, ch)
+	agg.SetChanges(grown)
 }
 
 func (eng *Engine) Replay(ctx context.Context, agg Aggregate) error {
@@ -322,7 +338,9 @@ func (eng *Engine) Replay(ctx context.Context, agg Aggregate) error {
 		return nil
 	}
 
-	snap, err := eng.store.LoadSnapshot(ctx, ObjectName(agg), agg.GetID())
+	aggType := ObjectName(agg)
+
+	snap, err := eng.store.LoadSnapshot(ctx, aggType, id)
 	if err == nil && snap != nil {
 		if sEvent, err := snap.Hydrate(eng); err == nil {
 			// Snapshot loaded & hydrated successfully
@@ -335,6 +353,8 @@ func (eng *Engine) Replay(ctx context.Context, agg Aggregate) error {
 	// 2) Load remaining events from the store
 	return eng.store.LoadEventsInBatches(ctx, 100,
 		func(pEvents []PersistedEvent) error {
+			growReplayChanges(agg, len(pEvents))
+
 			for i := range pEvents {
 				e, err := pEvents[i].Hydrate(eng)
 				if err != nil {
@@ -349,14 +369,14 @@ func (eng *Engine) Replay(ctx context.Context, agg Aggregate) error {
 			return nil
 		},
 		EventFilter{
-			AggregateType: ObjectName(agg),
+			AggregateType: aggType,
 			AggregateID:   id,
 			FromVersion:   int(agg.Version()) + 1,
 			// Exclude snapshot rows — they were already applied above.
 			// During write floods, concurrent snapshots get interleaved into the
 			// event stream. Re-applying them via ReplayOne would reset Version
 			// backwards, causing permanent OCC conflicts on every save.
-			ExcludeKinds: []EventKind{EventKindSnapshot},
+			ExcludeKinds: excludeSnapshots,
 			// Order by aggregate version, not global_version. The flood wrote events
 			// with the same aggregate version but different global_versions, so
 			// global_version ordering can walk aggregate version backwards mid-replay.
@@ -438,18 +458,29 @@ func handleExecutionError(ctx context.Context, agg Aggregate, cmd Command, err e
 
 // Send publishes events to all registered streams (internal projections and external producers)
 func (eng *Engine) Send(ctx context.Context, events ...Event) {
+	if len(events) == 0 {
+		return
+	}
+
+	// one detached context shared by every dispatch/publish in this call;
+	// skipped when nothing is running to consume it
+	var detached context.Context
+	if eng.projections.running.Load() || eng.streams.has() {
+		detached = golly.ToGollyContext(ctx).Detach()
+	}
+
 	// Dispatch to projections first (internal)
 	for i := range events {
-		eng.projections.dispatch(ctx, events[i])
+		eng.projections.dispatchDetached(detached, &events[i])
 	}
 
 	// Then publish to external streams (Kafka, etc)
 	for i := range events {
-		topic := eventTopic(events[i])
+		topic := eventTopic(&events[i])
 		if topic == "" {
 			continue
 		}
-		eng.streams.Publish(ctx, topic, events[i])
+		eng.streams.publishDetached(detached, topic, &events[i])
 	}
 }
 
@@ -457,9 +488,7 @@ func (eng *Engine) Send(ctx context.Context, events ...Event) {
 func (eng *Engine) Start() {
 	golly.DefaultLogger().Tracef("Starting engine")
 
-	eng.mu.Lock()
-	eng.running = true
-	eng.mu.Unlock()
+	eng.running.Store(true)
 
 	eng.projections.Start() // Start projection async processing
 }
@@ -468,9 +497,7 @@ func (eng *Engine) Start() {
 func (eng *Engine) Stop() {
 	golly.DefaultLogger().Tracef("Stopping engine")
 
-	eng.mu.Lock()
-	eng.running = false
-	eng.mu.Unlock()
+	eng.running.Store(false)
 
 	eng.projections.Stop() // Drain all projection events first
 

@@ -1,14 +1,17 @@
 package eventsource
 
 import (
+	"cmp"
 	"context"
 	"errors"
-	"sort"
+	"slices"
 	"sync"
 	"sync/atomic"
 
 	"github.com/google/uuid"
 )
+
+var errSnapshotNotFound = errors.New("record not found")
 
 // InMemoryStore used for testing primarily your welcome to sue it in your tests
 // would i use it in production definitely not
@@ -198,7 +201,7 @@ func (s *InMemoryStore) LoadSnapshot(ctx context.Context, aggregateType, aggrega
 	}
 
 	if best == nil {
-		return nil, errors.New("record not found")
+		return nil, errSnapshotNotFound
 	}
 	return InMemoryEvent{*best}, nil
 }
@@ -220,111 +223,92 @@ func (s *InMemoryStore) DeleteEvent(ctx context.Context, eventID uuid.UUID) erro
 var _ EventStore = (*InMemoryStore)(nil)
 
 func applyInMemoryFilters(events []Event, f EventFilter) []Event {
-	var out []Event
-	for _, e := range events {
+	n := 0
+	for i := range events {
+		if matchInMemory(&events[i], &f) {
+			n++
+			if f.Limit > 0 && n >= f.Limit {
+				break
+			}
+		}
+	}
 
-		// Filter by AggregateType
-		if f.AggregateType != "" && e.AggregateType != f.AggregateType {
-			continue
-		}
-		// Filter by AggregateID
-		if f.AggregateID != "" && e.AggregateID != f.AggregateID {
-			continue
-		}
-		// Filter by AggregateTypes
-		if len(f.AggregateTypes) > 0 {
-			found := false
-			for _, at := range f.AggregateTypes {
-				if e.AggregateType == at {
-					found = true
-					break
-				}
-			}
-			if !found {
-				continue
-			}
-		}
-		// Filter by EventType
-		if len(f.EventType) > 0 {
-			found := false
-			for _, et := range f.EventType {
-				if e.Type == et {
-					found = true
-					break
-				}
-			}
-			if !found {
-				continue
-			}
-		}
-		// Filter by Topics
-		if len(f.Topics) > 0 {
-			found := false
-			for _, t := range f.Topics {
-				if e.Topic == t {
-					found = true
-					break
-				}
-			}
-			if !found {
-				continue
-			}
-		}
-
-		// Filter by version (aggregate-local)
-		if f.FromVersion > 0 && e.Version < int64(f.FromVersion) {
-			continue
-		}
-		if f.ToVersion > 0 && e.Version > int64(f.ToVersion) {
+	out := make([]Event, 0, n)
+	for i := range events {
+		if !matchInMemory(&events[i], &f) {
 			continue
 		}
 
-		// Filter by GlobalVersion
-		if f.FromGlobalVersion > 0 && e.GlobalVersion < int64(f.FromGlobalVersion) {
-			continue
-		}
-		if f.ToGlobalVersion > 0 && e.GlobalVersion > int64(f.ToGlobalVersion) {
-			continue
-		}
-
-		// Filter by time
-		if !f.FromTime.IsZero() && e.CreatedAt.Before(f.FromTime) {
-			continue
-		}
-		if !f.ToTime.IsZero() && e.CreatedAt.After(f.ToTime) {
-			continue
-		}
-
-		// ExcludeKinds
-		if len(f.ExcludeKinds) > 0 {
-			excluded := false
-			for _, k := range f.ExcludeKinds {
-				if e.Kind == k {
-					excluded = true
-					break
-				}
-			}
-			if excluded {
-				continue
-			}
-		}
-
-		out = append(out, e)
+		out = append(out, events[i])
 		if f.Limit > 0 && len(out) >= f.Limit {
 			break
 		}
 	}
 
 	if f.OrderByVersion {
-		sort.Slice(out, func(i, j int) bool {
-			if out[i].Version != out[j].Version {
-				return out[i].Version < out[j].Version
+		slices.SortFunc(out, func(a, b Event) int {
+			if c := cmp.Compare(a.Version, b.Version); c != 0 {
+				return c
 			}
-			return out[i].GlobalVersion < out[j].GlobalVersion
+			return cmp.Compare(a.GlobalVersion, b.GlobalVersion)
 		})
 	}
 
 	return out
+}
+
+func matchInMemory(e *Event, f *EventFilter) bool {
+	// Filter by AggregateType
+	if f.AggregateType != "" && e.AggregateType != f.AggregateType {
+		return false
+	}
+	// Filter by AggregateID
+	if f.AggregateID != "" && e.AggregateID != f.AggregateID {
+		return false
+	}
+	// Filter by AggregateTypes
+	if len(f.AggregateTypes) > 0 && !slices.Contains(f.AggregateTypes, e.AggregateType) {
+		return false
+	}
+	// Filter by EventType
+	if len(f.EventType) > 0 && !slices.Contains(f.EventType, e.Type) {
+		return false
+	}
+	// Filter by Topics
+	if len(f.Topics) > 0 && !slices.Contains(f.Topics, e.Topic) {
+		return false
+	}
+
+	// Filter by version (aggregate-local)
+	if f.FromVersion > 0 && e.Version < int64(f.FromVersion) {
+		return false
+	}
+	if f.ToVersion > 0 && e.Version > int64(f.ToVersion) {
+		return false
+	}
+
+	// Filter by GlobalVersion
+	if f.FromGlobalVersion > 0 && e.GlobalVersion < int64(f.FromGlobalVersion) {
+		return false
+	}
+	if f.ToGlobalVersion > 0 && e.GlobalVersion > int64(f.ToGlobalVersion) {
+		return false
+	}
+
+	// Filter by time
+	if !f.FromTime.IsZero() && e.CreatedAt.Before(f.FromTime) {
+		return false
+	}
+	if !f.ToTime.IsZero() && e.CreatedAt.After(f.ToTime) {
+		return false
+	}
+
+	// ExcludeKinds
+	if len(f.ExcludeKinds) > 0 && slices.Contains(f.ExcludeKinds, e.Kind) {
+		return false
+	}
+
+	return true
 }
 
 func NewInMemoryStore(data ...Event) *InMemoryStore {

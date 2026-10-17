@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/golly-go/golly"
 )
@@ -42,13 +43,21 @@ func ObjectName(object any) string {
 func ObjectPath(object any) string {
 	val := golly.TypeNoPtr(object)
 
-	pieces := strings.Split(val.String(), ".")
+	name := val.String()
+	if i := strings.LastIndexByte(name, '.'); i >= 0 {
+		name = name[i+1:]
+	}
 
-	return fmt.Sprintf("%s/%s", val.PkgPath(), pieces[len(pieces)-1])
+	return val.PkgPath() + "/" + name
+}
+
+// traceEnabled lets hot callers skip building trace arguments (boxing allocs).
+func traceEnabled() bool {
+	return golly.DefaultLogger().Level() == golly.LogLevelTrace
 }
 
 func trace(message string, args ...any) {
-	if golly.DefaultLogger().Level() == golly.LogLevelTrace {
+	if traceEnabled() {
 
 		msg := fmt.Sprintf(message, args...)
 		pc, file, line := fileInfo(3)
@@ -92,17 +101,21 @@ func NameToTopicUnicode(obj any) string {
 		}
 	}
 
-	var b strings.Builder
-	b.Grow(len(s)) // lower bound; may grow if case fold expands
+	const prefix = "events."
+
+	var arr [64]byte
+	b := append(arr[:0], prefix...)
 	for _, r := range s {
-		switch r {
-		case '/', '.':
-			b.WriteByte('-')
+		switch {
+		case r == '/' || r == '.':
+			b = append(b, '-')
+		case r < utf8.RuneSelf:
+			b = append(b, byte(unicode.ToLower(r)))
 		default:
-			b.WriteRune(unicode.ToLower(r))
+			b = utf8.AppendRune(b, unicode.ToLower(r))
 		}
 	}
-	return "events." + b.String()
+	return string(b)
 }
 
 func resolveInterfaceName(obj any) string {

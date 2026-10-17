@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"slices"
 	"sync"
+	"sync/atomic"
 
 	"github.com/golly-go/golly"
 )
@@ -63,25 +65,28 @@ func NewStream(opts StreamOptions) *Stream {
 // InternalStream is a simple stream for projections and in-memory subscriptions
 // No complex ordering - just process events as they arrive
 type InternalStream struct {
-	name       string
-	mu         sync.RWMutex
-	handlers   map[string][]StreamHandler
-	handlerBuf []StreamHandler
-	jobs       chan Job
-	stop       chan struct{}
-	stopped    bool
-	wg         sync.WaitGroup
+	name string
+
+	// mu serializes Subscribe/Unsubscribe (writers); handlers is an immutable
+	// snapshot swapped copy-on-write, read lock-free by handleEvent.
+	mu       sync.Mutex
+	handlers atomic.Pointer[map[string][]StreamHandler]
+
+	jobs    chan Job
+	stop    chan struct{}
+	stopped atomic.Bool
+	wg      sync.WaitGroup
 }
 
 // NewInternalStream creates a simple internal stream for projections
 func NewInternalStream(name string) *InternalStream {
-	return &InternalStream{
-		name:       name,
-		handlers:   make(map[string][]StreamHandler),
-		handlerBuf: make([]StreamHandler, 0, 24),
-		jobs:       make(chan Job, 1000),
-		stop:       make(chan struct{}),
+	s := &InternalStream{
+		name: name,
+		jobs: make(chan Job, 1000),
+		stop: make(chan struct{}),
 	}
+	s.handlers.Store(&map[string][]StreamHandler{})
+	return s
 }
 
 // Name returns the stream name
@@ -107,7 +112,19 @@ func (s *InternalStream) Subscribe(topic string, handler StreamHandler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.handlers[topic] = append(s.handlers[topic], handler)
+	cur := *s.handlers.Load()
+	next := make(map[string][]StreamHandler, len(cur)+1)
+	for k, v := range cur {
+		next[k] = v
+	}
+
+	old := next[topic]
+	grown := make([]StreamHandler, len(old)+1)
+	copy(grown, old)
+	grown[len(old)] = handler
+	next[topic] = grown
+
+	s.handlers.Store(&next)
 }
 
 // Unsubscribe removes a handler for a topic
@@ -115,12 +132,24 @@ func (s *InternalStream) Unsubscribe(topic string, handler StreamHandler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	hs := s.handlers[topic]
+	cur := *s.handlers.Load()
+	hs := cur[topic]
 	for i, h := range hs {
-		if reflect.ValueOf(h).Pointer() == reflect.ValueOf(handler).Pointer() {
-			s.handlers[topic] = append(hs[:i], hs[i+1:]...)
-			break
+		if reflect.ValueOf(h).Pointer() != reflect.ValueOf(handler).Pointer() {
+			continue
 		}
+
+		next := make(map[string][]StreamHandler, len(cur))
+		for k, v := range cur {
+			next[k] = v
+		}
+
+		pruned := make([]StreamHandler, len(hs))
+		copy(pruned, hs)
+		next[topic] = slices.Delete(pruned, i, i+1)
+
+		s.handlers.Store(&next)
+		break
 	}
 }
 
@@ -133,13 +162,9 @@ func (s *InternalStream) Start() {
 
 // Stop stops processing events
 func (s *InternalStream) Stop() {
-	s.mu.Lock()
-	if s.stopped {
-		s.mu.Unlock()
+	if !s.stopped.CompareAndSwap(false, true) {
 		return
 	}
-	s.stopped = true
-	s.mu.Unlock()
 
 	close(s.stop)
 	s.wg.Wait() // Wait for the goroutine to finish draining
@@ -168,29 +193,24 @@ func (s *InternalStream) run() {
 
 // handleEvent processes a single event
 func (s *InternalStream) handleEvent(ctx context.Context, event Event) {
-	s.mu.RLock()
-	// Reuse slice capacity
-	hs := s.handlerBuf[:0]
-
 	defer func() {
 		if r := recover(); r != nil {
 			golly.DefaultLogger().Errorf("panic in event handler: %v", r)
 		}
 	}()
 
-	if h, ok := s.handlers[event.Topic]; ok {
-		hs = append(hs, h...)
-		golly.DefaultLogger().Tracef("Found %d handlers for topic %s", len(h), event.Topic)
+	handlers := *s.handlers.Load()
+	byTopic := handlers[event.Topic]
+	all := handlers[AllEvents]
+
+	if traceEnabled() {
+		golly.DefaultLogger().Tracef("Total handlers for event %s: %d", event.Topic, len(byTopic)+len(all))
 	}
 
-	if h, ok := s.handlers[AllEvents]; ok {
-		hs = append(hs, h...)
-		golly.DefaultLogger().Tracef("Found %d handlers for AllEvents (*)", len(h))
+	for i := range byTopic {
+		byTopic[i](ctx, event)
 	}
-	s.mu.RUnlock()
-
-	golly.DefaultLogger().Tracef("Total handlers for event %s: %d", event.Topic, len(hs))
-	for i := range hs {
-		hs[i](ctx, event)
+	for i := range all {
+		all[i](ctx, event)
 	}
 }

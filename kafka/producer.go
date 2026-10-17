@@ -2,13 +2,13 @@ package kafka
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/golly-go/golly"
+	"github.com/segmentio/encoding/json"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -67,7 +67,9 @@ func (p *Producer) topicName(topic string) string {
 func (p *Producer) Publish(ctx context.Context, topic string, payload any) error {
 	tp := p.topicName(topic)
 
-	trace("publishing message to topic %s", tp)
+	if traceEnabled() {
+		trace("publishing message to topic %s", tp)
+	}
 
 	// Generate key only if KeyFunc is provided
 	var key []byte
@@ -90,17 +92,20 @@ func (p *Producer) Publish(ctx context.Context, topic string, payload any) error
 
 	// Use async Produce to allow franz-go to batch messages efficiently.
 	// The client handles internal synchronization and buffering.
-	p.client.Produce(ctx, record, func(r *kgo.Record, err error) {
-		if err != nil {
-			golly.
-				DefaultLogger().
-				WithError(err).
-				Str("topic", tp).
-				Errorf("kafka: publish: failed to deliver message")
-		}
-	})
+	p.client.Produce(ctx, record, logDelivery)
 
 	return nil
+}
+
+// logDelivery is the shared promise; r.Topic is the broker topic.
+func logDelivery(r *kgo.Record, err error) {
+	if err != nil {
+		golly.
+			DefaultLogger().
+			WithError(err).
+			Str("topic", r.Topic).
+			Errorf("kafka: publish: failed to deliver message")
+	}
 }
 
 // Flush ensures all pending messages are sent and acknowledged.
