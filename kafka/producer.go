@@ -41,6 +41,21 @@ func NewProducer(client *kgo.Client, config Config) *Producer {
 	}
 }
 
+func (p *Producer) PublishRaw(ctx context.Context, topic string, record *kgo.Record) {
+	tp := p.topicName(topic)
+
+	if traceEnabled() {
+		trace("publishing message to topic %s", tp)
+	}
+
+	record.Topic = tp
+
+	// Use async Produce to allow franz-go to batch messages efficiently.
+	// The client handles internal synchronization and buffering.
+	p.client.Produce(ctx, record, logDelivery)
+
+}
+
 // topicName returns the broker topic for topic, applying TopicPrefix once per
 // distinct topic and serving it from cache afterwards.
 func (p *Producer) topicName(topic string) string {
@@ -65,11 +80,6 @@ func (p *Producer) topicName(topic string) string {
 // Publish sends a message to the given topic. It uses franz-go's internal
 // batching and buffering for high performance.
 func (p *Producer) Publish(ctx context.Context, topic string, payload any) error {
-	tp := p.topicName(topic)
-
-	if traceEnabled() {
-		trace("publishing message to topic %s", tp)
-	}
 
 	// Generate key only if KeyFunc is provided
 	var key []byte
@@ -84,15 +94,8 @@ func (p *Producer) Publish(ctx context.Context, topic string, payload any) error
 	}
 
 	// Create record
-	record := &kgo.Record{
-		Topic: tp,
-		Key:   key,
-		Value: payloadBytes,
-	}
-
-	// Use async Produce to allow franz-go to batch messages efficiently.
-	// The client handles internal synchronization and buffering.
-	p.client.Produce(ctx, record, logDelivery)
+	record := kgo.Record{Key: key, Value: payloadBytes}
+	p.PublishRaw(ctx, topic, &record)
 
 	return nil
 }
