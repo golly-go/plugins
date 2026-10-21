@@ -2,6 +2,8 @@ package kafka
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -160,5 +162,25 @@ func TestGroupPrefix(t *testing.T) {
 	// Groupless subscriptions must stay groupless.
 	if got := cfg.groupName(""); got != "" {
 		t.Errorf("expected empty group to stay empty, got %q", got)
+	}
+}
+
+func TestAbsoluteTopics(t *testing.T) {
+	cfg := DefaultConfig()
+	WithTopicPrefix("arbr-console")(&cfg)
+
+	assert.Equal(t, "arbr-console-events.instance", cfg.subscribeTopic("events.instance", false), "prefixed subscription applies TopicPrefix")
+	assert.Equal(t, "arbr-control-events.instance", cfg.subscribeTopic("arbr-control-events.instance", true), "absolute subscription skips TopicPrefix")
+
+	assert.Equal(t, "events.instance", cfg.messageTopic("arbr-console-events.instance", false), "prefixed message topic is the logical name")
+	assert.Equal(t, "arbr-control-events.instance", cfg.messageTopic("arbr-control-events.instance", true), "absolute message topic is the broker name")
+}
+
+func BenchmarkMessageTopicAbsolute(b *testing.B) {
+	cfg := DefaultConfig()
+	WithTopicPrefix("arbr-console")(&cfg)
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = cfg.messageTopic("arbr-control-events.instance", true)
 	}
 }

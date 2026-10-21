@@ -125,6 +125,24 @@ func (c Config) groupName(group string) string {
 	return c.GroupPrefix + "-" + group
 }
 
+// subscribeTopic returns the broker topic a subscription reads: the name as-is
+// when absolute, otherwise with TopicPrefix applied.
+func (c Config) subscribeTopic(topic string, absolute bool) string {
+	if absolute {
+		return topic
+	}
+	return c.topicName(topic)
+}
+
+// messageTopic is the Message.Topic reported for a consumed record: the broker
+// name for absolute subscriptions, otherwise the logical (unprefixed) name.
+func (c Config) messageTopic(topic string, absolute bool) string {
+	if absolute {
+		return topic
+	}
+	return c.trimTopicPrefix(topic)
+}
+
 // trimTopicPrefix reverses topicName, returning the logical topic name.
 func (c Config) trimTopicPrefix(topic string) string {
 	if c.TopicPrefix == "" {

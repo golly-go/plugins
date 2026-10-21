@@ -23,6 +23,12 @@ const (
 type SubscribeOptions struct {
 	GroupID       string        // Consumer group ID for load balancing and offset tracking
 	StartPosition StartPosition // Where to start consuming from (only for new groups)
+
+	// AbsoluteTopics subscribes to topics by their exact broker names, skipping
+	// TopicPrefix, for consuming another service's topics (e.g.
+	// "arbr-control-events.instance"). Message.Topic is then the broker name.
+	// GroupPrefix still applies.
+	AbsoluteTopics bool
 }
 
 // Header represents a Kafka message header. Alias of kgo.RecordHeader so
@@ -206,7 +212,7 @@ func (h *consumerHandle) processRecord(ctx context.Context, record *kgo.Record, 
 // convertRecord transforms a kgo.Record into our Message type.
 func (h *consumerHandle) convertRecord(record *kgo.Record) Message {
 	msg := Message{
-		Topic:     h.config.trimTopicPrefix(record.Topic),
+		Topic:     h.config.messageTopic(record.Topic, h.opts.AbsoluteTopics),
 		Partition: record.Partition,
 		Offset:    record.Offset,
 		Key:       record.Key,
@@ -418,7 +424,7 @@ func (cm *ConsumerManager) subscribe(tracker any, consumer Consumer, topics ...s
 	// on every log line.
 	brokerTopics := make([]string, len(topics))
 	for i, t := range topics {
-		brokerTopics[i] = cm.config.topicName(t)
+		brokerTopics[i] = cm.config.subscribeTopic(t, opts.AbsoluteTopics)
 	}
 
 	handle := &consumerHandle{
