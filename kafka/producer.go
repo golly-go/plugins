@@ -45,7 +45,7 @@ func (p *Producer) PublishRaw(ctx context.Context, topic string, record *kgo.Rec
 	tp := p.topicName(topic)
 
 	if traceEnabled() {
-		trace("publishing message to topic %s", tp)
+		golly.DefaultLogger().Tracef("[KAFKA] publishing message to topic %s", tp)
 	}
 
 	record.Topic = tp

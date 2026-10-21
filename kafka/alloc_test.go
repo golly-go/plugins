@@ -5,7 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golly-go/golly"
 	"github.com/segmentio/encoding/json"
+	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -28,6 +30,16 @@ func newOfflineClient(tb testing.TB) *kgo.Client {
 	}
 	tb.Cleanup(c.Close)
 	return c
+}
+
+// quietLogs pins the default logger to Info for tb. golly reads LOG_LEVEL at
+// init, and LOG_LEVEL=trace turns on Publish's trace line, which is not part
+// of the hot-path budget.
+func quietLogs(tb testing.TB) {
+	l := golly.DefaultLogger()
+	prev := l.Level()
+	l.SetLevel(golly.LogLevelInfo)
+	tb.Cleanup(func() { l.SetLevel(prev) })
 }
 
 func nopPromise(*kgo.Record, error) {}
@@ -54,6 +66,7 @@ func publishCases() []struct {
 }
 
 func BenchmarkProducerPublish(b *testing.B) {
+	quietLogs(b)
 	for _, tc := range publishCases() {
 		b.Run(tc.name, func(b *testing.B) {
 			p := NewProducer(newOfflineClient(b), tc.cfg)
@@ -70,15 +83,14 @@ func BenchmarkProducerPublish(b *testing.B) {
 }
 
 func TestProducerPublishAllocs(t *testing.T) {
+	quietLogs(t)
 	ctx := context.Background()
 
 	// Floor: encode + record + kgo's own Produce cost. Publish may add nothing.
 	floor := func(c *kgo.Client) float64 {
 		return testing.AllocsPerRun(200, func() {
 			v, err := json.Marshal(benchVal)
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			c.Produce(ctx, &kgo.Record{Topic: "orders", Value: v}, nopPromise)
 		})
 	}
@@ -86,17 +98,11 @@ func TestProducerPublishAllocs(t *testing.T) {
 	for _, tc := range publishCases() {
 		t.Run(tc.name, func(t *testing.T) {
 			p := NewProducer(newOfflineClient(t), tc.cfg)
-			if err := p.Publish(ctx, "orders", benchVal); err != nil { // warm topic cache
-				t.Fatal(err)
-			}
+			require.NoError(t, p.Publish(ctx, "orders", benchVal)) // warm topic cache
 			got := testing.AllocsPerRun(200, func() {
-				if err := p.Publish(ctx, "orders", benchVal); err != nil {
-					t.Fatal(err)
-				}
+				require.NoError(t, p.Publish(ctx, "orders", benchVal))
 			})
-			if want := floor(newOfflineClient(t)); got > want {
-				t.Fatalf("Publish allocs = %v, want <= %v (encode+record+kgo)", got, want)
-			}
+			require.LessOrEqual(t, got, floor(newOfflineClient(t)), "Publish allocs (budget: encode+record+kgo)")
 		})
 	}
 }
@@ -130,7 +136,7 @@ func BenchmarkProcessRecord(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					if err := h.processRecord(ctx, rec, nil); err != nil {
+					if err := h.processRecord(ctx, rec); err != nil {
 						b.Fatal(err)
 					}
 				}
@@ -146,7 +152,7 @@ func TestProcessRecordAllocs(t *testing.T) {
 				h := newBenchHandle(prefix, &nopConsumer{})
 				ctx := context.Background()
 				got := testing.AllocsPerRun(200, func() {
-					if err := h.processRecord(ctx, rec, nil); err != nil {
+					if err := h.processRecord(ctx, rec); err != nil {
 						t.Fatal(err)
 					}
 				})

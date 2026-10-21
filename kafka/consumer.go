@@ -67,6 +67,14 @@ type Consumer interface {
 	SubscribeOptions() SubscribeOptions
 }
 
+// consumerClient is the slice of *kgo.Client a consumerHandle uses, so the
+// poll/commit/restart loop can be exercised without a broker.
+type consumerClient interface {
+	PollFetches(ctx context.Context) kgo.Fetches
+	CommitRecords(ctx context.Context, rs ...*kgo.Record) error
+	Close()
+}
+
 // consumerHandle wraps a Consumer with its Kafka client and configuration.
 // A single handle can span multiple topics — one kgo.Client subscribed to
 // several topics at once is far cheaper (one set of broker connections, one
@@ -74,7 +82,7 @@ type Consumer interface {
 // supports it natively. Records still carry their own Message.Topic, so a
 // Handler that cares which topic a message came from can still branch on it.
 type consumerHandle struct {
-	client   *kgo.Client      // Kafka client (created lazily)
+	client   consumerClient   // Kafka client (created lazily, re-created on restart)
 	consumer Consumer         // User's consumer implementation
 	opts     SubscribeOptions // Subscription options
 	topics   []string         // Topic names as named on the broker (TopicPrefix applied)
@@ -82,6 +90,12 @@ type consumerHandle struct {
 	groupID  string           // Consumer group ID as named on the broker (GroupPrefix applied)
 	tracker  any              // Optional caller-supplied label, used only for logging
 	config   Config           // Plugin config (used to strip TopicPrefix from received topics)
+
+	// newClient builds this handle's client; run calls it again to restart
+	// the subscription after a handler error.
+	newClient func() (consumerClient, error)
+	// backoff overrides calculateBackoff (tests only).
+	backoff func(retries int) time.Duration
 
 	// ctx/cancel are derived from the manager's context when this handle is
 	// started. Cancelling them stops only this subscription - unlike the
@@ -93,6 +107,12 @@ type consumerHandle struct {
 
 // run is the main polling loop for a consumer. It continuously polls Kafka for messages,
 // processes them using the consumer's Handler, and commits offsets after successful processing.
+//
+// A Handler error restarts the subscription: the client is closed without
+// committing the failed record and re-created after a backoff, so the group
+// resumes from its last committed offset and the record is redelivered.
+// Groupless subscriptions have no committed offset and resume from
+// StartPosition instead.
 func (h *consumerHandle) run(ctx context.Context) error {
 	defer h.closeClient()
 
@@ -100,10 +120,26 @@ func (h *consumerHandle) run(ctx context.Context) error {
 	log.Tracef("consumer starting (topics=%s group=%s)", h.topicList(), h.groupID)
 
 	retries := 0
+	restarts := 0
 	for {
 		// Check if we should exit
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+
+		// Re-create the client after a restart
+		if h.client == nil {
+			client, err := h.newClient()
+			if err != nil {
+				restarts++
+				backoff := h.retryBackoff(restarts - 1)
+				log.Warnf("restart failed, retrying in %v (attempt=%d): %v", backoff, restarts, err)
+				if err := sleepCtx(ctx, backoff); err != nil {
+					return err
+				}
+				continue
+			}
+			h.client = client
 		}
 
 		// Poll for messages with timeout
@@ -118,12 +154,8 @@ func (h *consumerHandle) run(ctx context.Context) error {
 			backoff := h.calculateBackoff(retries)
 			log.Warnf("poll error, retrying in %v: %v", backoff, err)
 
-			timer := time.NewTimer(backoff)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return ctx.Err()
-			case <-timer.C:
+			if err := sleepCtx(ctx, backoff); err != nil {
+				return err
 			}
 			continue
 		}
@@ -132,9 +164,43 @@ func (h *consumerHandle) run(ctx context.Context) error {
 		retries = 0
 
 		// Process fetched records
-		if err := h.processFetches(ctx, fetches, log); err != nil {
+		failed, handled, err := h.processFetches(ctx, fetches, log)
+		if handled > 0 {
+			restarts = 0 // progress was made and committed
+		}
+		if err == nil {
+			continue
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+
+		// At-least-once: the failed record was not committed. Drop the
+		// client (its fetch position is past the record) and rejoin from
+		// the last committed offset after a backoff.
+		restarts++
+		backoff := h.retryBackoff(restarts - 1)
+		log.Warnf("handler error, restarting subscription in %v (topic=%s partition=%d offset=%d attempt=%d): %v",
+			backoff, failed.Topic, failed.Partition, failed.Offset, restarts, err)
+
+		h.client.Close()
+		h.client = nil
+
+		if err := sleepCtx(ctx, backoff); err != nil {
 			return err
 		}
+	}
+}
+
+// sleepCtx waits for d or until ctx is done, returning ctx's error if so.
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
 }
 
@@ -157,10 +223,12 @@ func (h *consumerHandle) poll(ctx context.Context) (kgo.Fetches, error) {
 	return fetches, nil
 }
 
-// processFetches handles all records in a fetch result.
-func (h *consumerHandle) processFetches(ctx context.Context, fetches kgo.Fetches, log *golly.Entry) error {
+// processFetches handles all records in a fetch result. On a Handler error
+// it stops, commits the records handled before the failure, and returns the
+// failed record. handled counts records whose Handler succeeded.
+func (h *consumerHandle) processFetches(ctx context.Context, fetches kgo.Fetches, log *golly.Entry) (failed *kgo.Record, handled int, err error) {
 	if fetches.NumRecords() == 0 {
-		return nil
+		return nil, 0, nil
 	}
 
 	// Process all records in the fetch
@@ -168,10 +236,12 @@ func (h *consumerHandle) processFetches(ctx context.Context, fetches kgo.Fetches
 		for _, record := range fetch.Topics {
 			for _, partition := range record.Partitions {
 				for _, r := range partition.Records {
-					if err := h.processRecord(ctx, r, log); err != nil {
+					if err := h.processRecord(ctx, r); err != nil {
 						// On error, we stop processing this batch to preserve offset order
-						return err
+						h.commitHandled(ctx, fetches, handled, log)
+						return r, handled, err
 					}
+					handled++
 				}
 			}
 		}
@@ -191,22 +261,35 @@ func (h *consumerHandle) processFetches(ctx context.Context, fetches kgo.Fetches
 		log.Errorf("partition error (topic=%s partition=%d): %v", topic, partition, err)
 	})
 
-	return nil
+	return nil, handled, nil
+}
+
+// commitHandled commits the first n records of fetches (those handled before
+// a failure) so a restart redelivers only the failed record onwards. Error
+// path only, so the slice allocation is fine.
+func (h *consumerHandle) commitHandled(ctx context.Context, fetches kgo.Fetches, n int, log *golly.Entry) {
+	if h.groupID == "" || n == 0 {
+		return
+	}
+	done := make([]*kgo.Record, 0, n)
+	fetches.EachRecord(func(r *kgo.Record) {
+		if len(done) < n {
+			done = append(done, r)
+		}
+	})
+	if err := h.client.CommitRecords(ctx, done...); err != nil {
+		log.Warnf("failed to commit offsets before restart: %v", err)
+	}
 }
 
 // processRecord handles a single Kafka record: converts it to a Message,
-// calls the user's Handler. Offsets are committed in batch by processFetches.
-func (h *consumerHandle) processRecord(ctx context.Context, record *kgo.Record, log *golly.Entry) error {
+// calls the user's Handler. Offsets are committed in batch by processFetches;
+// on error nothing is committed and run restarts the subscription.
+func (h *consumerHandle) processRecord(ctx context.Context, record *kgo.Record) error {
 	msg := h.convertRecord(record)
 
-	// Call user handler
-	if err := h.consumer.Handler(ctx, msg); err != nil {
-		log.Errorf("handler error (partition=%d offset=%d): %v", record.Partition, record.Offset, err)
-		// At-least-once: do not commit on error; record will be redelivered
-		return err
-	}
-
-	return nil
+	// At-least-once: do not commit on error; record will be redelivered
+	return h.consumer.Handler(ctx, msg)
 }
 
 // convertRecord transforms a kgo.Record into our Message type.
@@ -224,13 +307,23 @@ func (h *consumerHandle) convertRecord(record *kgo.Record) Message {
 	return msg
 }
 
-// calculateBackoff computes exponential backoff with a maximum cap.
+// calculateBackoff computes exponential backoff (baseRetryBackoff << retries)
+// with a maximum cap. Doubling stops at the cap so large retry counts can't
+// overflow into a zero or negative wait.
 func (h *consumerHandle) calculateBackoff(retries int) time.Duration {
-	backoff := baseRetryBackoff * time.Duration(1<<uint(retries))
-	if backoff > maxRetryBackoff {
-		backoff = maxRetryBackoff
+	backoff := baseRetryBackoff
+	for i := 0; i < retries && backoff < maxRetryBackoff; i++ {
+		backoff *= 2
 	}
-	return backoff
+	return min(backoff, maxRetryBackoff)
+}
+
+// retryBackoff returns the wait before retry number retries (0-based).
+func (h *consumerHandle) retryBackoff(retries int) time.Duration {
+	if h.backoff != nil {
+		return h.backoff(retries)
+	}
+	return h.calculateBackoff(retries)
 }
 
 // closeClient safely closes the Kafka client and handles panics.
@@ -438,6 +531,9 @@ func (cm *ConsumerManager) subscribe(tracker any, consumer Consumer, topics ...s
 		client:   nil, // Created lazily when consumer starts
 		done:     make(chan struct{}),
 	}
+	handle.newClient = func() (consumerClient, error) {
+		return createConsumerClient(handle, cm.config)
+	}
 
 	cm.mu.Lock()
 	cm.consumers[id] = handle
@@ -491,7 +587,7 @@ func (cm *ConsumerManager) unsubscribe(id string) error {
 func (cm *ConsumerManager) startConsumer(id string, handle *consumerHandle) error {
 	// Create Kafka client if not already created
 	if handle.client == nil {
-		client, err := createConsumerClient(handle, cm.config)
+		client, err := handle.newClient()
 		if err != nil {
 			return fmt.Errorf("failed to create client: %w", err)
 		}
@@ -516,7 +612,7 @@ func (cm *ConsumerManager) startConsumer(id string, handle *consumerHandle) erro
 }
 
 // createConsumerClient builds a franz-go client configured for consuming.
-func createConsumerClient(handle *consumerHandle, config Config) (*kgo.Client, error) {
+func createConsumerClient(handle *consumerHandle, config Config) (consumerClient, error) {
 	opts := []kgo.Opt{
 		kgo.ConsumeTopics(handle.topics...),
 		kgo.FetchMaxWait(60 * time.Second),
@@ -549,8 +645,13 @@ func createConsumerClient(handle *consumerHandle, config Config) (*kgo.Client, e
 		opts = append(opts, kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()))
 	}
 
-	// Create client using shared factory (handles brokers, auth, TLS)
-	return createClient(config, opts...)
+	// Create client using shared factory (handles brokers, auth, TLS).
+	// Return a nil interface, not a typed nil, on error.
+	client, err := createClient(config, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return client, nil
 }
 
 // generateSubscriptionID creates a unique ID for a topics+group subscription.
