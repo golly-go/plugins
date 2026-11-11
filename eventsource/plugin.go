@@ -34,7 +34,7 @@ import (
 // }
 
 var (
-	engineKey = &golly.ContextKey{}
+	engineKey = &golly.ContextKey{} //nolint:staticcheck // golly.ContextKey kept for compatibility until golly drops it
 )
 
 type PluginOptions struct {

@@ -114,7 +114,7 @@ func TestAggregateBase_Apply(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			aggregate := &TestAggregate{}
 
-			apply(aggregate, tt.event)
+			require.NoError(t, apply(aggregate, tt.event))
 
 			if tt.handlerExist {
 				assert.Equal(t, tt.event.Type, aggregate.LastAppliedEvent.Type)

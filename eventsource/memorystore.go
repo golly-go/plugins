@@ -41,6 +41,9 @@ type InMemoryStore struct {
 
 	SaveFail error
 
+	// heads indexes each aggregate's highest stored version; nil until first Save.
+	heads map[aggKey]int64
+
 	gobalVersion int64
 }
 
@@ -57,6 +60,18 @@ func (s *InMemoryStore) Save(ctx context.Context, events ...*Event) error {
 
 	s.lock.Lock()
 	defer s.lock.Unlock()
+
+	// Same optimistic check as the SQL stores: the batch must start right after the
+	// aggregate's stored head, so tests see the version conflicts production does.
+	if len(events) > 0 && events[0].AggregateID != "" {
+		key := aggKey{events[0].AggregateType, events[0].AggregateID}
+		if s.headLocked(key) != events[0].Version-1 {
+			return ErrVersionConflict
+		}
+		if last := events[len(events)-1].Version; last > s.heads[key] {
+			s.heads[key] = last
+		}
+	}
 
 	for _, evt := range events {
 		// State is transient (gorm:"-" in gormstore); don't persist it.
@@ -104,10 +119,7 @@ func (s *InMemoryStore) LoadEventsInBatches(
 	filtered := applyInMemoryFilters(s.data, f)
 
 	offset := 0
-	for {
-		if offset >= len(filtered) {
-			break
-		}
+	for offset < len(filtered) {
 		end := offset + batchSize
 		if end > len(filtered) {
 			end = len(filtered)
@@ -214,6 +226,7 @@ func (s *InMemoryStore) DeleteEvent(ctx context.Context, eventID uuid.UUID) erro
 	for i, event := range s.data {
 		if event.ID == eventID {
 			s.data = append(s.data[:i], s.data[i+1:]...)
+			s.heads = nil // rebuilt on next Save; deletes are rare
 			return nil
 		}
 	}
@@ -309,6 +322,24 @@ func matchInMemory(e *Event, f *EventFilter) bool {
 	}
 
 	return true
+}
+
+type aggKey struct{ typ, id string }
+
+// headLocked returns key's highest stored version. The index is built from data in
+// one pass on first use and kept current by Save and DeleteEvent. Callers hold
+// s.lock for writing.
+func (s *InMemoryStore) headLocked(key aggKey) int64 {
+	if s.heads == nil {
+		s.heads = make(map[aggKey]int64)
+		for i := range s.data {
+			k := aggKey{s.data[i].AggregateType, s.data[i].AggregateID}
+			if v := s.data[i].Version; v > s.heads[k] {
+				s.heads[k] = v
+			}
+		}
+	}
+	return s.heads[key]
 }
 
 func NewInMemoryStore(data ...Event) *InMemoryStore {

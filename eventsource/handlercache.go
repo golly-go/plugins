@@ -59,7 +59,7 @@ func (hc *HandlerCache) loadIdxMap(t reflect.Type) (map[string]int, bool) {
 func (hc *HandlerCache) buildHandlerIndex(t reflect.Type) *handlerEntry {
 	// Ensure we index the POINTER type so pointer-receiver methods are included.
 	// For a non-pointer type T, the method set does NOT include methods with receiver *T.
-	if t.Kind() != reflect.Ptr {
+	if t.Kind() != reflect.Pointer {
 		t = reflect.PointerTo(t)
 	}
 
@@ -102,7 +102,7 @@ func (hc *HandlerCache) buildHandlerIndex(t reflect.Type) *handlerEntry {
 // The key is normalized to the POINTER type (interfaces typically yield pointer types already).
 func (hc *HandlerCache) entry(ag any) *handlerEntry {
 	t := reflect.TypeOf(ag)
-	if t.Kind() != reflect.Ptr {
+	if t.Kind() != reflect.Pointer {
 		t = reflect.PointerTo(t)
 	}
 

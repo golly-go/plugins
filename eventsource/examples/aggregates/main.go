@@ -43,9 +43,11 @@ func main() {
 	)
 
 	// Register aggregate with domain event types
-	engine.RegisterAggregate(&Customer{}, []any{
+	if err := engine.RegisterAggregate(&Customer{}, []any{
 		CustomerOrderAdded{}, // Register the domain event struct
-	})
+	}); err != nil {
+		log.Fatal(err)
+	}
 
 	// Create a customer instance
 	customer := &Customer{ID: "cust_1"}

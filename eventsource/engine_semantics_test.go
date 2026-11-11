@@ -368,7 +368,7 @@ func (a *multiAgg) GammaHandler(e Event)    { a.Log = append(a.Log, fmt.Sprintf(
 func (a *multiAgg) BadHandler(Event) error  { a.Skip++; return nil }
 func (a *multiAgg) NotAHandler(Event)       { a.Skip++ }
 func (a *multiAgg) WrongArgsHandler(string) {}
-func (a *multiAgg) unexportedHandler(Event) {}
+func (a *multiAgg) unexportedHandler(Event) {} //nolint:unused // deliberately unexported: proves it is not dispatched
 
 type Alpha struct{}
 type Beta struct{}
@@ -1090,4 +1090,153 @@ func TestProjectionWorkerIndex_StableAndInRange(t *testing.T) {
 		seen[idx] = true
 	}
 	assert.Len(t, seen, 8, "hash spreads across all workers")
+}
+
+// ---- Execute: conflict retry re-validates against rebuilt state ----
+
+var (
+	errExists = errors.New("already exists")
+	errAtCap  = errors.New("at cap")
+)
+
+// createOnceCmd creates the aggregate with a fixed ID; Validate rejects an existing one.
+type createOnceCmd struct {
+	id        string
+	rollbacks *atomic.Int64
+}
+
+func (c createOnceCmd) Validate(_ context.Context, agg Aggregate) error {
+	if agg.Version() > 0 {
+		return errExists
+	}
+	return nil
+}
+
+func (c createOnceCmd) Perform(_ context.Context, agg Aggregate) error {
+	agg.(*benchAgg).ID = c.id
+	agg.Record(benchCreated{Name: "n"})
+	return nil
+}
+
+func (c createOnceCmd) Rollback(context.Context, Aggregate, error) {
+	if c.rollbacks != nil {
+		c.rollbacks.Add(1)
+	}
+}
+
+// cappedBumpCmd bumps Count by one while it is below max.
+type cappedBumpCmd struct{ max int }
+
+func (c cappedBumpCmd) Validate(_ context.Context, agg Aggregate) error {
+	if agg.(*benchAgg).Count >= c.max {
+		return errAtCap
+	}
+	return nil
+}
+
+func (cappedBumpCmd) Perform(_ context.Context, agg Aggregate) error {
+	agg.Record(benchBumped{By: 1})
+	return nil
+}
+
+func runConcurrently(n int, f func() error) []error {
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			errs[i] = f()
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	return errs
+}
+
+func TestExecute_ConcurrentCreatesStoreOneCreate(t *testing.T) {
+	eng, _ := spyEngine(t)
+	ctx := context.Background()
+	id := uuid.NewString()
+	var rollbacks atomic.Int64
+
+	errs := runConcurrently(8, func() error {
+		return eng.Execute(ctx, &benchAgg{}, createOnceCmd{id: id, rollbacks: &rollbacks})
+	})
+
+	ok := 0
+	for _, err := range errs {
+		if err == nil {
+			ok++
+			continue
+		}
+		require.ErrorIs(t, err, errExists)
+	}
+	assert.Equal(t, 1, ok, "exactly one create wins")
+	assert.EqualValues(t, len(errs)-1, rollbacks.Load(), "every loser rolls back")
+
+	evs := storedEvents(t, eng, id)
+	require.Len(t, evs, 1, "losers re-validate on conflict and store nothing")
+	assert.Equal(t, typCreated, evs[0].Type)
+}
+
+func TestExecute_ConflictRetryValidatesAgainstInterleavedState(t *testing.T) {
+	eng, _ := spyEngine(t)
+	ctx := context.Background()
+	a := &benchAgg{}
+	require.NoError(t, eng.Execute(ctx, a, benchCreateCmd{})) // Count = 1
+
+	const max = 5
+	errs := runConcurrently(16, func() error {
+		return eng.Execute(ctx, &benchAgg{ID: a.ID}, cappedBumpCmd{max: max})
+	})
+	for _, err := range errs {
+		if err != nil {
+			require.ErrorIs(t, err, errAtCap)
+		}
+	}
+
+	fresh := &benchAgg{ID: a.ID}
+	require.NoError(t, eng.Load(ctx, fresh))
+	assert.Equal(t, max, fresh.Count, "the cap holds under concurrency")
+
+	evs := storedEvents(t, eng, a.ID)
+	for i, e := range evs {
+		assert.Equal(t, int64(i+1), e.Version, "versions stay dense and unique")
+	}
+}
+
+// interleavingCmd lands another writer's command between its own replay and save.
+type interleavingCmd struct {
+	eng   *Engine
+	other Command
+}
+
+func (c interleavingCmd) Perform(ctx context.Context, agg Aggregate) error {
+	if err := c.eng.Execute(ctx, &benchAgg{ID: agg.GetID()}, c.other); err != nil {
+		return err
+	}
+	agg.Record(benchBumped{By: 1})
+	return nil
+}
+
+func TestExecute_ConflictRetryLeavesAggregateAtStoredState(t *testing.T) {
+	eng, st := spyEngine(t)
+	ctx := context.Background()
+	a := &benchAgg{}
+	require.NoError(t, eng.Execute(ctx, a, benchCreateCmd{})) // v2, Count 1
+
+	st.saveCalls.Store(0)
+	b := &benchAgg{ID: a.ID}
+	require.NoError(t, eng.Execute(ctx, b, interleavingCmd{eng: eng, other: benchCmd{n: 10}}))
+
+	assert.EqualValues(t, 3, st.saveCalls.Load(), "other writer, our conflicted save, our retry")
+	assert.Equal(t, 12, b.Count, "the interleaved writer's events are applied, then ours")
+	assert.Equal(t, int64(5), b.Version())
+	evs := storedEvents(t, eng, a.ID)
+	require.Len(t, evs, 5)
+	assert.Equal(t, typBumped, evs[4].Type)
+	assert.Equal(t, 1, evs[4].Data.(benchBumped).By)
 }

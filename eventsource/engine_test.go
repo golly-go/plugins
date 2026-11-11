@@ -160,7 +160,7 @@ func TestEngine_RegisterProjection(t *testing.T) {
 // re-replay on the second call, leaving the aggregate at a stale version.
 func TestEngine_Execute_SequentialCallsSameAggregate(t *testing.T) {
 	engine := NewEngine(WithStore(NewInMemoryStore()))
-	engine.RegisterAggregate(&TestAggregate{}, []any{testEvent{}})
+	require.NoError(t, engine.RegisterAggregate(&TestAggregate{}, []any{testEvent{}}))
 
 	ctx := golly.NewContext(context.Background())
 	agg := &TestAggregate{ID: "plan-sequential-test"}
@@ -185,7 +185,7 @@ func TestEngine_ExecuteCommand(t *testing.T) {
 	ctx := golly.NewContext(context.Background())
 
 	agg := TestAggregate{ID: "123"}
-	engine.RegisterAggregate(&TestAggregate{}, []any{testEvent{}})
+	require.NoError(t, engine.RegisterAggregate(&TestAggregate{}, []any{testEvent{}}))
 
 	cmd := TestCommand{name: "test"}
 	err := engine.Execute(ctx, &agg, &cmd)
@@ -278,7 +278,7 @@ func BenchmarkEngine_LoadEvents(b *testing.B) {
 	mockStore.On("LoadEventsInBatches", ctx, 100, mock.Anything, []EventFilter(nil)).
 		Return(nil).
 		Run(func(args mock.Arguments) {
-			args.Get(2).(func([]PersistedEvent) error)(peEvents) // single batch
+			require.NoError(b, args.Get(2).(func([]PersistedEvent) error)(peEvents)) // single batch
 		})
 
 	// Benchmark
@@ -354,7 +354,7 @@ func TestNewEngine_ProjectionWorkerAndBufferOptions(t *testing.T) {
 func TestEngine_Execute_InMemoryDoesNotDuplicateEvents(t *testing.T) {
 	store := NewInMemoryStore()
 	engine := NewEngine(WithStore(store))
-	engine.RegisterAggregate(&TestAggregate{}, []any{testEvent{}})
+	require.NoError(t, engine.RegisterAggregate(&TestAggregate{}, []any{testEvent{}}))
 
 	ctx := golly.NewContext(context.Background())
 	agg := &TestAggregate{ID: "no-dupes"}

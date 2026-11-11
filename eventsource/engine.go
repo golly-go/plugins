@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"reflect"
 	"sync/atomic"
 	"time"
 
@@ -140,10 +141,12 @@ func (eng *Engine) CommitAggregateChanges(ctx context.Context, agg Aggregate) er
 // Execute handles command execution: replay → validate → perform → process → commit.
 //
 // If CommitAggregateChanges returns ErrVersionConflict (a concurrent writer raced in
-// between Replay and Save), Execute will re-replay to pick up the interleaved events,
-// re-number the already-computed pending events, and retry the save — without calling
-// Perform again. This is safe for commands with external side effects (e.g. Stripe API
-// calls) as Perform is guaranteed to run exactly once.
+// between Replay and Save), Execute rebuilds the aggregate from the store, re-runs
+// Validate against that state, re-applies the already-computed pending events on top
+// with new versions, and retries the save. Perform runs exactly once, so commands with
+// external side effects (e.g. Stripe API calls) are safe; if the rebuilt state no longer
+// passes Validate, that error is returned and nothing is saved (Rollback runs, so the
+// command can compensate).
 func (eng *Engine) Execute(ctx context.Context, agg Aggregate, cmd Command) (err error) {
 	if eng == nil {
 		return fmt.Errorf("engine is nil")
@@ -197,7 +200,7 @@ func (eng *Engine) Execute(ctx context.Context, agg Aggregate, cmd Command) (err
 			break
 		}
 
-		// Exponential backoff with ±25% jitter before re-replay + retry.
+		// Exponential backoff with ±25% jitter before rebuild + retry.
 		delay := retryBase << uint(attempt)
 		if delay > retryMax {
 			delay = retryMax
@@ -205,27 +208,15 @@ func (eng *Engine) Execute(ctx context.Context, agg Aggregate, cmd Command) (err
 		delay += time.Duration(rand.Int63n(int64(delay) / 4))
 		time.Sleep(delay)
 
-		// A concurrent writer raced in between our Replay and Save.
-		// Re-replay to get the latest version, re-number pending events, retry.
-		pending := agg.Changes().Uncommitted()
-		agg.ClearChanges()
-
 		if traceEnabled() {
-			trace("version conflict on attempt %d for %s %s, re-versioning and retrying",
+			trace("version conflict on attempt %d for %s %s, rebuilding and retrying",
 				attempt+1, golly.TypeNoPtr(agg).Name(), agg.GetID())
 		}
 
-		if e := eng.Replay(ctx, agg); e != nil {
+		// A concurrent writer raced in between our Replay and Save.
+		if e := eng.rebase(ctx, agg, cmd, err, false); e != nil {
 			return e
 		}
-
-		base := agg.Version()
-		for i := range pending {
-			base++
-			pending[i].Version = base
-		}
-		agg.SetChanges(pending)
-		agg.SetVersion(base)
 	}
 
 	// === Phase 3: snapshot-corruption recovery (last resort) ===
@@ -235,10 +226,6 @@ func (eng *Engine) Execute(ctx context.Context, agg Aggregate, cmd Command) (err
 	// Only in that case do we pay the cost of a full event scan — for
 	// snapshot-less aggregates, Replay already reads everything from scratch,
 	// so a full rebuild changes nothing and we return the conflict directly.
-	if !errors.Is(err, ErrVersionConflict) {
-		return err
-	}
-
 	snap, snapErr := eng.store.LoadSnapshot(ctx, ObjectName(agg), agg.GetID())
 	if snapErr != nil {
 		return errors.Join(err, snapErr)
@@ -251,41 +238,104 @@ func (eng *Engine) Execute(ctx context.Context, agg Aggregate, cmd Command) (err
 	trace("snapshot corruption suspected for %s %s — rebuilding from raw events",
 		golly.TypeNoPtr(agg).Name(), agg.GetID())
 
-	pending := agg.Changes().Uncommitted()
-	agg.ClearChanges()
-
-	if e := eng.replayFromZero(ctx, agg); e != nil {
+	if e := eng.rebase(ctx, agg, cmd, err, true); e != nil {
 		return e
 	}
 
-	// Write a clean snapshot to replace the corrupt one so future
-	// loads are fast and won't hit this path again.
-
-	snapshot := agg.CreateSnapshot(ctx, agg)
-	if e := eng.store.SaveSnapshot(ctx, snapshot); e != nil {
-		trace("failed to write recovery snapshot for %s %s: %v",
-			golly.TypeNoPtr(agg).Name(), agg.GetID(), e)
-	}
-
-	base := agg.Version()
-	for i := range pending {
-		base++
-		pending[i].Version = base
-	}
-
-	agg.SetChanges(pending)
-	agg.SetVersion(base)
-
 	return eng.CommitAggregateChanges(ctx, agg)
-
 }
 
-// replayFromZero rebuilds aggregate state by scanning all events from the
-// beginning, skipping snapshots entirely. This is the recovery path for
+// rebase recovers from a version conflict. It rebuilds agg from the store into a
+// zero value of its type (state already holds the pending events, so replaying on
+// top of it would skip the interleaved ones), re-runs cmd's Validate against that
+// state, then re-applies the pending events with versions after the stored head.
+// Perform is not re-run. A pending snapshot is dropped and retaken if still due.
+//
+// fromZero ignores stored snapshots (the corruption-recovery path) and writes a
+// clean one of the rebuilt state.
+//
+// The caller's ID field is carried over to the zero value. An aggregate whose ID
+// lives elsewhere and isn't restored by replay cannot be rebuilt this way, so
+// conflict is returned unchanged.
+func (eng *Engine) rebase(ctx context.Context, agg Aggregate, cmd Command, conflict error, fromZero bool) error {
+	id := agg.GetID()
+	aggType := ObjectName(agg)
+
+	v := reflect.ValueOf(agg)
+	if v.Kind() != reflect.Pointer || v.IsNil() {
+		return conflict
+	}
+	fv := reflect.New(v.Elem().Type())
+	fresh, ok := fv.Interface().(Aggregate)
+	if !ok {
+		return conflict
+	}
+	// Commands often set the ID in Perform rather than the created handler, so carry
+	// the ID field over (golly's convention); GetID is checked after replay.
+	if f := v.Elem().FieldByName("ID"); f.IsValid() && f.CanSet() {
+		fv.Elem().FieldByName("ID").Set(f)
+	}
+
+	var err error
+	if fromZero {
+		err = eng.replayFromZero(ctx, fresh, aggType, id)
+	} else {
+		err = eng.replayID(ctx, fresh, aggType, id)
+	}
+	if err != nil {
+		return err
+	}
+	if fresh.GetID() != id {
+		return conflict
+	}
+
+	pending := agg.Changes().Uncommitted()
+	v.Elem().Set(reflect.ValueOf(fresh).Elem())
+
+	if fromZero {
+		snapshot := agg.CreateSnapshot(ctx, agg)
+		if e := eng.store.SaveSnapshot(ctx, snapshot); e != nil {
+			trace("failed to write recovery snapshot for %s %s: %v",
+				golly.TypeNoPtr(agg).Name(), id, e)
+		}
+	}
+
+	if val, ok := cmd.(CommandValidator); ok {
+		if err := val.Validate(ctx, agg); err != nil {
+			agg.SetChanges(pending)
+			return handleExecutionError(ctx, agg, cmd, err)
+		}
+	}
+
+	head := agg.Version()
+	base := head
+	n := 0
+	for i := range pending {
+		if pending[i].Kind == EventKindSnapshot {
+			continue
+		}
+		base++
+		pending[i].Version = base
+		if err := apply(agg, pending[i]); err != nil {
+			return err
+		}
+		pending[n] = pending[i]
+		n++
+	}
+
+	agg.SetChanges(pending[:n])
+	if ShouldSnapshot(int(head), int(base)) {
+		agg.AppendChanges(agg.CreateSnapshot(ctx, agg))
+	}
+
+	return nil
+}
+
+// replayFromZero rebuilds aggregate state by scanning all events of aggType/id from
+// the beginning, skipping snapshots entirely. This is the recovery path for
 // corrupt or out-of-order snapshots produced by concurrent write floods.
 // It is intentionally expensive — call only as a last resort.
-func (eng *Engine) replayFromZero(ctx context.Context, agg Aggregate) error {
-	id := agg.GetID()
+func (eng *Engine) replayFromZero(ctx context.Context, agg Aggregate, aggType, id string) error {
 	if id == "" {
 		return nil
 	}
@@ -306,7 +356,7 @@ func (eng *Engine) replayFromZero(ctx context.Context, agg Aggregate) error {
 			return nil
 		},
 		EventFilter{
-			AggregateType:  ObjectName(agg),
+			AggregateType:  aggType,
 			AggregateID:    id,
 			ExcludeKinds:   excludeSnapshots,
 			OrderByVersion: true,
@@ -338,8 +388,12 @@ func (eng *Engine) Replay(ctx context.Context, agg Aggregate) error {
 		return nil
 	}
 
-	aggType := ObjectName(agg)
+	return eng.replayID(ctx, agg, ObjectName(agg), id)
+}
 
+// replayID applies aggType/id's latest snapshot and the events after it to agg. The
+// type and id are explicit so a zero-value aggregate can be rebuilt.
+func (eng *Engine) replayID(ctx context.Context, agg Aggregate, aggType, id string) error {
 	snap, err := eng.store.LoadSnapshot(ctx, aggType, id)
 	if err == nil && snap != nil {
 		if sEvent, err := snap.Hydrate(eng); err == nil {

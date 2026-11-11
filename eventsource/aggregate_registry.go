@@ -64,7 +64,7 @@ func (r *AggregateRegistry) List() iter.Seq[*AggregateRegistryItem] {
 // For each event sample, it precomputes an EventCodec and stores it in the registry.
 func (r *AggregateRegistry) Register(agg Aggregate, eventSamples []any) *AggregateRegistry {
 	aggType := reflect.TypeOf(agg)
-	if aggType.Kind() != reflect.Ptr {
+	if aggType.Kind() != reflect.Pointer {
 		// Force pointer type so we can instantiate it later
 		aggType = reflect.PointerTo(aggType)
 	}
@@ -98,7 +98,7 @@ func (r *AggregateRegistry) Register(agg Aggregate, eventSamples []any) *Aggrega
 	for _, evtSample := range eventSamples {
 		evtType := reflect.TypeOf(evtSample)
 
-		if evtType.Kind() != reflect.Ptr {
+		if evtType.Kind() != reflect.Pointer {
 			evtType = reflect.PointerTo(evtType)
 		}
 
@@ -134,7 +134,7 @@ func (r *AggregateRegistry) GetAggregate(aggName string) (Aggregate, bool) {
 
 	aggType := regItem.AggregateType
 	var inf interface{}
-	if aggType.Kind() == reflect.Ptr {
+	if aggType.Kind() == reflect.Pointer {
 		inf = reflect.New(aggType.Elem()).Interface()
 	} else {
 		inf = reflect.New(aggType).Interface()

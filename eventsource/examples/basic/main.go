@@ -50,7 +50,9 @@ func main() {
 	defer engine.Stop()
 
 	// Register the User aggregate
-	engine.RegisterAggregate(&User{}, []any{UserCreated{}})
+	if err := engine.RegisterAggregate(&User{}, []any{UserCreated{}}); err != nil {
+		log.Fatal(err)
+	}
 
 	user := &User{}
 
@@ -71,7 +73,9 @@ func main() {
 
 	u2 := &User{ID: "user_1"}
 
-	engine.Load(ctx, u2)
+	if err := engine.Load(ctx, u2); err != nil {
+		log.Fatal(err)
+	}
 
 	golly.Say("green", "Loaded User")
 	fmt.Printf("User ID: %s\n", u2.ID)

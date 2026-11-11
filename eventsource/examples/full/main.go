@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/segmentio/encoding/json"
@@ -88,11 +89,15 @@ func main() {
 	defer engine.Stop()
 
 	// Register the Order aggregate
-	engine.RegisterAggregate(&Order{}, []any{OrderCreated{}})
+	if err := engine.RegisterAggregate(&Order{}, []any{OrderCreated{}}); err != nil {
+		log.Fatal(err)
+	}
 
 	// Create and register the OrderSummary projection
 	summary := &OrderSummary{}
-	engine.RegisterProjection(summary)
+	if err := engine.RegisterProjection(summary); err != nil {
+		log.Fatal(err)
+	}
 
 	// Create a new order
 	order := &Order{ID: "order_1"}

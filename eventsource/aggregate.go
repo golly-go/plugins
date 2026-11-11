@@ -291,7 +291,7 @@ func apply(ag Aggregate, event Event) error {
 	}
 
 	v := reflect.ValueOf(ag)
-	if v.Kind() != reflect.Ptr {
+	if v.Kind() != reflect.Pointer {
 		// table indexes the POINTER type; value receivers keep the legacy bound-method call
 		var args [1]reflect.Value
 		args[0] = reflect.ValueOf(event)

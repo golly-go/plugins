@@ -50,7 +50,9 @@ func main() {
 	summary := &OrderSummary{
 		CustomerCounts: make(map[string]int),
 	}
-	engine.RegisterProjection(summary)
+	if err := engine.RegisterProjection(summary); err != nil {
+		log.Fatal(err)
+	}
 
 	// Send some events
 	events := make([]eventsource.Event, 0, 30)
@@ -72,7 +74,7 @@ func main() {
 		})
 	}
 
-	engine.Send(golly.NewContext(nil), events...)
+	engine.Send(golly.NewContext(context.Background()), events...)
 
 	// Wait for the projection to process the events
 	time.Sleep(50 * time.Millisecond)

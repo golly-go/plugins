@@ -279,7 +279,7 @@ func (pm *ProjectionManager) Register(projs ...Projection) {
 			hasFilters = true
 		}
 
-		var topics []string = projectionTopics(proj)
+		topics := projectionTopics(proj)
 		if len(topics) > 0 {
 			for pos := range topics {
 				appendHandler(next.topics, topics[pos], fnc)

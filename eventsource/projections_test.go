@@ -105,7 +105,7 @@ func TestProjectionManager_Get(t *testing.T) {
 func TestProjectionManager_RunToEnd(t *testing.T) {
 	tests := []struct {
 		name          string
-		setup         func(*ProjectionManager, *Engine) string // returns projID
+		setup         func(*testing.T, *ProjectionManager, *Engine) string // returns projID
 		expectedPos   int64
 		expectedCount int
 		expectErr     bool
@@ -113,14 +113,14 @@ func TestProjectionManager_RunToEnd(t *testing.T) {
 	}{
 		{
 			name: "Error_in_first_projection's_HandleEvent",
-			setup: func(pm *ProjectionManager, eng *Engine) string {
+			setup: func(t *testing.T, pm *ProjectionManager, eng *Engine) string {
 				proj := &TestProjection{
 					id:                "proj1",
 					failOnEventNumber: 1,
 				}
 				pm.Register(proj)
 				// Add test event to store
-				eng.store.Save(context.Background(), &Event{GlobalVersion: 1}, &Event{GlobalVersion: 2})
+				require.NoError(t, eng.store.Save(context.Background(), &Event{GlobalVersion: 1}, &Event{GlobalVersion: 2}))
 				return proj.ID()
 			},
 			expectedPos:   0, // Position stays at initial 0 when error occurs
@@ -130,14 +130,14 @@ func TestProjectionManager_RunToEnd(t *testing.T) {
 		},
 		{
 			name: "Successful_processing",
-			setup: func(pm *ProjectionManager, eng *Engine) string {
+			setup: func(t *testing.T, pm *ProjectionManager, eng *Engine) string {
 				proj := &TestProjection{id: "proj2"}
 				pm.Register(proj)
 				// Add multiple events to store
-				eng.store.Save(context.Background(),
+				require.NoError(t, eng.store.Save(context.Background(),
 					&Event{GlobalVersion: 1},
 					&Event{GlobalVersion: 2},
-				)
+				))
 				return proj.ID()
 			},
 			expectedPos:   2,
@@ -145,7 +145,7 @@ func TestProjectionManager_RunToEnd(t *testing.T) {
 		},
 		{
 			name: "Projection_not_found",
-			setup: func(pm *ProjectionManager, eng *Engine) string {
+			setup: func(t *testing.T, pm *ProjectionManager, eng *Engine) string {
 				return "nonexistent"
 			},
 			expectedPos:   0,
@@ -155,7 +155,7 @@ func TestProjectionManager_RunToEnd(t *testing.T) {
 		},
 		{
 			name: "Empty_event_store",
-			setup: func(pm *ProjectionManager, eng *Engine) string {
+			setup: func(t *testing.T, pm *ProjectionManager, eng *Engine) string {
 				proj := &TestProjection{id: "proj3"}
 				pm.Register(proj)
 				return proj.ID()
@@ -170,7 +170,7 @@ func TestProjectionManager_RunToEnd(t *testing.T) {
 			pm := NewProjectionManager()
 			eng := NewEngine(WithStore(&InMemoryStore{}))
 
-			projID := tt.setup(pm, eng)
+			projID := tt.setup(t, pm, eng)
 			ctx := golly.NewContext(context.Background())
 
 			err := pm.RunToEnd(ctx, eng, projID)

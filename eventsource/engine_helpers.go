@@ -44,12 +44,13 @@ func NewInMemoryEngine(opts TestEngineOptions) *Engine {
 		SetUserInfoFunc(opts.UserInfoFunc)
 	}
 
+	// The registries directly: RegisterAggregate/RegisterProjection never fail.
 	for _, agg := range opts.Aggregates {
-		engine.RegisterAggregate(agg.Aggregate, agg.Events)
+		engine.aggregates.Register(agg.Aggregate, agg.Events)
 	}
 
 	for _, proj := range opts.Projections {
-		engine.RegisterProjection(proj)
+		engine.projections.Register(proj)
 	}
 
 	return engine

@@ -7,30 +7,6 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-type testPersistedEvent struct {
-	// Arbitrary fields you may want to track for the test
-	ID         string
-	Raw        []byte
-	HydrateErr error // To simulate an error during Hydrate
-}
-
-// Hydrate implements PersistedEvent.
-// It either returns an error (if HydrateErr is non-nil)
-// or a basic Event with your chosen test fields.
-func (t *testPersistedEvent) Hydrate(eng *Engine) (Event, error) {
-	if t.HydrateErr != nil {
-		return Event{}, t.HydrateErr
-	}
-	// Construct a minimal Event for testing.
-	// In a real test, you might parse t.Raw or set fields from t.ID, etc.
-	evt := Event{
-		ID:   uuid.New(),      // For example, generate a new UUID or parse from t.ID
-		Type: "TestEventType", // Hard-coded or from your raw data
-		Data: t.Raw,           // Possibly store the raw bytes in Data
-	}
-	return evt, nil
-}
-
 // MockStore is a mock implementation of the EventStore interface.
 type MockStore struct {
 	mock.Mock

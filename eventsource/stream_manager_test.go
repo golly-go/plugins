@@ -35,7 +35,7 @@ func TestStreamManager_AddAndPublish(t *testing.T) {
 	events := []Event{{Type: "A"}, {Type: "B"}, {Type: "C"}}
 	for i := range events {
 		// Engine.Send would set topic; we mimic here
-		sm.Publish(golly.NewContext(nil), events[i].Type, events[i])
+		sm.Publish(golly.NewContext(context.Background()), events[i].Type, events[i])
 	}
 
 	time.Sleep(50 * time.Millisecond)

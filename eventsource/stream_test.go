@@ -89,7 +89,7 @@ func TestStream_Send(t *testing.T) {
 	for _, evt := range events {
 		// Publish with topic == evt.Type
 		topic := evt.Type
-		assert.NoError(t, stream.Publish(golly.NewContext(nil), topic, evt))
+		assert.NoError(t, stream.Publish(golly.NewContext(context.Background()), topic, evt))
 	}
 
 	time.Sleep(100 * time.Millisecond) // Allow time for processing
